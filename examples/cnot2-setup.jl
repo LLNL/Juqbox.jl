@@ -215,7 +215,7 @@ vtarget = rot1*rot2*utarget
 U0 = initial_cond(Ntot, N, Ne, Ng)
 
 # assemble problem description for the optimization
-params = Juqbox.parameters(Ne, Ng, Tmax, nsteps, U0, vtarget, om, H0, Hsym_ops, Hanti_ops)
+params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, U0, vtarget, om, H0, Hsym_ops, Hanti_ops)
 
 # test
 # custom = 0

@@ -130,7 +130,7 @@ Ident = Matrix{Float64}(I, Ntot, Ntot)
 U0 = Ident[1:Ntot,1:N]
 
 # try the new Juqbox2 module
-params = Juqbox.parameters([N], [Nguard], T, nsteps, U0, vtarget, om, H0, Hsym_ops, Hanti_ops)
+params = Juqbox.objparams([N], [Nguard], T, nsteps, U0, vtarget, om, H0, Hsym_ops, Hanti_ops)
 
 # Quiet mode for testing
 params.quiet = true

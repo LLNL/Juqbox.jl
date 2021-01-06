@@ -108,7 +108,7 @@ vtarget = rot1*utarget
 # Initial conditions
 U0 = Ident[1:Ntot,1:N]
 
-params = Juqbox.parameters([N], [Nguard], T, nsteps, U0, vtarget, om, H0, Hsym_ops, Hanti_ops)
+params = Juqbox.objparams([N], [Nguard], T, nsteps, U0, vtarget, om, H0, Hsym_ops, Hanti_ops)
 params.saveConvHist = true
 
 params.tik0 = 0.1 # Used to be tik0*tik0 in the regularization term

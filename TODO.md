@@ -1,6 +1,6 @@
-1. Rename parameters() -> objparams()
+1. ~~Rename parameters() -> objparams()~~
 
-2. Replace import objfunc -> using objfunc in all setup files in examples/*.jl. Add missing functions to the export list.
+2. Replace import objfunc -> using objfunc in all setup files in examples/\*.jl. Add missing functions to the export list.
 
 3. ~~Rename module objfunc -> Juqbox (?)~~
 

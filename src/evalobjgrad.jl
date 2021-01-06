@@ -1,4 +1,4 @@
-mutable struct parameters
+mutable struct objparams
     Nosc   ::Int64          # number of oscillators in the coupled quantum systems
     N      ::Int64          # total number of essential levels
     Nguard ::Int64          # total number of extra levels
@@ -57,7 +57,7 @@ mutable struct parameters
     quiet:: Bool # quiet mode?
     
     # Constructor for case with no coupled controls.
-    function parameters(Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64,
+    function objparams(Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64,
                         U0::Array{Float64,2}, utarget::Array{Complex{Float64},2}, 
                         om::Array{Float64,2}, H0::AbstractArray, Hunc_ops:: AbstractArray)
         Nosc   = length(Ne)
@@ -116,7 +116,7 @@ mutable struct parameters
     end
 
     # FG: Streamlined constructor (with uncoupled controls)
-    function parameters(Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64,
+    function objparams(Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64,
                         U0::Array{Float64,2}, utarget::Array{Complex{Float64},2}, 
                         om::Array{Float64,2}, H0::Array{Float64,2}, Hsym_ops:: Array{Array{Float64,2},1},
                         Hanti_ops:: Array{Array{Float64,2},1}, Hunc_ops:: Array{Array{Float64,2},1})
@@ -182,7 +182,7 @@ mutable struct parameters
     end
 
     # FG: Streamlined constructor (without uncoupled controls)
-    function parameters(Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64,
+    function objparams(Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64,
                         U0::Array{Float64,2}, utarget::Array{Complex{Float64},2},
                         om::Array{Float64,2}, H0::Array{Float64,2}, Hsym_ops:: Array{Array{Float64,2},1},
                         Hanti_ops:: Array{Array{Float64,2},1}, wmatScale::Float64 = 1.0)
@@ -234,7 +234,7 @@ mutable struct parameters
     end
 
     # FG: Streamlined constructor (with uncoupled controls), Sparse
-    function parameters(Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64,
+    function objparams(Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64,
                         U0::Array{Float64,2}, utarget::Array{Complex{Float64},2},
                         om::Array{Float64,2}, H0::SparseMatrixCSC{Float64, Int64}, Hsym_ops:: Array{SparseMatrixCSC{Float64, Int64},1},
                         Hanti_ops:: Array{SparseMatrixCSC{Float64, Int64},1}, Hunc_ops:: Array{SparseMatrixCSC{Float64, Int64},1})
@@ -298,7 +298,7 @@ mutable struct parameters
     end
 
     # FG: Streamlined constructor (without uncoupled controls), Sparse
-    function parameters(Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64,
+    function objparams(Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64,
                         U0::Array{Float64,2}, utarget::Array{Complex{Float64},2},
                         om::Array{Float64,2}, H0::SparseMatrixCSC{Float64, Int64}, Hsym_ops::  Array{SparseMatrixCSC{Float64, Int64},1},
                         Hanti_ops::  Array{SparseMatrixCSC{Float64, Int64},1})
@@ -349,7 +349,7 @@ mutable struct parameters
         new(Nosc, N, Nguard, Ne, Ng, Ne+Ng, T, nsteps, U0, utarget, use_bcarrier, Nfreq, om, kpar, tik0, H0, Hsym_ops, Hanti_ops, [], Ncoupled, Nunc, [], Ident, wmat, 2, 0.0, saveConvHist, zeros(0), zeros(0), zeros(0), zeros(0), nNeumann, 0.0, 0.0, 0.0, false, zeros(0), quiet)
     end
 
-    function parameters(Nosc::Int64, N::Int64, Nguard::Int64, Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64,
+    function objparams(Nosc::Int64, N::Int64, Nguard::Int64, Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64,
                         U0::Array{Float64,2}, utarget::Array{Complex{Float64},2}, H0::Array{Float64,2}, Hsym_ops:: Array{Array{Float64,2},1},
                         Hanti_ops:: Array{Array{Float64,2},1}, Hunc_ops:: Array{Array{Float64,2},1}, wmat::Diagonal{Float64,Array{Float64,1}}, 
                         use_bcarrier::Bool, om::Array{Float64,2}, kpar::Int64, tik0::Float64, saveConvHist::Bool)
@@ -391,7 +391,7 @@ mutable struct parameters
         new(Nosc, N, Nguard, Ne, Ng, Ne+Ng, T, nsteps, U0, utarget, use_bcarrier, Nfreq, om, kpar, tik0, H0, Hsym_ops, Hanti_ops, Hunc_ops, Ncoupled, Nunc, isSymm, Ident, wmat, 2, 0.0, saveConvHist, zeros(0), zeros(0), zeros(0), zeros(0), nNeumann, 0.0, 0.0, 0.0, false, zeros(0), quiet)
     end
 
-    function parameters(Nosc::Int64, N::Int64, Nguard::Int64, Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64,
+    function objparams(Nosc::Int64, N::Int64, Nguard::Int64, Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64,
                         U0::Array{Float64,2}, utarget::Array{Complex{Float64},2}, H0::SparseMatrixCSC{Float64, Int64},
                         Hsym_ops:: Array{SparseMatrixCSC{Float64, Int64},1}, Hanti_ops:: Array{SparseMatrixCSC{Float64, Int64},1},
                         Hunc_ops:: Array{SparseMatrixCSC{Float64, Int64},1}, wmat::Diagonal{Float64,Array{Float64,1}}, 
@@ -435,7 +435,7 @@ mutable struct parameters
 
 
     # If no uncoupled control functions specified or needed, set Nunc=0
-    function parameters(Nosc::Int64, N::Int64, Nguard::Int64, Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64,
+    function objparams(Nosc::Int64, N::Int64, Nguard::Int64, Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64,
                         U0::Array{Float64,2}, utarget::Array{Complex{Float64},2}, H0::Array{Float64,2}, Hsym_ops:: Array{Array{Float64,2},1},
                         Hanti_ops:: Array{Array{Float64,2},1}, wmat::Diagonal{Float64,Array{Float64,1}}, 
                         use_bcarrier::Bool, om::Array{Float64,2}, kpar::Int64, tik0::Float64, saveConvHist::Bool)
@@ -461,7 +461,7 @@ mutable struct parameters
         new(Nosc, N, Nguard, Ne, Ng, Ne+Ng, T, nsteps, U0, utarget, use_bcarrier, Nfreq, om, kpar, tik0, H0, Hsym_ops, Hanti_ops, Hunc_ops, Ncoupled, Nunc, isSymm, Ident, wmat, 2, 0.0, saveConvHist, zeros(0), zeros(0), zeros(0), zeros(0), nNeumann, 0.0, 0.0, 0.0, false, zeros(0), quiet)
     end
 
-    function parameters(Nosc::Int64, N::Int64, Nguard::Int64, Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64,
+    function objparams(Nosc::Int64, N::Int64, Nguard::Int64, Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64,
                         U0::Array{Float64,2}, utarget::Array{Complex{Float64},2}, H0::SparseMatrixCSC{Float64, Int64},
                         Hsym_ops:: Array{SparseMatrixCSC{Float64, Int64},1}, Hanti_ops:: Array{SparseMatrixCSC{Float64, Int64},1}, wmat::Diagonal{Float64,Array{Float64,1}}, 
                         use_bcarrier::Bool, om::Array{Float64,2}, kpar::Int64, tik0::Float64, saveConvHist::Bool)
@@ -532,9 +532,9 @@ mutable struct Working_Arrays
     gradobjfadj ::Array{Float64,1}
     tr_adj      ::Array{Float64,1}
 
-    function Working_Arrays(params::parameters,Ntot::Int64,N::Int64,nCoeff::Int64)
+    function Working_Arrays(params::objparams,Ntot::Int64,N::Int64,nCoeff::Int64)
         println("Deprecation warning: this Working_Array constructor will be removed in future versions of the Juqbox package")
-        println("\t Instead use Working_Arrays(params::parameters, nCoeff::Int64)")
+        println("\t Instead use Working_Arrays(params::objparams, nCoeff::Int64)")
         K0,S0,K05,S05,K1,S1,vtargetr,vtargeti = KS_alloc(params)
         lambdar,lambdar0,lambdai,lambdai0,lambdar05,κ₁,κ₂,ℓ₁,ℓ₂,rhs,gr0,gi0,gr1,gi1,hr0,hi0,hr1,vr,vi,vi05,vr0,vfinalr,vfinali = time_step_alloc(Ntot,N)
         if params.pFidType == 3
@@ -545,7 +545,7 @@ mutable struct Working_Arrays
         new(K0,S0,K05,S05,K1,S1,vtargetr,vtargeti,lambdar,lambdar0,lambdai,lambdai0,lambdar05,κ₁,κ₂,ℓ₁,ℓ₂,rhs,gr0,gi0,gr1,gi1,hr0,hi0,hr1,vr,vi,vi05,vr0,vfinalr,vfinali,gr, gi, gradobjfadj, tr_adj)
     end
 
-    function Working_Arrays(params::parameters, nCoeff::Int64)
+    function Working_Arrays(params::objparams, nCoeff::Int64)
         N = params.N
         Ntot = N + params.Nguard
         K0,S0,K05,S05,K1,S1,vtargetr,vtargeti = KS_alloc(params)
@@ -560,7 +560,7 @@ mutable struct Working_Arrays
     
 end
 
-function traceobjgrad(pcof0::Array{Float64,1},  params::parameters, wa::Working_Arrays, verbose::Bool = false, evaladjoint::Bool = true)
+function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, wa::Working_Arrays, verbose::Bool = false, evaladjoint::Bool = true)
 #    @assert(params.Nosc >= 1 && params.Nosc <=2) # Currently the only implemented cases
     order  = 2
     N      = params.N    
@@ -983,7 +983,7 @@ else
 end #if
 end
 
-function setup_prior!(params:: parameters, priorFile::String)
+function setup_prior!(params::objparams, priorFile::String)
 
     # read a prior parameter vector from a JLD2 file, assume that the number of parameters is
     # compatible between the current and prior parameter vector
@@ -1433,7 +1433,7 @@ end
 end
 
 
-@inline function tikhonov_pen(pcof::Array{Float64,1}, params ::parameters)
+@inline function tikhonov_pen(pcof::Array{Float64,1}, params ::objparams)
     Npar = size(pcof,1)
     iNpar = 1.0/Npar
     Nseg = (2*params.Ncoupled+params.Nunc)*params.Nfreq
@@ -1462,7 +1462,7 @@ end
     return penalty
 end
 
-@inline function tikhonov_grad!(pcof::Array{Float64,1}, params:: parameters, pengrad::Array{Float64,1})  
+@inline function tikhonov_grad!(pcof::Array{Float64,1}, params::objparams, pengrad::Array{Float64,1})  
     Npar = size(pcof,1)
     iNpar = 1.0/Npar
     Nseg = (2*params.Ncoupled+params.Nunc)*params.Nfreq
@@ -1799,7 +1799,7 @@ end
 end
 
 # Calls to KS! need to be updated
-function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::parameters, saveAll:: Bool = false, verbose::Bool = false)  
+function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::objparams, saveAll:: Bool = false, verbose::Bool = false)  
     N = params.N  
     Q = 1 #one initial data, specified in U0[:,1] (currently assumed to be real)
 
@@ -1966,7 +1966,7 @@ function estimate_Neumann(tol::Float64, T::Float64, nsteps::Int64, maxpar::Array
 end
 
 # new version
-function estimate_Neumann!(tol::Float64, T::Float64, params::parameters, maxpar::Array{Float64,1})
+function estimate_Neumann!(tol::Float64, T::Float64, params::objparams, maxpar::Array{Float64,1})
     nsteps = params.nsteps
     k = Float64(T/nsteps)
 
@@ -2001,7 +2001,7 @@ end
 
 # Estimate the number of terms used in the Neumann series linear solve during timestepping. 
 # Both coupled and uncoupled terms present.
-function estimate_Neumann!(tol::Float64, T::Float64, params::parameters, maxpar::Array{Float64,1}, maxunc::Array{Float64,1})
+function estimate_Neumann!(tol::Float64, T::Float64, params::objparams, maxpar::Array{Float64,1}, maxunc::Array{Float64,1})
     nsteps = params.nsteps
     k = Float64(T/nsteps)
     if(params.Ncoupled > 0)

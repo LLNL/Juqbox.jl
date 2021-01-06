@@ -1,5 +1,5 @@
 # setup callback functions for Ipopt
-function eval_f_par(pcof::Vector{Float64}, params:: Juqbox.parameters, wa::Working_Arrays)
+function eval_f_par(pcof::Vector{Float64}, params:: Juqbox.objparams, wa::Working_Arrays)
     #@show(pcof)
     f =Juqbox.traceobjgrad(pcof,params,wa,false,false)
     # @show(f)
@@ -10,7 +10,7 @@ function eval_g(pcof)
     return 0.0
 end
 
-function eval_grad_f_par(pcof::Vector{Float64}, grad_f::Vector{Float64}, params:: Juqbox.parameters, wa::Working_Arrays)
+function eval_grad_f_par(pcof::Vector{Float64}, grad_f::Vector{Float64}, params:: Juqbox.objparams, wa::Working_Arrays)
     objf, Gtemp, primaryobjf, secondaryobjf, traceinfid = Juqbox.traceobjgrad(pcof,params,wa,false, true)
         
     Gtemp = vcat(Gtemp...) 
@@ -48,7 +48,7 @@ function intermediate_par(
     regularization_size::Float64,
     alpha_du::Float64, alpha_pr::Float64,
     ls_trials::Int,
-    params:: Juqbox.parameters)
+    params:: Juqbox.objparams)
   # ...
     if params.saveConvHist 
         push!(params.objHist, obj_value)
@@ -66,7 +66,7 @@ function intermediate_par(
 end
 
 
-function setup_ipopt_problem(params:: Juqbox.parameters, wa::Working_Arrays, nCoeff:: Int64, minCoeff:: Array{Float64, 1}, maxCoeff:: Array{Float64, 1}, maxIter:: Int64=50, lbfgsMax:: Int64=10, startFromScratch:: Bool=true, ipTol:: Float64=1e-5, acceptTol:: Float64=1e-5, acceptIter:: Int64=15)
+function setup_ipopt_problem(params:: Juqbox.objparams, wa::Working_Arrays, nCoeff:: Int64, minCoeff:: Array{Float64, 1}, maxCoeff:: Array{Float64, 1}, maxIter:: Int64=50, lbfgsMax:: Int64=10, startFromScratch:: Bool=true, ipTol:: Float64=1e-5, acceptTol:: Float64=1e-5, acceptIter:: Int64=15)
     # callback functions need access to the params object
     eval_f(pcof) = eval_f_par(pcof, params, wa)
     eval_grad_f(pcof, grad_f) = eval_grad_f_par(pcof, grad_f, params, wa)

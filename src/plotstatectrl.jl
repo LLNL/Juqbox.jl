@@ -190,7 +190,7 @@ function plot_forward(us, T)
 end
 
 # Evaluate the control functions on a grid in time in units of GHz
-function evalctrl(params:: parameters, pcof0:: Array{Float64, 1}, td:: Array{Float64, 1}, jHam:: Int64) 
+function evalctrl(params::objparams, pcof0:: Array{Float64, 1}, td:: Array{Float64, 1}, jHam:: Int64) 
     if params.pFidType == 3
         nCoeff = length(pcof0)-1
     else
@@ -229,7 +229,7 @@ function evalctrl(params:: parameters, pcof0:: Array{Float64, 1}, td:: Array{Flo
     
 end
 
-function identify_guard_levels(params:: Juqbox.parameters, custom:: Int64 = 0)
+function identify_guard_levels(params::Juqbox.objparams, custom:: Int64 = 0)
     # identify all guard levels
     Ntot = params.N+params.Nguard
     guardlev = fill(false, Ntot)
@@ -263,7 +263,7 @@ function identify_guard_levels(params:: Juqbox.parameters, custom:: Int64 = 0)
     return guardlev
 end #identify_guard_levels
 
-function identify_forbidden_levels(params:: Juqbox.parameters, custom::Int64 = 0)
+function identify_forbidden_levels(params:: Juqbox.objparams, custom::Int64 = 0)
     # identify all forbidden levels
     Ntot = params.N+params.Nguard
     forbiddenlev = fill(false, Ntot)
@@ -302,7 +302,7 @@ function identify_forbidden_levels(params:: Juqbox.parameters, custom::Int64 = 0
 end #identify_forbidden_levels
 
 
-function specify_level3(params:: Juqbox.parameters, Nl3:: Int64) # Nl3 is 0-based
+function specify_level3(params:: Juqbox.objparams, Nl3:: Int64) # Nl3 is 0-based
     # identify all  levels
     Ntot = params.N+params.Nguard
     specifiedlev = fill(false, Ntot)
@@ -323,7 +323,7 @@ function specify_level3(params:: Juqbox.parameters, Nl3:: Int64) # Nl3 is 0-base
     return specifiedlev
 end #specify_level3
 
-function marginalize3(params:: Juqbox.parameters, unitaryhist:: Array{Complex{Float64},3})
+function marginalize3(params:: Juqbox.objparams, unitaryhist:: Array{Complex{Float64},3})
     nsteps1 = size(unitaryhist,3)
     if params.Nosc == 3
         marg_prob = zeros(params.Nt[3], params.N, nsteps1)
@@ -343,7 +343,7 @@ function marginalize3(params:: Juqbox.parameters, unitaryhist:: Array{Complex{Fl
     end # if Nosc = 3
 end #marginalize3
 
-function plot_conv_hist(params:: Juqbox.parameters, convname:: String="")
+function plot_conv_hist(params:: Juqbox.objparams, convname:: String="")
     pconv = Plots.plot(xlabel="Iteration", title="Convergence history", size=(400, 300))
     if params.saveConvHist && length(params.objHist)>0
         nIter = length(params.objHist)

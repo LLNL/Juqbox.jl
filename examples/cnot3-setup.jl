@@ -280,7 +280,7 @@ vtarget = rot1*rot2*rot3*utarget
 U0 = initial_cond(Ntot, N, Ne, Ng)
 
 # NOTE: maxpar is now a vector with 3 elements: amax, bmax, cmax
-params = Juqbox.parameters(Ne, Ng, Tmax, nsteps, U0, vtarget, om, H0, Hsym_ops, Hanti_ops)
+params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, U0, vtarget, om, H0, Hsym_ops, Hanti_ops)
 
 Random.seed!(2456)
 

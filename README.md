@@ -71,7 +71,7 @@ The setup phase includes specifying:
 - Duration of the gate and number of time steps for integrating Schroedinger's equation.
 - Specifying carrier wave frequencies and the number of B-spline coefficients for parameterizing the control functions.
 
-These properties are stored in a **mutable struct** that is populated by calling **params = Juqbox.parameters()**.<br>
+These properties are stored in a **mutable struct** that is populated by calling **params = Juqbox.objparams()**.<br>
 
 The next steps are
 - Assign the initial parameter vector (called **pcof0** in the examples below)

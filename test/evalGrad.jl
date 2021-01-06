@@ -1,6 +1,6 @@
 using FileIO
 
-function evalObjGrad( pcof0:: Array{Float64, 1}, params:: Juqbox.parameters, wa:: Juqbox.Working_Arrays, refFileName:: String, writeFile:: Bool=false)
+function evalObjGrad( pcof0:: Array{Float64, 1}, params:: Juqbox.objparams, wa:: Juqbox.Working_Arrays, refFileName:: String, writeFile:: Bool=false)
     rtol = 1e-10
     atol = 1e-14
     verbose = false
