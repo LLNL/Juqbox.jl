@@ -8,9 +8,9 @@ This environment variable tells Julia to look for Project.toml files in your cur
 **Note:** If you are upgrading Julia to a new version, e.g. 1.4 -> 1.5, it may be necessary to first remove your ~/.julia directory: rm -rf ~/.julia. However, removing that directory should be considered as a last resort because it implies that you will have to re-install all of your packages.
 
 ## Downloading the **Juqbox** package
-Clone the Juqbox package into a directory that is **NOT** a subdirectory of any other git repository (e.g. QCC). In this example we put it in the ~/src/Juqbox directory:<br>
+Clone the Juqbox package into a directory that is **NOT** a subdirectory of any other git repository (e.g. QCC). In this example we put it in the ~/src/Juqbox.jl directory:<br>
 sh> cd ~/src<br>
-sh> git clone https://lc.llnl.gov/bitbucket/scm/wave/Juqbox.git<br>
+sh> git clone https://lc.llnl.gov/bitbucket/scm/wave/Juqbox.jl.git<br>
 <br>
 
 ## Installing Julia packages
@@ -38,9 +38,9 @@ If any package is missing, you can add it using, e.g.,<br>
 (@v1.5) pkg> add IJulia<br>
 
 Since the **Juqbox** package lives in a separate git repository, it is installed in a slightly different way (assuming it is in the ~/src/Juqbox directory):<br>
-(@v1.5) pkg> add ~/src/Juqbox <br>
+(@v1.5) pkg> add ~/src/Juqbox.jl <br>
 
-To exit the package manager and julia you do<br>
+To exit the package manager and Julia you do<br>
 (@v1.5) pkg> (DEL) <br>
 julia> exit() <br>
 sh> <br>
@@ -56,7 +56,7 @@ julia> ]<br>
 (Juqbox) pkg> (DEL)<br>
 julia> exit()<br>
 
-# Using the **Juqbox** software package
+# Using the **Juqbox** package
 To solve a quantum optimal control problem with the **Juqbox** package, the work flow consists of the following general steps:
 1. Specify the problem
 2. Optimize

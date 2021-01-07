@@ -29,8 +29,7 @@ using Random
 Base.show(io::IO, f::Float64) = @printf(io, "%20.13e", f)
 pyplot()
 
-#include("Juqbox.jl")
-import Juqbox
+using Juqbox
 
 N = 2
 
@@ -196,7 +195,7 @@ tol = eps(1.0); # machine precision
 Juqbox.estimate_Neumann!(tol, T, params, [maxpar])
 
 # Allocate all working arrays
-wa = Juqbox.Working_Arrays(params,Ntot,N,nCoeff)
+wa = Juqbox.Working_Arrays(params, nCoeff)
 prob = Juqbox.setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff, maxIter, lbfgsMax)
 
 # uncomment to run the gradient checker for the initial pcof
