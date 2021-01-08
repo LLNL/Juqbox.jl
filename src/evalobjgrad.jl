@@ -1,3 +1,23 @@
+"""
+    objparams(Ne, Ng, T, nsteps,
+                    U0, utarget,
+                    om, H0, Hsym_ops,
+                    Hanti_ops [, wmatScale])
+
+Constructor for the mutable struct objparams. TODO: document all constructors
+
+# Arguments
+- `Ne::Array{Int64,1}`: Number of essential energy levels for each subsystem
+- `Ng::Array{Int64,1}`: Number of guard energy levels for each subsystem
+- `T::Float64, nsteps::Int64`: Duration of gate
+- `U0::Array{Float64,2}`: Matrix holding the initial conditions for all essential leves 
+- `utarget::Array{Complex{Float64},2}`: Matrix holding the target gate matrix
+- `om::Array{Float64,2}`: Carrier wave frequencies
+- `H0::Array{Float64,2}`: Time-independent part of the Hamiltonian matrix
+- `Hsym_ops:: Array{Array{Float64,2},1}`: Array of symmetric control Hamiltonians
+- `Hanti_ops:: Array{Array{Float64,2},1}`: Array of anti-symmetric control Hamiltonians
+- `wmatScale::Float64 = 1.0`: Scaling factor for suppressing guarded energy levels
+"""
 mutable struct objparams
     Nosc   ::Int64          # number of oscillators in the coupled quantum systems
     N      ::Int64          # total number of essential levels

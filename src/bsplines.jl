@@ -1,4 +1,15 @@
-struct splineparams #todo specify types?
+"""
+    splineparams(T, D1, Nseg, pcof)
+
+Constructor for struct splineparams
+
+# Arguments
+- `T:: Float64`: Duration of spline function
+- `D1:: Int64`: Number of basis functions in each segment
+- `Nseg:: Int64`:  Number of segments  (real, imaginary, different ctrl func)
+- `pcof:: Array{Float64, 1}`: Coefficient vector. Must have D1*Nseg elements
+"""
+struct splineparams 
     T::Float64
     D1::Int64 # Number of coefficients per spline
     tcenter::Array{Float64,1}
@@ -17,6 +28,16 @@ struct splineparams #todo specify types?
 end
 
 # bspline2: Evaluate quadratic bspline function
+"""
+    bspline2(t, splineparam, splinefunc)
+
+Evaluate a B-spline function. See also the `splineparams` constructor.
+
+# Arguments
+- `t::Float64`: Evaluate spline at parameter t ∈ [0, param.T]
+- `param::splineparams`: Parameters for the spline
+- `splinefunc::Int64`: Spline function index ∈ [0, param.Nseg-1]
+"""
 @inline function bspline2(t::Float64, param::splineparams, splinefunc::Int64)
   f = 0.0
 
