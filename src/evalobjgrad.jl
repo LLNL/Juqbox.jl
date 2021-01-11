@@ -1,22 +1,35 @@
 """
-    objparams(Ne, Ng, T, nsteps,
-                    U0, utarget,
-                    om, H0, Hsym_ops,
-                    Hanti_ops [, wmatScale])
+        objparams(Ne, Ng, T, Nsteps,
+                        Uinit=Uinit, Utarget=Utarget,
+                        Cfreq=Cfreq, Rfreq=Rfreq, 
+                        Hconst=Hconst, 
+                        [Hsym_ops=Hsym_ops,
+                        Hanti_ops=Hanti_ops, 
+                        Hunc_ops=Hunc_ops,
+                        wmatScale=wmatScale, 
+                        use_sparse=use_sparse])
 
-Constructor for the mutable struct objparams. TODO: document all constructors
+Constructor for the mutable struct objparams. TODO: document all keyword args
 
+Ntot = prod(Ne + Ng), Ness = prod(Ne), Nosc = length(Ne) = length(Ng)
+
+Ncoupled = length(Hsym-ops) = length(Hanti-ops), Nunc = length(Hunc-ops)
+ 
 # Arguments
 - `Ne::Array{Int64,1}`: Number of essential energy levels for each subsystem
 - `Ng::Array{Int64,1}`: Number of guard energy levels for each subsystem
 - `T::Float64, nsteps::Int64`: Duration of gate
-- `U0::Array{Float64,2}`: Matrix holding the initial conditions for all essential leves 
-- `utarget::Array{Complex{Float64},2}`: Matrix holding the target gate matrix
-- `om::Array{Float64,2}`: Carrier wave frequencies
-- `H0::Array{Float64,2}`: Time-independent part of the Hamiltonian matrix
-- `Hsym_ops:: Array{Array{Float64,2},1}`: Array of symmetric control Hamiltonians
-- `Hanti_ops:: Array{Array{Float64,2},1}`: Array of anti-symmetric control Hamiltonians
+- `Nsteps::Int64`: Number of timesteps
+- `Uinit::Array{Float64,2}`: Matrix holding the initial conditions for the solution matrix of size Uinit[Ntot, Ness]
+- `Utarget::Array{Complex{Float64},2}`: Matrix holding the target gate matrix of size Uinit[Ntot, Ness]
+- `Cfreq::Array{Float64,2}`: Carrier wave frequencies of size Cfreq[Ncoupled, Nfreq]
+- `Rfreq::Array{Float64,2}`: Rotational frequencies of size Rfreq[Nosc]
+- `Hconst::Array{Float64,2}`: Time-independent part of the Hamiltonian matrix of size Hconst[Ntot, Ntot]
+- `Hsym_ops:: Array{Array{Float64,2},1}`: Array of symmetric control Hamiltonians, each of size Hconst[Ntot, Ntot]
+- `Hanti_ops:: Array{Array{Float64,2},1}`: Array of anti-symmetric control Hamiltonians, each of size Hconst[Ntot, Ntot]
+- `Hunc_ops:: Array{Array{Float64,2},1}`: Array of uncoupled control Hamiltonians, each of size Hconst[Ntot, Ntot]
 - `wmatScale::Float64 = 1.0`: Scaling factor for suppressing guarded energy levels
+- `use_sparse::Bool = false`: Set to true to sparsify all Hamiltonian matrices
 """
 mutable struct objparams
     Nosc   ::Int64          # number of oscillators in the coupled quantum systems
@@ -28,17 +41,17 @@ mutable struct objparams
     T      ::Float64        # final time
 
     nsteps       ::Int64    # Number of time steps
-    U0           ::Array{Float64,2} # initial condition for each essential state: Should be a basis
-    utarget      ::Array{Complex{Float64},2}
+    Uinit           ::Array{Float64,2} # initial condition for each essential state: Should be a basis
+    Utarget      ::Array{Complex{Float64},2}
     use_bcarrier ::Bool
     Nfreq        ::Int64 # number of frequencies
-    om           ::Array{Float64,2} # om[seg,freq]
+    Cfreq        ::Array{Float64,2} # Carrier wave frequencies of dim Cfreq[seg,freq]
     kpar         ::Int64   # element of gradient to test
     tik0         ::Float64
 #    tik1         ::Float64
 
     # Drift Hamiltonian
-    H0 ::MyRealMatrix     # time-independent part of the Hamiltonian (assumed symmetric)
+    Hconst ::MyRealMatrix     # time-independent part of the Hamiltonian (assumed symmetric)
    
     # Control Hamiltonians
     Hsym_ops  ::Array{MyRealMatrix,1}   # Symmetric control Hamiltonians
@@ -75,221 +88,47 @@ mutable struct objparams
     priorCoeffs ::Array{Float64,1}
 
     quiet:: Bool # quiet mode?
+
+    Rfreq::Array{Float64,1}
     
-    # Constructor for case with no coupled controls.
-    function objparams(Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64,
-                        U0::Array{Float64,2}, utarget::Array{Complex{Float64},2}, 
-                        om::Array{Float64,2}, H0::AbstractArray, Hunc_ops:: AbstractArray)
-        Nosc   = length(Ne)
-        N      = prod(Ne)
-        Ntot   = prod(Ne+Ng)
-        Nguard = Ntot-N
-        Nfreq  = size(om,2)
-        Ncoupled   = 0
-        Nunc   = length(Hunc_ops)
-    
-        # Track symmetries of uncoupled Hamiltonian terms
-        isSymm = BitArray(undef, Nunc)
-        for i=1:Nunc
-            if(issymmetric(Hunc_ops[i]))
-                isSymm[i] = true 
-            elseif(norm(Hunc_ops[i] + Hunc_ops[i]') < 1e-15)
-                isSymm[i] = false
-            else 
-                throw(ArgumentError("Uncoupled Hamiltonian is not symmetric or anti-symmetric. This functionality is not currently supported.\n"))
-            end
-        end
-
-        # Set default Tikhonov parameters to zero
-        tik0 = 0.01
-#        tik1 = 0.0
-
-        # By default, test the first parameter for gradient correctness
-        kpar = 1
-
-        # By default use B-splines with carrier waves
-        use_bcarrier = true
-
-        # Weights in the W matrix for discouraging population of guarded states
-        wmatScale = 1.0
-        wmat = wmatScale.*Juqbox.wmatsetup(Ne, Ng)
-
-        # By default save convergence history
-        saveConvHist = true
-
-        # Exit if uncoupled controls with more than 1 oscillator present
-        if(Nunc > 0 && Nosc > 1)
-            throw(ArgumentError("Uncoupled Hamiltonians for more than a single oscillator not currently supported.\n"))
-        end
-        
-        # Appropriately type identity
-        if(typeof(H0) == SparseMatrixCSC{Float64, Int64})
-            Ident = sparse(Matrix{Float64}(I, Ntot, Ntot))
-        else 
-            Ident = Matrix{Float64}(I, Ntot, Ntot)
-        end
-
-        # Default number of Neumann series terms
-        nNeumann = 3
-        quiet = false
-        new(Nosc, N, Nguard, Ne, Ng, Ne+Ng, T, nsteps, U0, utarget, use_bcarrier, Nfreq, om, kpar, tik0, H0, [], [], Hunc_ops, Ncoupled, Nunc, isSymm, Ident, wmat, 2, 0.0, saveConvHist, zeros(0), zeros(0), zeros(0), zeros(0), nNeumann, 0.0, 0.0, 0.0, false, zeros(0), quiet)
-    end
-
-    # FG: Streamlined constructor (with uncoupled controls)
-    function objparams(Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64,
-                        U0::Array{Float64,2}, utarget::Array{Complex{Float64},2}, 
-                        om::Array{Float64,2}, H0::Array{Float64,2}, Hsym_ops:: Array{Array{Float64,2},1},
-                        Hanti_ops:: Array{Array{Float64,2},1}, Hunc_ops:: Array{Array{Float64,2},1})
-        Nosc   = length(Ne)
-        N      = prod(Ne)
-        Ntot   = prod(Ne+Ng)
-        Nguard = Ntot-N
-        Nfreq  = size(om,2)
-        Ncoupled   = length(Hsym_ops)
-        Nanti  = length(Hanti_ops)
-        Nunc   = length(Hunc_ops)
-    
-
-        # Check for consistency in coupled controls 
-        for i = 1:Ncoupled
-            L = LinearAlgebra.tril(Hsym_ops[i] + Hanti_ops[i])
-            if(norm(L) > eps(1.0))
-                throw(ArgumentError("Coupled Hamiltonian inconsistent with currently implemented rotating wave approximation. Please flip sign on Hanti_ops.\n"))
-            end
-        end
-
-        # Track symmetries of uncoupled Hamiltonian terms
-        isSymm = BitArray(undef, Nunc)
-        for i=1:Nunc
-            if(issymmetric(Hunc_ops[i]))
-                isSymm[i] = true 
-            elseif(norm(Hunc_ops[i] + Hunc_ops[i]') < 1e-15)
-                isSymm[i] = false
-            else 
-                throw(ArgumentError("Uncoupled Hamiltonian is not symmetric or anti-symmetric. This functionality is not currently supported.\n"))
-            end
-        end
-
-        # Set default Tikhonov parameters to zero
-        tik0 = 0.01
-#        tik1 = 0.0
-
-        # By default, test the first parameter for gradient correctness
-        kpar = 1
-
-        # By default use B-splines with carrier waves
-        use_bcarrier = true
-
-        # Weights in the W matrix for discouraging population of guarded states
-        wmatScale = 1.0
-        wmat = wmatScale.*Juqbox.wmatsetup(Ne, Ng)
-
-        # By default save convergence history
-        saveConvHist = true
-
-        @assert(Ncoupled == Nanti)
-
-        # Exit if uncoupled controls with more than 1 oscillator present
-        if(Nunc > 0 && Nosc > 1)
-            throw(ArgumentError("Uncoupled Hamiltonians for more than a single oscillator not currently supported.\n"))
-        end
-        Ident = Matrix{Float64}(I, Ntot, Ntot)
-
-        # Default number of Neumann series terms
-        nNeumann = 3
-        quiet = false
-        new(Nosc, N, Nguard, Ne, Ng, Ne+Ng, T, nsteps, U0, utarget, use_bcarrier, Nfreq, om, kpar, tik0, H0, Hsym_ops, Hanti_ops, Hunc_ops, Ncoupled, Nunc, isSymm, Ident, wmat, 2, 0.0, saveConvHist, zeros(0), zeros(0), zeros(0), zeros(0), nNeumann, 0.0, 0.0, 0.0, false, zeros(0), quiet)
-    end
-
-    # FG: Streamlined constructor (without uncoupled controls)
-    function objparams(Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64,
-                        U0::Array{Float64,2}, utarget::Array{Complex{Float64},2},
-                        om::Array{Float64,2}, H0::Array{Float64,2}, Hsym_ops:: Array{Array{Float64,2},1},
-                        Hanti_ops:: Array{Array{Float64,2},1}, wmatScale::Float64 = 1.0)
+# Regular arrays
+    function objparams(Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64;
+                       Uinit::Array{Float64,2}, Utarget::Array{Complex{Float64},2}, # keyword args w/o default values (must be assigned)
+                       Cfreq::Array{Float64,2}, Rfreq::Array{Float64,1}, Hconst::Array{Float64,2},
+                       Hsym_ops:: Array{Array{Float64,2},1} = Array{Float64,2}[], # keyword args with default values
+                       Hanti_ops:: Array{Array{Float64,2},1} = Array{Float64,2}[],
+                       Hunc_ops:: Array{Array{Float64,2},1} = Array{Float64,2}[],
+                       wmatScale::Float64 = 1.0, use_sparse::Bool = false)
         pFidType = 2
         Nosc   = length(Ne)
         N      = prod(Ne)
         Ntot   = prod(Ne+Ng)
         Nguard = Ntot-N
-        Nfreq  = size(om,2)
-        Ncoupled   = length(Hsym_ops)
-        Nanti  = length(Hanti_ops)
-        Nunc   = 0
-
-        # Set default Tikhonov parameters to zero
-        tik0 = 0.01
-#        tik1 = 0.0
-
-        # By default, test the first parameter for gradient correctness
-        kpar = 1
-
-        # By default use B-splines with carrier waves
-        use_bcarrier = true
-
-        # Weights in the W matrix for discouraging population of guarded states
-        wmat = wmatScale.*Juqbox.wmatsetup(Ne, Ng)
-
-        # By default save convergence history
-        saveConvHist = true
-
-        @assert(Ncoupled == Nanti)
-
-        # Check for consistency in coupled controls 
-        for i = 1:Ncoupled
-            L = LinearAlgebra.tril(Hsym_ops[i] + Hanti_ops[i])
-            if(norm(L) > eps(1.0))
-                throw(ArgumentError("Coupled Hamiltonian inconsistent with currently implemented rotating wave approximation. Please flip sign on Hanti_ops.\n"))
-            end
-        end
-
-        # Exit if uncoupled controls with more than 1 oscillator present
-        if(Nunc > 0 && Nosc > 1)
-            throw(ArgumentError("Uncoupled Hamiltonians for more than a single oscillator not currently supported.\n"))
-        end
-        Ident = Matrix{Float64}(I, Ntot, Ntot)
-        # Default number of Neumann series terms
-        nNeumann = 3
-        quiet = false
-        new(Nosc, N, Nguard, Ne, Ng, Ne+Ng, T, nsteps, U0, utarget, use_bcarrier, Nfreq, om, kpar, tik0, H0, Hsym_ops, Hanti_ops, [], Ncoupled, Nunc, [], Ident, wmat, pFidType, 0.0, saveConvHist, zeros(0), zeros(0), zeros(0), zeros(0), nNeumann, 0.0, 0.0, 0.0, false, zeros(0), quiet)
-    end
-
-    # FG: Streamlined constructor (with uncoupled controls), Sparse
-    function objparams(Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64,
-                        U0::Array{Float64,2}, utarget::Array{Complex{Float64},2},
-                        om::Array{Float64,2}, H0::SparseMatrixCSC{Float64, Int64}, Hsym_ops:: Array{SparseMatrixCSC{Float64, Int64},1},
-                        Hanti_ops:: Array{SparseMatrixCSC{Float64, Int64},1}, Hunc_ops:: Array{SparseMatrixCSC{Float64, Int64},1})
-        Nosc   = length(Ne)
-        N      = prod(Ne)
-        Ntot   = prod(Ne+Ng)
-        Nguard = Ntot-N
-        Nfreq  = size(om,2)
+        Nfreq  = size(Cfreq,2)
         Ncoupled   = length(Hsym_ops)
         Nanti  = length(Hanti_ops)
         Nunc   = length(Hunc_ops)
 
-        # Check for consistency in coupled controls 
-        for i = 1:Ncoupled
-            L = LinearAlgebra.tril(Hsym_ops[i] + Hanti_ops[i])
-            if(norm(L) > eps(1.0))
-                throw(ArgumentError("Coupled Hamiltonian inconsistent with currently implemented rotating wave approximation. Please flip sign on Hanti_ops.\n"))
-            end
-        end
+        @assert(length(Rfreq) == Nosc)
 
         # Track symmetries of uncoupled Hamiltonian terms
-        isSymm = BitArray(undef, Nunc)
-        for i=1:Nunc
-            if(issymmetric(Hunc_ops[i]))
-                isSymm[i] = true 
-            elseif(norm(Hunc_ops[i] + Hunc_ops[i]') < 1e-15)
-                isSymm[i] = false
-            else 
-                throw(ArgumentError("Uncoupled Hamiltonian is not symmetric or anti-symmetric. This functionality is not currently supported.\n"))
+        if Nunc > 0
+            isSymm = BitArray(undef, Nunc)
+            for i=1:Nunc
+                if(issymmetric(Hunc_ops[i]))
+                    isSymm[i] = true 
+                elseif(norm(Hunc_ops[i] + Hunc_ops[i]') < 1e-15)
+                    isSymm[i] = false
+                else 
+                    throw(ArgumentError("Uncoupled Hamiltonian is not symmetric or anti-symmetric. This functionality is not currently supported.\n"))
+                end
             end
+        else
+            isSymm = []
         end
-
+        
         # Set default Tikhonov parameters to zero
         tik0 = 0.01
-#        tik1 = 0.0
 
         # By default, test the first parameter for gradient correctness
         kpar = 1
@@ -298,51 +137,6 @@ mutable struct objparams
         use_bcarrier = true
 
         # Weights in the W matrix for discouraging population of guarded states
-        wmatScale = 1.0
-        wmat = wmatScale.*Juqbox.wmatsetup(Ne, Ng)
-
-        # By default save convergence history
-        saveConvHist = true
-
-        @assert(Ncoupled == Nanti)
-
-        # Exit if uncoupled controls with more than 1 oscillator present
-        if(Nunc > 0 && Nosc > 1)
-            throw(ArgumentError("Uncoupled Hamiltonians for more than a single oscillator not currently supported.\n"))
-        end
-        Ident = sparse(Matrix{Float64}(I, Ntot, Ntot))
-        # Default number of Neumann series terms
-        nNeumann = 3
-        quiet = false
-        new(Nosc, N, Nguard, Ne, Ng, Ne+Ng, T, nsteps, U0, utarget, use_bcarrier, Nfreq, om, kpar, tik0, H0, Hsym_ops, Hanti_ops, Hunc_ops, Ncoupled, Nunc, isSymm, Ident, wmat, 2, 0.0, saveConvHist, zeros(0), zeros(0), zeros(0), zeros(0), nNeumann, 0.0, 0.0, 0.0, false, zeros(0), quiet)
-    end
-
-    # FG: Streamlined constructor (without uncoupled controls), Sparse
-    function objparams(Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64,
-                        U0::Array{Float64,2}, utarget::Array{Complex{Float64},2},
-                        om::Array{Float64,2}, H0::SparseMatrixCSC{Float64, Int64}, Hsym_ops::  Array{SparseMatrixCSC{Float64, Int64},1},
-                        Hanti_ops::  Array{SparseMatrixCSC{Float64, Int64},1})
-        Nosc   = length(Ne)
-        N      = prod(Ne)
-        Ntot   = prod(Ne+Ng)
-        Nguard = Ntot-N
-        Nfreq  = size(om,2)
-        Ncoupled   = length(Hsym_ops)
-        Nanti  = length(Hanti_ops)
-        Nunc   = 0
-
-        # Set default Tikhonov parameters to zero
-        tik0 = 0.01
-#        tik1 = 0.0
-
-        # By default, test the first parameter for gradient correctness
-        kpar = 1
-
-        # By default use B-splines with carrier waves
-        use_bcarrier = true
-
-        # Weights in the W matrix for discouraging population of guarded states
-        wmatScale = 1.0
         wmat = wmatScale.*Juqbox.wmatsetup(Ne, Ng)
 
         # By default save convergence history
@@ -352,7 +146,7 @@ mutable struct objparams
 
         # Check for consistency in coupled controls 
         for i = 1:Ncoupled
-            L = LinearAlgebra.tril(Hsym_ops[i] + Hanti_ops[i])
+            L = LinearAlgebra.tril(Hsym_ops[i] + Hanti_ops[i]) # tril forms the lower triangular part of a matrix, in this case (a+a^† ) + (a - a^†) = 2 a, which is upper triangular
             if(norm(L) > eps(1.0))
                 throw(ArgumentError("Coupled Hamiltonian inconsistent with currently implemented rotating wave approximation. Please flip sign on Hanti_ops.\n"))
             end
@@ -362,154 +156,65 @@ mutable struct objparams
         if(Nunc > 0 && Nosc > 1)
             throw(ArgumentError("Uncoupled Hamiltonians for more than a single oscillator not currently supported.\n"))
         end
-        Ident = sparse(Matrix{Float64}(I, Ntot, Ntot))
+
         # Default number of Neumann series terms
         nNeumann = 3
         quiet = false
-        new(Nosc, N, Nguard, Ne, Ng, Ne+Ng, T, nsteps, U0, utarget, use_bcarrier, Nfreq, om, kpar, tik0, H0, Hsym_ops, Hanti_ops, [], Ncoupled, Nunc, [], Ident, wmat, 2, 0.0, saveConvHist, zeros(0), zeros(0), zeros(0), zeros(0), nNeumann, 0.0, 0.0, 0.0, false, zeros(0), quiet)
+
+        traceInfidelityThreshold = 0.0
+        usingPriorCoeffs = false
+        priorCoeffs = [] # zeros(0)
+
+        if use_sparse
+            #println("Info: converting Hamiltonian matrices to sparse format")
+            Ident = sparse(Matrix{Float64}(I, Ntot, Ntot))
+            Hconst = sparse(Hconst)
+            if  Ncoupled == 0
+                Hsym_ops1 = SparseMatrixCSC{Float64,Int64}[]
+                Hanti_ops1 = SparseMatrixCSC{Float64,Int64}[]
+            elseif Ncoupled == 1
+                Hsym_ops1 = [sparse(Hsym_ops[1])]
+                Hanti_ops1 = [sparse(Hanti_ops[1])]
+            elseif Ncoupled == 2
+                Hsym_ops1 = [sparse(Hsym_ops[1]), sparse(Hsym_ops[2])]
+                Hanti_ops1 = [sparse(Hanti_ops[1]), sparse(Hanti_ops[2])]
+            elseif Ncoupled == 3
+                Hsym_ops1 = [sparse(Hsym_ops[1]), sparse(Hsym_ops[2]), sparse(Hsym_ops[3])]
+                Hanti_ops1 = [sparse(Hanti_ops[1]), sparse(Hanti_ops[2]), sparse(Hanti_ops[3])]
+            else
+                throw(ArgumentError("Sparsification of Hamiltonians only implemented for 0, 1, 2 & 3 elements.\n"))
+            end
+            
+            for q=1:Ncoupled
+                dropzeros!(Hsym_ops1[q])
+                dropzeros!(Hanti_ops1[q])
+            end
+
+            if Nunc == 0
+                Hunc_ops1 = SparseMatrixCSC{Float64,Int64}[]
+            elseif Nunc == 1
+                Hunc_ops1 = [sparse(Hunc_ops[1])]
+            elseif Nunc == 2
+                Hunc_ops1 = [sparse(Hunc_ops[1]), sparse(Hunc_ops[2])]
+            elseif Nunc == 3
+                Hunc_ops1 = [sparse(Hunc_ops[1]), sparse(Hunc_ops[2]), sparse(Hunc_ops[3])]
+            else
+                throw(ArgumentError("Sparsification of Hamiltonians only implemented for 1, 2 & 3 elements.\n"))
+            end
+            
+            for q=1:Nunc
+                dropzeros!(Hunc_ops1[q])
+            end
+        else
+            Ident = Matrix{Float64}(I, Ntot, Ntot)
+            Hsym_ops1 = Hsym_ops
+            Hanti_ops1 = Hanti_ops
+            Hunc_ops1 = Hunc_ops
+        end
+        new(Nosc, N, Nguard, Ne, Ng, Ne+Ng, T, nsteps, Uinit, Utarget, use_bcarrier, Nfreq, Cfreq, kpar, tik0, Hconst, Hsym_ops1, Hanti_ops1, Hunc_ops1, Ncoupled, Nunc, isSymm, Ident, wmat, pFidType, 0.0, saveConvHist, zeros(0), zeros(0), zeros(0), zeros(0), nNeumann, traceInfidelityThreshold, 0.0, 0.0, usingPriorCoeffs, priorCoeffs, quiet)
     end
 
-    function objparams(Nosc::Int64, N::Int64, Nguard::Int64, Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64,
-                        U0::Array{Float64,2}, utarget::Array{Complex{Float64},2}, H0::Array{Float64,2}, Hsym_ops:: Array{Array{Float64,2},1},
-                        Hanti_ops:: Array{Array{Float64,2},1}, Hunc_ops:: Array{Array{Float64,2},1}, wmat::Diagonal{Float64,Array{Float64,1}}, 
-                        use_bcarrier::Bool, om::Array{Float64,2}, kpar::Int64, tik0::Float64, saveConvHist::Bool)
-        Nfreq=size(om,2)
-        Ntot = N+Nguard
-        Ncoupled = length(Hsym_ops)
-        Nanti = length(Hanti_ops)
-        Nunc = length(Hunc_ops)
-        
-        # Check for consistency in coupled controls 
-        for i = 1:Ncoupled
-            L = LinearAlgebra.tril(Hsym_ops[i] + Hanti_ops[i])
-            if(norm(L) > eps(1.0))
-                throw(ArgumentError("Coupled Hamiltonian inconsistent with currently implemented rotating wave approximation. Please flip sign on Hanti_ops.\n"))
-            end
-        end
-
-        # Track symmetries of uncoupled Hamiltonian terms
-        isSymm = BitArray(undef, Nunc)
-        for i=1:Nunc
-            if(issymmetric(Hunc_ops[i]))
-                isSymm[i] = true 
-            elseif(norm(Hunc_ops[i] + Hunc_ops[i]') < 1e-15)
-                isSymm[i] = false
-            else 
-                throw(ArgumentError("Uncoupled Hamiltonian is not symmetric or anti-symmetric. This functionality is not currently supported.\n"))
-            end
-        end
-        @assert(Ncoupled == Nanti)
-
-        # Exit if uncoupled controls with more than 1 oscillator present
-        if(Nunc > 0 && Nosc >1)
-            throw(ArgumentError("Uncoupled Hamiltonians for more than a single oscillator not currently supported.\n"))
-        end
-        Ident = Matrix{Float64}(I, Ntot, Ntot)
-        # Default number of Neumann series terms
-        nNeumann = 3
-        quiet = false
-        new(Nosc, N, Nguard, Ne, Ng, Ne+Ng, T, nsteps, U0, utarget, use_bcarrier, Nfreq, om, kpar, tik0, H0, Hsym_ops, Hanti_ops, Hunc_ops, Ncoupled, Nunc, isSymm, Ident, wmat, 2, 0.0, saveConvHist, zeros(0), zeros(0), zeros(0), zeros(0), nNeumann, 0.0, 0.0, 0.0, false, zeros(0), quiet)
-    end
-
-    function objparams(Nosc::Int64, N::Int64, Nguard::Int64, Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64,
-                        U0::Array{Float64,2}, utarget::Array{Complex{Float64},2}, H0::SparseMatrixCSC{Float64, Int64},
-                        Hsym_ops:: Array{SparseMatrixCSC{Float64, Int64},1}, Hanti_ops:: Array{SparseMatrixCSC{Float64, Int64},1},
-                        Hunc_ops:: Array{SparseMatrixCSC{Float64, Int64},1}, wmat::Diagonal{Float64,Array{Float64,1}}, 
-                        use_bcarrier::Bool, om::Array{Float64,2}, kpar::Int64, tik0::Float64, saveConvHist::Bool)
-        Nfreq=size(om,2)
-        Ntot = N+Nguard
-        Ncoupled = length(Hsym_ops)
-        Nanti = length(Hanti_ops)
-        
-        # Track symmetries of uncoupled Hamiltonian termsNunc = length(Hunc_ops)
-        isSymm = BitArray(undef, Nunc)
-        for i=1:Nunc
-            if(issymmetric(Hunc_ops[i]))
-                isSymm[i] = true 
-            elseif(norm(Hunc_ops[i] + Hunc_ops[i]') < 1e-15)
-                isSymm[i] = false
-            else 
-                throw(ArgumentError("Uncoupled Hamiltonian is not symmetric or anti-symmetric. This functionality is not currently supported.\n"))
-            end
-        end
-        @assert(Ncoupled == Nanti)
-
-        # Check for consistency in coupled controls 
-        for i = 1:Ncoupled
-            L = LinearAlgebra.tril(Hsym_ops[i] + Hanti_ops[i])
-            if(norm(L) > eps(1.0))
-                throw(ArgumentError("Coupled Hamiltonian inconsistent with currently implemented rotating wave approximation. Please flip sign on Hanti_ops.\n"))
-            end
-        end
-
-        # Exit if uncoupled controls with more than 1 oscillator present
-        if(Nunc > 0 && Nosc > 1)
-            throw(ArgumentError("Uncoupled Hamiltonians for more than a single oscillator not currently supported.\n"))
-        end
-        Ident = sparse(Matrix{Float64}(I, Ntot, Ntot)) # It needs to be sparse for the sparse time stepper to work
-        # Default number of Neumann series terms
-        nNeumann = 3
-        quiet = false
-        new(Nosc, N, Nguard, Ne, Ng, Ne+Ng, T, nsteps, U0, utarget, use_bcarrier, Nfreq, om, kpar, tik0, H0, Hsym_ops, Hanti_ops, Hunc_ops, Ncoupled, Nunc, isSymm, Ident, wmat, 2, 0.0, saveConvHist, zeros(0), zeros(0), zeros(0), zeros(0), nNeumann, 0.0, 0.0, 0.0, false, zeros(0), quiet)
-    end
-
-
-    # If no uncoupled control functions specified or needed, set Nunc=0
-    function objparams(Nosc::Int64, N::Int64, Nguard::Int64, Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64,
-                        U0::Array{Float64,2}, utarget::Array{Complex{Float64},2}, H0::Array{Float64,2}, Hsym_ops:: Array{Array{Float64,2},1},
-                        Hanti_ops:: Array{Array{Float64,2},1}, wmat::Diagonal{Float64,Array{Float64,1}}, 
-                        use_bcarrier::Bool, om::Array{Float64,2}, kpar::Int64, tik0::Float64, saveConvHist::Bool)
-        Nfreq=size(om,2)
-        Ntot = N+Nguard
-        Ncoupled = length(Hsym_ops)
-        Nanti = length(Hanti_ops)
-        Nunc = 0
-        Hunc_ops = []
-        @assert(Ncoupled == Nanti)
-        # Check for consistency in coupled controls 
-        for i = 1:Ncoupled
-            L = LinearAlgebra.tril(Hsym_ops[i] + Hanti_ops[i])
-            if(norm(L) > eps(1.0))
-                throw(ArgumentError("Coupled Hamiltonian inconsistent with currently implemented rotating wave approximation. Please flip sign on Hanti_ops.\n"))
-            end
-        end
-        isSymm = []
-        Ident = Matrix{Float64}(I, Ntot, Ntot)
-        # Default number of Neumann series terms
-        nNeumann = 3
-        quiet = false
-        new(Nosc, N, Nguard, Ne, Ng, Ne+Ng, T, nsteps, U0, utarget, use_bcarrier, Nfreq, om, kpar, tik0, H0, Hsym_ops, Hanti_ops, Hunc_ops, Ncoupled, Nunc, isSymm, Ident, wmat, 2, 0.0, saveConvHist, zeros(0), zeros(0), zeros(0), zeros(0), nNeumann, 0.0, 0.0, 0.0, false, zeros(0), quiet)
-    end
-
-    function objparams(Nosc::Int64, N::Int64, Nguard::Int64, Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64,
-                        U0::Array{Float64,2}, utarget::Array{Complex{Float64},2}, H0::SparseMatrixCSC{Float64, Int64},
-                        Hsym_ops:: Array{SparseMatrixCSC{Float64, Int64},1}, Hanti_ops:: Array{SparseMatrixCSC{Float64, Int64},1}, wmat::Diagonal{Float64,Array{Float64,1}}, 
-                        use_bcarrier::Bool, om::Array{Float64,2}, kpar::Int64, tik0::Float64, saveConvHist::Bool)
-        Nfreq=size(om,2)
-        Ntot = N+Nguard
-        Ncoupled = length(Hsym_ops)
-        Nanti = length(Hanti_ops)
-        Nunc = 0
-        Hunc_ops = spzeros(0)
-        @assert(Ncoupled == Nanti)
-        # Check for consistency in coupled controls 
-        for i = 1:Ncoupled
-            L = LinearAlgebra.tril(Hsym_ops[i] + Hanti_ops[i])
-            if(norm(L) > eps(1.0))
-                throw(ArgumentError("Coupled Hamiltonian inconsistent with currently implemented rotating wave approximation. Please flip sign on Hanti_ops.\n"))
-            end
-        end
-
-        isSymm = []
-        Ident = sparse(Matrix{Float64}(I, Ntot, Ntot)) # It needs to be sparse for the sparse time stepper to work
-        # Default number of Neumann series terms
-        nNeumann = 3
-        quiet = false
-        new(Nosc, N, Nguard, Ne, Ng, Ne+Ng, T, nsteps, U0, utarget, use_bcarrier, Nfreq, om, kpar, tik0, H0, Hsym_ops, Hanti_ops, Hunc_ops, Ncoupled, Nunc, isSymm, Ident, wmat, 2, 0.0, saveConvHist, zeros(0), zeros(0), zeros(0), zeros(0), nNeumann, 0.0, 0.0, 0.0, false, zeros(0), quiet)
-    end
-
-
-end
+end # mutable struct objparams
 
 # This struct holds all of the working arrays needed to call traceobjgrad. Preallocated for efficiency
 mutable struct Working_Arrays
@@ -587,12 +292,12 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, wa::Working_A
     Nguard = params.Nguard  
     T      = params.T
 
-    utarget = params.utarget
+    Utarget = params.Utarget
 
     nsteps = params.nsteps
     tik0   = params.tik0
 
-    H0 = params.H0
+    H0 = params.Hconst
     Ng = params.Ng
     Ne = params.Ne
     
@@ -685,9 +390,9 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, wa::Working_A
     # Here we can choose what kind of control function expansion we want to use
     if (params.use_bcarrier)
         # FMG FIX
-        splinepar = bcparams(T, D1, Ncoupled, Nunc, params.om, pcof)
+        splinepar = bcparams(T, D1, Ncoupled, Nunc, params.Cfreq, pcof)
     else
-    # the old bsplines is the same as the bcarrier with om = 0
+    # the old bsplines is the same as the bcarrier with Cfreq = 0
         splinepar = splineparams(T, D1, Nsig, pcof)   # parameters for B-splines
     end
 
@@ -701,7 +406,7 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, wa::Working_A
     end
     
     #real and imaginary part of initial condition
-    copy!(vr,params.U0)
+    copy!(vr,params.Uinit)
     vi   .= 0.0
     vi05 .= 0.0
     vr0  .= 0.0
@@ -1828,7 +1533,7 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
     T = params.T
     nsteps = params.nsteps
     nNeumann = params.nNeumann
-    H0 = params.H0
+    H0 = params.Hconst
 
     Ntot = N + Nguard
     pcof = pcof0
@@ -1861,7 +1566,7 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
 
     # Here we can choose what kind of control function expansion we want to use
     if (params.use_bcarrier)
-        splinepar = bcparams(T, D1, Ncoupled, Nunc, params.om, pcof)
+        splinepar = bcparams(T, D1, Ncoupled, Nunc, params.Cfreq, pcof)
     else
         splinepar = splinepar(T, D1, Nsig, pcof)   # parameters for B-splines
     end
@@ -2056,7 +1761,7 @@ function estimate_Neumann!(tol::Float64, T::Float64, params::objparams, maxpar::
 end
 
 # Function to estimate the number of time steps needed for the simulation. Coupled controls only.
-function calculate_timestep(T::Float64, D1::Int64, H0::AbstractArray,Hsym_ops::AbstractArray,Hanti_ops::AbstractArray, maxpar::Array{Float64,1})
+function calculate_timestep(T::Float64, D1::Int64, H0::AbstractArray,Hsym_ops::AbstractArray,Hanti_ops::AbstractArray, maxpar::Array{Float64,1}, Pmin::Int64 = 40)
     K1 = copy(H0) 
     Ncoupled = length(Hsym_ops)
 
@@ -2069,7 +1774,7 @@ function calculate_timestep(T::Float64, D1::Int64, H0::AbstractArray,Hsym_ops::A
     lamb = eigvals(Array(K1))
     maxeig = maximum(abs.(lamb)) 
     mineig = minimum(abs.(lamb)) 
-    Pmin = 40
+
     samplerate1 = maxeig*Pmin/(2*pi)
     nsteps = ceil(Int64, T*samplerate1)
 
@@ -2078,12 +1783,12 @@ function calculate_timestep(T::Float64, D1::Int64, H0::AbstractArray,Hsym_ops::A
     nsteps_pps = 3*(D1-2)
     nsteps = max(nsteps_pps,nsteps)
 
-    return maxeig,nsteps
+    return nsteps
 end
 
 # Function to estimate the number of time steps needed for the simulation. Includes uncoupled controls.
 function calculate_timestep(T::Float64, D1::Int64, H0::AbstractArray,Hsym_ops::AbstractArray,Hanti_ops::AbstractArray,
-                            Hunc_ops::AbstractArray,maxpar::Array{Float64,1},max_flux::Array{Float64,1})
+                            Hunc_ops::AbstractArray,maxpar::Array{Float64,1},max_flux::Array{Float64,1}, Pmin::Int64 = 40)
     K1 = copy(H0) 
     Ncoupled = length(Hsym_ops)
     Nunc = length(Hunc_ops)
@@ -2113,7 +1818,7 @@ function calculate_timestep(T::Float64, D1::Int64, H0::AbstractArray,Hsym_ops::A
     lamb = eigvals(Array(K1))
     maxeig = maximum(abs.(lamb)) 
     mineig = minimum(abs.(lamb)) 
-    Pmin = 40
+
     samplerate1 = maxeig*Pmin/(2*pi)
     nsteps = ceil(Int64, T*samplerate1)
 
@@ -2122,11 +1827,11 @@ function calculate_timestep(T::Float64, D1::Int64, H0::AbstractArray,Hsym_ops::A
     nsteps_pps = 3*(D1-2)
     nsteps = max(nsteps_pps,nsteps)
 
-    return maxeig,nsteps
+    return nsteps
 end
 
 # Function to estimate the number of time steps needed for the simulation. Only uncoupled controls.
-function calculate_timestep(T::Float64, D1::Int64, H0::AbstractArray, Hunc_ops::AbstractArray,max_unc::Array{Float64,1})
+function calculate_timestep(T::Float64, D1::Int64, H0::AbstractArray, Hunc_ops::AbstractArray,max_unc::Array{Float64,1}, Pmin = 40)
     K1 = copy(H0) 
     Nunc = length(Hunc_ops)
 
@@ -2150,7 +1855,7 @@ function calculate_timestep(T::Float64, D1::Int64, H0::AbstractArray, Hunc_ops::
     lamb = eigvals(Array(K1))
     maxeig = maximum(abs.(lamb)) 
     mineig = minimum(abs.(lamb)) 
-    Pmin = 40
+
     samplerate1 = maxeig*Pmin/(2*pi)
     nsteps = ceil(Int64, T*samplerate1)
 
@@ -2159,16 +1864,16 @@ function calculate_timestep(T::Float64, D1::Int64, H0::AbstractArray, Hunc_ops::
     nsteps_pps = 3*(D1-2)
     nsteps = max(nsteps_pps,nsteps)
 
-    return maxeig,nsteps
+    return nsteps
 end
 
 # Preallocate K and S matrices
 function KS_alloc(params)
     Ntot = prod(params.Nt)
     # establish the non-zero pattern for sparse storage
-    if typeof(params.H0) == SparseMatrixCSC{Float64, Int64}
-        K0 = copy(params.H0)
-        S0 = spzeros(size(params.H0,1),size(params.H0,2))
+    if typeof(params.Hconst) == SparseMatrixCSC{Float64, Int64}
+        K0 = copy(params.Hconst)
+        S0 = spzeros(size(params.Hconst,1),size(params.Hconst,2))
         for q=1:params.Ncoupled
             K0 += params.Hsym_ops[q]
             S0 += params.Hanti_ops[q]
@@ -2192,8 +1897,8 @@ function KS_alloc(params)
         K1   = zeros(Float64,Ntot,Ntot)
         S1   = zeros(Float64,Ntot,Ntot)
     end
-    vtargetr = real(params.utarget)
-    vtargeti = imag(params.utarget)
+    vtargetr = real(params.Utarget)
+    vtargeti = imag(params.Utarget)
     return K0,S0,K05,S05,K1,S1,vtargetr,vtargeti
 end
 

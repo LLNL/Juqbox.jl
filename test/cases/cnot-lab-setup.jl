@@ -75,15 +75,8 @@ amat = Bidiagonal(zeros(Ntot),sqrt.(collect(1:Ntot-1)),:U) # standard lowering o
 # raising matrix
 adag = transpose(amat) # raising operator matrix
 
-
-if (use_sparse)
-    Hunc_ops=[sparse(adag + amat)]
-    dropzeros!(Hunc_ops[1])
-    H0 = sparse(H0)
-else
-    Hunc_ops=[Array(amat + adag)]
-    H0 = Array(H0)
-end
+Hunc_ops=[Array(amat + adag)]
+H0 = Array(H0)
 
 Ncoupled = 0
 Nunc = length(Hunc_ops)
@@ -136,10 +129,10 @@ else
 end
 
 # Estimate time step for simulation
-maxeig,nsteps = Juqbox.calculate_timestep(T,D1,H0,Hunc_ops,[max_unc])
-#println("Max est. eigenvalue = ", maxeig, " # time steps: ", nsteps)
+nsteps = Juqbox.calculate_timestep(T, D1, H0, Hunc_ops, [max_unc])
+
 # setup the simulation parameters
-params = Juqbox.objparams([N], [Nguard], T, nsteps, U0, utarget, om, H0, Hunc_ops)
+params = Juqbox.objparams([N], [Nguard], T, nsteps, Uinit=U0, Utarget=utarget, Cfreq=om, Rfreq=[fa], Hconst=H0, Hunc_ops=Hunc_ops)
 params.saveConvHist = true
 params.nsteps *= 5
 

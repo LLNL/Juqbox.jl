@@ -1,3 +1,4 @@
+# This script can be used to generate reference solutions for new cases
 using DelimitedFiles
 using Printf
 import Juqbox

@@ -104,7 +104,7 @@ Tmax = 550.0 # 700.0
 fa = 4.10595
 fb = 4.81526  # official
 fs = 7.8447 # storage   # official
-fund_freq = [fa, fb, fs]
+rot_freq = [fa, fb, fs]
 xa = 2 * 0.1099
 xb = 2 * 0.1126 # official
 xs = 0.002494^2/xa # 2.8298e-5 # official
@@ -178,19 +178,11 @@ nsteps = ceil(Int64,Tmax*samplerate1)
 # package the lowering and raising matrices together into an one-dimensional array of two-dimensional arrays
 # Here we choose dense or sparse representation
 use_sparse = true
-# NOTE: the above eigenvalue calculation does not work with sparse arrays!
 
-if (use_sparse)
-    # sparse matrices use less memory, but run slower
-    Hsym_ops=[sparse(amat+adag), sparse(bmat+bdag), sparse(cmat+cdag)]
-    Hanti_ops=[sparse(amat-adag), sparse(bmat-bdag), sparse(cmat-cdag)]
-    H0 = sparse(H0)
-else
-    # dense matrices run faster, but take more memory
-    Hsym_ops=[Array(amat+adag), Array(bmat+bdag), Array(cmat+cdag)]
-    Hanti_ops=[Array(amat-adag), Array(bmat-bdag), Array(cmat - cdag)]
-    H0 = Array(H0)
-end
+# dense matrices run faster, but take more memory
+Hsym_ops=[Array(amat+adag), Array(bmat+bdag), Array(cmat+cdag)]
+Hanti_ops=[Array(amat-adag), Array(bmat-bdag), Array(cmat - cdag)]
+H0 = Array(H0)
 
 samplerate = 32 # for plotting (?)
 kpar = 5 # test this component of the gradient
@@ -267,7 +259,7 @@ I3 = Matrix{Float64}(I, Nt[3], Ne[3]);
 utarget = kron(I3, G2) # The CNOT is between oscillator 1 and 2. Identity for the 3rd oscillator
 
 # rotation matrices
-omega1, omega2, omega3 = Juqbox.setup_rotmatrices(Ne, Ng, fund_freq)
+omega1, omega2, omega3 = Juqbox.setup_rotmatrices(Ne, Ng, rot_freq)
 
 # Compute Ra*Rb*utarget
 rot1 = Diagonal(exp.(im*omega1*Tmax))
@@ -280,7 +272,8 @@ vtarget = rot1*rot2*rot3*utarget
 U0 = initial_cond(Ntot, N, Ne, Ng)
 
 # NOTE: maxpar is now a vector with 3 elements: amax, bmax, cmax
-params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, U0, vtarget, om, H0, Hsym_ops, Hanti_ops)
+params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
+                          Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, use_sparse=use_sparse)
 
 # Quiet mode for testing
 params.quiet = true

@@ -84,7 +84,7 @@ Tmax = 100.0 # Duration of gate
 # frequencies (in GHz, will be multiplied by 2*pi to get angular frequencies in the Hamiltonian matrix)
 fa = 4.10595    # official
 fb = 4.81526   # official
-fund_freq = [fa, fb]
+rot_freq = [fa, fb]
 x1 = 2* 0.1099  # official
 x2 = 2* 0.1126   # official
 x12 = 0.1 # Artificially large to allow coupling. Actual value: 1e-6 
@@ -142,22 +142,12 @@ nsteps = ceil(Int64,Tmax*samplerate1)
 
 # package the lowering and raising matrices together into an one-dimensional array of two-dimensional arrays
 # Here we choose dense or sparse representation
-use_sparse = true
-# use_sparse = false
+use_sparse = false
 
-# NOTE: the above eigenvalue calculation does not work with sparse arrays!
-
-if (use_sparse)
-    # sparse matrices use less memory, but run slower
-    Hsym_ops=[sparse(amat+adag), sparse(bmat+bdag)]
-    Hanti_ops=[sparse(amat-adag), sparse(bmat-bdag)]
-    H0 = sparse(H0)
-else
-    # dense matrices run faster, but take more memory
-    Hsym_ops=[Array(amat+adag), Array(bmat+bdag)]
-    Hanti_ops=[Array(amat-adag), Array(bmat-bdag)]
-    H0 = Array(H0)
-end
+# dense matrices run faster, but take more memory
+Hsym_ops=[Array(amat+adag), Array(bmat+bdag)]
+Hanti_ops=[Array(amat-adag), Array(bmat-bdag)]
+H0 = Array(H0)
 
 use_bcarrier = true # Use carrier waves in the control pulses?
 
@@ -205,7 +195,7 @@ elseif Ng1 == 2
 end
 
 # rotation matrices
-omega1, omega2 = Juqbox.setup_rotmatrices(Ne, Ng, fund_freq)
+omega1, omega2 = Juqbox.setup_rotmatrices(Ne, Ng, rot_freq)
 
 # Compute Ra*Rb*utarget
 rot1 = Diagonal(exp.(im*omega1*Tmax))
@@ -217,7 +207,8 @@ vtarget = rot1*rot2*utarget
 U0 = initial_cond(Ntot, N, Ne, Ng)
 
 # assemble problem description for the optimization
-params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, U0, vtarget, om, H0, Hsym_ops, Hanti_ops)
+params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
+                          Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, use_sparse=use_sparse)
 
 # Quiet mode for testing
 params.quiet = true
