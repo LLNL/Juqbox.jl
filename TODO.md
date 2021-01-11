@@ -7,13 +7,13 @@
 4. Document all exported functions (add more?):
 
 
-- [ ] splineparams 
-- [ ] bspline2 
+- [ ] ~~splineparams~~
+- [ ] ~~bspline2~~
 - [ ] gradbspline2
 - [ ] bcparams
 - [ ] bcarrier2
 - [ ] gradbcarrier2
-- [ ] objparams
+- [ ] ~~objparams~~
 - [ ] traceobjgrad
 - [ ] identify_guard_levels
 - [ ] identify_forbidden_levels

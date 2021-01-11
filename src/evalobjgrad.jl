@@ -18,8 +18,8 @@ Ncoupled = length(Hsym-ops) = length(Hanti-ops), Nunc = length(Hunc-ops)
 # Arguments
 - `Ne::Array{Int64,1}`: Number of essential energy levels for each subsystem
 - `Ng::Array{Int64,1}`: Number of guard energy levels for each subsystem
-- `T::Float64, nsteps::Int64`: Duration of gate
-- `Nsteps::Int64`: Number of timesteps
+- `T::Float64`: Duration of gate
+- `Nsteps::Int64`: Number of timesteps for integrating Schroedinger's equation
 - `Uinit::Array{Float64,2}`: Matrix holding the initial conditions for the solution matrix of size Uinit[Ntot, Ness]
 - `Utarget::Array{Complex{Float64},2}`: Matrix holding the target gate matrix of size Uinit[Ntot, Ness]
 - `Cfreq::Array{Float64,2}`: Carrier wave frequencies of size Cfreq[Ncoupled, Nfreq]
@@ -211,7 +211,7 @@ mutable struct objparams
             Hanti_ops1 = Hanti_ops
             Hunc_ops1 = Hunc_ops
         end
-        new(Nosc, N, Nguard, Ne, Ng, Ne+Ng, T, nsteps, Uinit, Utarget, use_bcarrier, Nfreq, Cfreq, kpar, tik0, Hconst, Hsym_ops1, Hanti_ops1, Hunc_ops1, Ncoupled, Nunc, isSymm, Ident, wmat, pFidType, 0.0, saveConvHist, zeros(0), zeros(0), zeros(0), zeros(0), nNeumann, traceInfidelityThreshold, 0.0, 0.0, usingPriorCoeffs, priorCoeffs, quiet)
+        new(Nosc, N, Nguard, Ne, Ng, Ne+Ng, T, nsteps, Uinit, Utarget, use_bcarrier, Nfreq, Cfreq, kpar, tik0, Hconst, Hsym_ops1, Hanti_ops1, Hunc_ops1, Ncoupled, Nunc, isSymm, Ident, wmat, pFidType, 0.0, saveConvHist, zeros(0), zeros(0), zeros(0), zeros(0), nNeumann, traceInfidelityThreshold, 0.0, 0.0, usingPriorCoeffs, priorCoeffs, quiet, Rfreq)
     end
 
 end # mutable struct objparams
