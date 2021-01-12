@@ -85,8 +85,14 @@ println("Carrier frequencies [GHz]: ", om[1,:]./(2*pi))
 
 maxamp = zeros(Nfreq)
 
-# same threshold for all frequencies
-maxamp .= maxctrl/Nfreq
+if Nfreq >= 3
+    const_fact = 0.45
+    maxamp[1] = maxctrl*const_fact
+    maxamp[2:Nfreq] .= maxctrl*(1.0-const_fact)/(Nfreq-1) # split the remainder equally
+else
+    # same threshold for all frequencies
+    maxamp .= maxctrl/Nfreq
+end
 
 maxpar = maximum(maxamp)
 
@@ -137,7 +143,6 @@ end
 # min and max coefficient values
 useBarrier = true
 minCoeff, maxCoeff = Juqbox.assign_thresholds_freq(maxamp, Ncoupled, Nfreq, D1)
-println("Number of min coeff: ", length(minCoeff), " max coef:f ", length(maxCoeff))
 
 samplerate = 32 # only used for plotting
 casename = "cnot1" # base file name (used in optimize-once.jl)

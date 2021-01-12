@@ -1723,56 +1723,9 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
 end
 
 # Estimate the number of terms used in the Neumann series linear solve during timestepping. 
-# FMG: This will work but appears to be pessimistic. One can use fewer terms, perhaps a 
-# better estimate can be found.
-# function estimate_Neumann!(tol::Float64, params::objparams, maxpar::Array{Float64,1})
-#     nsteps = params.nsteps
-#     k = Float64(params.T/nsteps)
-
-# Estimate the number of terms used in the Neumann series to invert
-# the implicit term in the Störmer-Verlet scheme. See also neumann!
- 
-# # Arguments
-# - `tol:: Float64`: Error tolerance in inverting implicit SV term
-# - `T:: Float64`: Final simulation time
-# - `params:: objparams`: Struct containing problem definition
-# - `maxpar::Array{Float64,1}`: Maximum parameter value for each subsystem (coupled controls)
-# """
-# function estimate_Neumann!(tol::Float64, T::Float64, params::objparams, maxpar::Array{Float64,1})
-#     nsteps = params.nsteps
-#     k = Float64(T/nsteps)
-
-#     if(params.Ncoupled > 0 && params.Nunc == 0)
-#         # If only coupled Hamiltonian terms are present
-#         S = 0.5*k*maxpar[1]*params.Hanti_ops[1]
-#         for j = 2:length(params.Hanti_ops)
-#             axpy!(0.5*k*maxpar[j],params.Hanti_ops[j],S)
-#         end
-
-#         # If in sparse mode, cast to full matrix for norm estimation
-#         if(typeof(S) ==  SparseMatrixCSC{Float64, Int64})
-#             S = Array(S)
-#         end
-#     else 
-#         # If only uncoupled Hamiltonian terms are present
-#         S = zeros(size(params.Hunc_ops[1]))
-#         for j = 1:params.Nunc
-#             if(!params.isSymm[j])
-#                 axpy!(0.5*k*maxpar[j],params.Hunc_ops[j],S)     
-#             end
-#         end
-#     end
-#     normS = opnorm(S)
-#     nterms = ceil(Int64,log(tol)/log(normS))-1
-#     if(nterms > 0)
-#         params.nNeumann = nterms
-#     end
-#     # return nterms
-# end
-
-
-# Estimate the number of terms used in the Neumann series linear solve during timestepping. 
 # Both coupled and uncoupled terms present.
+# FMG: This will work but appears to be pessimistic. One can use fewer terms, perhaps a better estimate can be found.
+# TODO: Make maxpar and maxunc keyword arguments to simplify calling when maxpar=Float64[]?
 """
         estimate_Neumann!(tol, params, maxpar[, maxunc])
 
@@ -1783,12 +1736,14 @@ the implicit term in the Störmer-Verlet scheme. See also neumann!
 - `tol:: Float64`: Error tolerance in inverting implicit SV term
 - `params:: objparams`: Struct containing problem definition
 - `maxpar:: Array{Float64,1}`: Maximum parameter value for each subsystem (coupled controls)
-- 'maxunc:: Array{Float64,1}: Maximum parameter value for each subsystem (uncoupled controls)'
+- 'maxunc:: Array{Float64,1}: (optional) Maximum parameter value for each subsystem (uncoupled controls)'
 """
-function estimate_Neumann!(tol::Float64, params::objparams, maxpar::Array{Float64,1}, maxunc::Array{Float64,1})
+function estimate_Neumann!(tol::Float64, params::objparams, maxpar::Array{Float64,1}, maxunc::Array{Float64,1}=Float64[])
     nsteps = params.nsteps
     k = Float64(params.T/nsteps)
     if(params.Ncoupled > 0)
+        @assert(length(maxpar) >= params.Ncoupled)
+
         S = 0.5*k*maxpar[1]*params.Hanti_ops[1]
         for j = 2:length(params.Hanti_ops)
             axpy!(0.5*k*maxpar[j],params.Hanti_ops[j],S)
@@ -1796,6 +1751,8 @@ function estimate_Neumann!(tol::Float64, params::objparams, maxpar::Array{Float6
     end
 
     if(params.Nunc > 0)
+        @assert(length(maxunc) >= params.Nunc)
+
         if(!@isdefined S)
             S = zeros(size(params.Hunc_ops[1]))
         end
