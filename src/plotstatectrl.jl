@@ -1,4 +1,14 @@
 # Works for Nosc={1, 2, 3}
+"""
+        plt = plotunitary(us, params, guardlev)
+
+Plot the evolution of the state vector.
+ 
+# Arguments
+- `us:: Array{Complex{Float64},3})`: State vector history for each timestep
+- `param:: objparams`: Struct with problem definition
+- `guardlev:: Array{Bool,1})`: Boolean array indicating if a certain level is a guard level
+"""
 function plotunitary(us, params, guardlev)
     nsteps = length(us[1,1,:])
     Ntot = length(us[:,1,1])
@@ -73,6 +83,17 @@ function plotunitary(us, params, guardlev)
 end
 
 # Works for Nosc={1, 2, 3}
+"""
+        plt = plotspecified(us, params, guardlev, specifiedlev)
+
+Plot the evolution of the state vector for specified levels.
+ 
+# Arguments
+- `us:: Array{Complex{Float64},3})`: State vector history for each timestep
+- `param:: objparams`: Struct with problem definition
+- `us:: Array{Bool,1})`: Boolean array indicating if a certain level is a guard level
+- 'specifiedlev:: Array{Bool,1}': Boolean array indicating which levels to be plotted
+"""
 function plotspecified(us, params, guardlev::Array{Bool,1}, specifiedlev::Array{Bool,1})
     nsteps = length(us[1,1,:])
     Ntot = length(us[:,1,1])
@@ -190,6 +211,20 @@ function plot_forward(us, T)
 end
 
 # Evaluate the control functions on a grid in time in units of GHz
+"""
+        pj[, qj] = evalctrl(params, pcof0, td, jHam) 
+
+Evaluate the control signal with the specified index. 
+NOTE: the functions are 0-indexed. Specifically, mod(`func`,2)=0 corresponds to 
+p and mod(`func`,1) = 1 corresponds to q if `func`<2 `*` Ncoupled for a set of 
+coupled controls. 
+
+# Arguments
+- `params:: objparams`: Struct with problem definition
+- `pcof0:: Array{Float64,1})`: Vector of parameter values
+- `td:: Array{Float64,1})`: Time values control is to be evaluated
+- `jHam:: Int64`: Index of the control signal desired
+"""
 function evalctrl(params::objparams, pcof0:: Array{Float64, 1}, td:: Array{Float64, 1}, jHam:: Int64) 
     if params.pFidType == 3
         nCoeff = length(pcof0)-1
@@ -201,7 +236,7 @@ function evalctrl(params::objparams, pcof0:: Array{Float64, 1}, td:: Array{Float
 
     if (params.use_bcarrier)
         # B-splines with carrier waves
-        splinepar = bcparams(params.T, D1, params.Ncoupled, params.Nunc, params.om, pcof)
+        splinepar = bcparams(params.T, D1, params.Ncoupled, params.Nunc, params.Cfreq, pcof)
     else
         # regular B-splines
         splinepar = splinepar(params.T, D1, 2*params.Ncoupled + params.Nunc, pcof)
@@ -229,6 +264,16 @@ function evalctrl(params::objparams, pcof0:: Array{Float64, 1}, td:: Array{Float
     
 end
 
+"""
+        guardlev = identify_guard_levels(params[, custom = 0])
+
+Build a Bool array indicating if a given energy level is a guard
+level in the simulation.
+ 
+# Arguments
+- `params:: objparams`: Struct with problem definition
+- `custom:: Int64`: For nonzero value special stirap pulses case
+"""
 function identify_guard_levels(params::Juqbox.objparams, custom:: Int64 = 0)
     # identify all guard levels
     Ntot = params.N+params.Nguard
@@ -263,6 +308,16 @@ function identify_guard_levels(params::Juqbox.objparams, custom:: Int64 = 0)
     return guardlev
 end #identify_guard_levels
 
+"""
+        forbiddenlev = identify_guard_levels(params[, custom = 0])
+
+Build a Bool array indicating if a given energy level is a forbidden
+level in the simulation.
+ 
+# Arguments
+- `params:: objparams`: Struct with problem definition
+- `custom:: Int64`: For nonzero value special stirap pulses case
+"""
 function identify_forbidden_levels(params:: Juqbox.objparams, custom::Int64 = 0)
     # identify all forbidden levels
     Ntot = params.N+params.Nguard
@@ -323,6 +378,16 @@ function specify_level3(params:: Juqbox.objparams, Nl3:: Int64) # Nl3 is 0-based
     return specifiedlev
 end #specify_level3
 
+
+"""
+        marg_prob = marginalize3(params, unitaryhist)
+
+Evaluate marginalized probabilities.
+ 
+# Arguments
+- `param:: objparams`: Struct with problem definition
+- `unitaryhist:: Array{Complex{Float64},3})`: State vector history for each timestep
+"""
 function marginalize3(params:: Juqbox.objparams, unitaryhist:: Array{Complex{Float64},3})
     nsteps1 = size(unitaryhist,3)
     if params.Nosc == 3
@@ -343,6 +408,16 @@ function marginalize3(params:: Juqbox.objparams, unitaryhist:: Array{Complex{Flo
     end # if Nosc = 3
 end #marginalize3
 
+"""
+        pconv = plot_conv_hist(params[, convname:: String=""])
+
+Plot the optimization convergence history, including history of 
+objective function (by term) and norm of gradient.
+
+# Arguments
+- `param:: objparams`: Struct with problem definition
+- `convname:: String`: Name of plot file to be generated
+"""
 function plot_conv_hist(params:: Juqbox.objparams, convname:: String="")
     pconv = Plots.plot(xlabel="Iteration", title="Convergence history", size=(400, 300))
     if params.saveConvHist && length(params.objHist)>0

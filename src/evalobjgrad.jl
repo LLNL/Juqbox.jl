@@ -41,7 +41,7 @@ mutable struct objparams
     T      ::Float64        # final time
 
     nsteps       ::Int64    # Number of time steps
-    Uinit           ::Array{Float64,2} # initial condition for each essential state: Should be a basis
+    Uinit        ::Array{Float64,2} # initial condition for each essential state: Should be a basis
     Utarget      ::Array{Complex{Float64},2}
     use_bcarrier ::Bool
     Nfreq        ::Int64 # number of frequencies
@@ -217,6 +217,16 @@ mutable struct objparams
 end # mutable struct objparams
 
 # This struct holds all of the working arrays needed to call traceobjgrad. Preallocated for efficiency
+"""
+        Working_Arrays(params::objparams, nCoeff::Int64)
+
+Constructor for the mutable struct Working_Arrays containing preallocated working arrays.
+
+ 
+# Arguments
+- `param:: objparams`: Struct with problem definition
+- `nCoeff:: Int64`: Number of parameters in optimization
+"""
 mutable struct Working_Arrays
     # Hamiltonian matrices
     K0  ::MyRealMatrix
@@ -285,6 +295,19 @@ mutable struct Working_Arrays
     
 end
 
+"""
+        traceobjgrad(pcof0, params, wa[, verbose = false, evaladjoint = true])
+
+Perform a forward and/or adjoint Schrödinger solve to evaluate the objective
+function and/or gradient.
+ 
+# Arguments
+- `pcof0::Array{Float64,1}`: Array of parameter values defining the controls
+- `param::objparams`: Struct with problem definition
+- `wa::Working_Arrays`: Struct containing preallocated working arrays
+- `verbose::Bool = false`: Run simulation with additional terminal output and store state history.
+- `evaladjoint::Bool = true`: Solve the adjoint equation and calculate the gradient of the objective function.
+"""
 function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, wa::Working_Arrays, verbose::Bool = false, evaladjoint::Bool = true)
 #    @assert(params.Nosc >= 1 && params.Nosc <=2) # Currently the only implemented cases
     order  = 2
@@ -720,6 +743,16 @@ function setup_prior!(params::objparams, priorFile::String)
     params.usingPriorCoeffs = true
 end
 
+"""
+        wmat = wmatsetup(Ne, Ng)
+
+Build the positive semi-definite weighting matrix W to calculate the 
+leakage into higher energy forbidden states
+ 
+# Arguments
+- `Ne::Array{Int64,1}`: Number of essential energy levels for each subsystem
+- `Ng::Array{Int64,1}`: Number of guard energy levels for each subsystem
+"""
 function wmatsetup(Ne::Array{Int64,1}, Ng::Array{Int64,1})
     Nt = Ne + Ng
     Ndim = length(Ne)
@@ -845,6 +878,17 @@ function wmatsetup(Ne::Array{Int64,1}, Ng::Array{Int64,1})
 end
 
 # Matrices for the Hamiltonian in rotation frame
+"""
+        omega1[, omega2, omega3] = setup_rotmatrices(Ne, Ng, fund_freq)
+
+Build the terms of the drift Hamiltonian that include the fundamental 
+frequency (i.e. ω a^†a)
+ 
+# Arguments
+- `Ne::Array{Int64,1}`: Number of essential energy levels for each subsystem
+- `Ng::Array{Int64,1}`: Number of guard energy levels for each subsystem
+- `fund_freq::Array{Float64}`: Fundamental frequency for each subsystem
+"""
 function setup_rotmatrices(Ne::Array{Int64,1}, Ng::Array{Int64,1}, fund_freq::Array{Float64})
     Nosc = length(Ne)
     @assert(Nosc >= 1 && Nosc <=3)
@@ -928,8 +972,18 @@ function assign_thresholds_old(maxpar, Ncoupled, Nfreq, D1)
     return minCoeff, maxCoeff
 end
 
-#------------------------------------------------------------
-function assign_thresholds_freq(maxamp, Ncoupled, Nfreq, D1)
+"""
+        minCoeff, maxCoeff = assign_thresholds_freq(maxamp, Ncoupled, Nfreq, D1)
+
+Build vector of min/max bound constraints for the parameters.
+ 
+# Arguments
+- `maxamp::Array{Float64,1}`: Maximum parameter value for each subsystem
+- `Ncoupled::Int64`: Number of coupled controls in the simulation
+- `Nfreq::Int64`: Number of carrier wave frequencies used in the controls
+- `D1:: Int64`: Number of basis functions in each segment
+"""
+function assign_thresholds_freq(maxamp::Array{Float64,1}, Ncoupled::Int64, Nfreq::Int64, D1::Int64)
     nCoeff = 2*Ncoupled*Nfreq*D1
     minCoeff = zeros(nCoeff) # Initialize storage
     maxCoeff = zeros(nCoeff)
@@ -945,9 +999,18 @@ function assign_thresholds_freq(maxamp, Ncoupled, Nfreq, D1)
     return minCoeff, maxCoeff
 end
 
+"""
+        minCoeff, maxCoeff = assign_thresholds_freq(params, D1, params, maxpar, maxpar_unc)
 
-# FMG: Account for both coupled/uncoupled controls
-function assign_thresholds(params,D1,maxpar,maxpar_unc)
+Build vector of min/max bound constraints for the parameters.
+ 
+# Arguments
+- `params:: objparams`: Struct containing problem definition
+- `D1:: Int64`: Number of basis functions in each segment
+- `maxpar::Array{Float64,1}`: Maximum parameter value for each subsystem (coupled controls)
+- `maxpar_unc::Array{Float64,1}`: Maximum parameter value for each subsystem (uncoupled controls)
+"""
+function assign_thresholds(params::objparams,D1::Int64,maxpar::Array{Float64,1},maxpar_unc::Array{Float64,1}=Float64[])
     Nfreq = params.Nfreq
     nCoeff =  (2*params.Ncoupled + params.Nunc)*Nfreq*D1
     minCoeff = zeros(nCoeff) # Initialize storage
@@ -972,8 +1035,6 @@ function assign_thresholds(params,D1,maxpar,maxpar_unc)
 
     return minCoeff, maxCoeff
 end
-
-#------------------------------------------------------------
 
 # Initialize the adjoint variables in-place.
 @inline function init_adjoint!(pFidType::Int64, globalPhase::Float64, N::Int64, scomplex0::Complex{Float64}, lambdar::Array{Float64,M},
@@ -1690,43 +1751,67 @@ function estimate_Neumann(tol::Float64, T::Float64, nsteps::Int64, maxpar::Array
     return nterms
 end
 
-# new version
-function estimate_Neumann!(tol::Float64, T::Float64, params::objparams, maxpar::Array{Float64,1})
-    nsteps = params.nsteps
-    k = Float64(T/nsteps)
+# """
+#         estimate_Neumann!(tol, T, params, maxpar)
 
-    if(params.Ncoupled > 0 && params.Nunc == 0)
-        # If only coupled Hamiltonian terms are present
-        S = 0.5*k*maxpar[1]*params.Hanti_ops[1]
-        for j = 2:length(params.Hanti_ops)
-            axpy!(0.5*k*maxpar[j],params.Hanti_ops[j],S)
-        end
+# Estimate the number of terms used in the Neumann series to invert
+# the implicit term in the Störmer-Verlet scheme. See also neumann!
+ 
+# # Arguments
+# - `tol:: Float64`: Error tolerance in inverting implicit SV term
+# - `T:: Float64`: Final simulation time
+# - `params:: objparams`: Struct containing problem definition
+# - `maxpar::Array{Float64,1}`: Maximum parameter value for each subsystem (coupled controls)
+# """
+# function estimate_Neumann!(tol::Float64, T::Float64, params::objparams, maxpar::Array{Float64,1})
+#     nsteps = params.nsteps
+#     k = Float64(T/nsteps)
 
-        # If in sparse mode, cast to full matrix for norm estimation
-        if(typeof(S) ==  SparseMatrixCSC{Float64, Int64})
-            S = Array(S)
-        end
-    else 
-        # If only uncoupled Hamiltonian terms are present
-        S = zeros(size(params.Hunc_ops[1]))
-        for j = 1:params.Nunc
-            if(!params.isSymm[j])
-                axpy!(0.5*k*maxpar[j],params.Hunc_ops[j],S)     
-            end
-        end
-    end
-    normS = opnorm(S)
-    nterms = ceil(Int64,log(tol)/log(normS))-1
-    if(nterms > 0)
-        params.nNeumann = nterms
-    end
-    # return nterms
-end
+#     if(params.Ncoupled > 0 && params.Nunc == 0)
+#         # If only coupled Hamiltonian terms are present
+#         S = 0.5*k*maxpar[1]*params.Hanti_ops[1]
+#         for j = 2:length(params.Hanti_ops)
+#             axpy!(0.5*k*maxpar[j],params.Hanti_ops[j],S)
+#         end
+
+#         # If in sparse mode, cast to full matrix for norm estimation
+#         if(typeof(S) ==  SparseMatrixCSC{Float64, Int64})
+#             S = Array(S)
+#         end
+#     else 
+#         # If only uncoupled Hamiltonian terms are present
+#         S = zeros(size(params.Hunc_ops[1]))
+#         for j = 1:params.Nunc
+#             if(!params.isSymm[j])
+#                 axpy!(0.5*k*maxpar[j],params.Hunc_ops[j],S)     
+#             end
+#         end
+#     end
+#     normS = opnorm(S)
+#     nterms = ceil(Int64,log(tol)/log(normS))-1
+#     if(nterms > 0)
+#         params.nNeumann = nterms
+#     end
+#     # return nterms
+# end
 
 
 # Estimate the number of terms used in the Neumann series linear solve during timestepping. 
 # Both coupled and uncoupled terms present.
-function estimate_Neumann!(tol::Float64, T::Float64, params::objparams, maxpar::Array{Float64,1}, maxunc::Array{Float64,1})
+"""
+        estimate_Neumann!(tol, T, params, maxpar[, maxunc])
+
+Estimate the number of terms used in the Neumann series to invert
+the implicit term in the Störmer-Verlet scheme. See also neumann!
+ 
+# Arguments
+- `tol:: Float64`: Error tolerance in inverting implicit SV term
+- `T:: Float64`: Final simulation time
+- `params:: objparams`: Struct containing problem definition
+- `maxpar:: Array{Float64,1}`: Maximum parameter value for each subsystem (coupled controls)
+- 'maxunc:: Array{Float64,1}: Maximum parameter value for each subsystem (uncoupled controls)'
+"""
+function estimate_Neumann!(tol::Float64, T::Float64, params::objparams, maxpar::Array{Float64,1}, maxunc::Array{Float64,1}=Float64[])
     nsteps = params.nsteps
     k = Float64(T/nsteps)
     if(params.Ncoupled > 0)
@@ -1760,7 +1845,21 @@ function estimate_Neumann!(tol::Float64, T::Float64, params::objparams, maxpar::
     # return nterms
 end
 
-# Function to estimate the number of time steps needed for the simulation. Coupled controls only.
+
+"""
+        nsteps = calculate_timestep(T, D1, H0, Hsym_ops, Hanti_ops, maxpar[, Pmin = 40])
+
+Estimate the number of time steps needed for the simulation.
+ 
+# Arguments
+- `T:: Float64`: Final simulation
+- `D1:: Int64`: Number of basis functions in each segment
+- `H0::Array{Float64,2}`: Time-independent part of the Hamiltonian matrix
+- `Hsym_ops:: Array{Float64,2}`: Array of symmetric control Hamiltonians
+- `Hanti_ops:: Array{Float64,2}`: Array of symmetric control Hamiltonians
+- `maxpar:: Array{Float64,1}`: Maximum parameter value for each subsystem
+- `Pmin:: Int64`: Sample rate for accuracy
+"""
 function calculate_timestep(T::Float64, D1::Int64, H0::AbstractArray,Hsym_ops::AbstractArray,Hanti_ops::AbstractArray, maxpar::Array{Float64,1}, Pmin::Int64 = 40)
     K1 = copy(H0) 
     Ncoupled = length(Hsym_ops)
@@ -1786,7 +1885,22 @@ function calculate_timestep(T::Float64, D1::Int64, H0::AbstractArray,Hsym_ops::A
     return nsteps
 end
 
-# Function to estimate the number of time steps needed for the simulation. Includes uncoupled controls.
+"""
+        nsteps = calculate_timestep(T, D1, H0, Hsym_ops, Hanti_ops, Hunc_ops, maxpar, max_flux[, Pmin = 40])
+
+Estimate the number of time steps needed for the simulation.
+ 
+# Arguments
+- `T:: Float64`: Final simulation
+- `D1:: Int64`: Number of basis functions in each segment
+- `H0::Array{Float64,2}`: Time-independent part of the Hamiltonian matrix
+- `Hsym_ops:: Array{Float64,2}`: Array of symmetric control Hamiltonians
+- `Hanti_ops:: Array{Float64,2}`: Array of symmetric control Hamiltonians
+- `Hunc_ops:: Array{Float64,2}`: Array of uncoupled control Hamiltonians
+- `maxpar:: Array{Float64,1}`: Maximum parameter value for each subsystem (coupled)
+- `max_flux:: Array{Float64,1}`: Maximum parameter value for each subsystem (uncoupled)
+- `Pmin:: Int64`: Sample rate for accuracy
+"""
 function calculate_timestep(T::Float64, D1::Int64, H0::AbstractArray,Hsym_ops::AbstractArray,Hanti_ops::AbstractArray,
                             Hunc_ops::AbstractArray,maxpar::Array{Float64,1},max_flux::Array{Float64,1}, Pmin::Int64 = 40)
     K1 = copy(H0) 
@@ -1831,6 +1945,19 @@ function calculate_timestep(T::Float64, D1::Int64, H0::AbstractArray,Hsym_ops::A
 end
 
 # Function to estimate the number of time steps needed for the simulation. Only uncoupled controls.
+"""
+        nsteps = calculate_timestep(T, D1, H0, Hsym_ops, Hanti_ops, maxpar[, Pmin = 40])
+
+Estimate the number of time steps needed for the simulation.
+ 
+# Arguments
+- `T:: Float64`: Final simulation
+- `D1:: Int64`: Number of basis functions in each segment
+- `H0::Array{Float64,2}`: Time-independent part of the Hamiltonian matrix
+- `Hunc_ops:: Array{Float64,2}`: Array of uncoupled control Hamiltonians
+- `max_unc:: Array{Float64,1}`: Maximum parameter value for each subsystem (uncoupled)
+- `Pmin:: Int64`: Sample rate for accuracy
+"""
 function calculate_timestep(T::Float64, D1::Int64, H0::AbstractArray, Hunc_ops::AbstractArray,max_unc::Array{Float64,1}, Pmin = 40)
     K1 = copy(H0) 
     Nunc = length(Hunc_ops)

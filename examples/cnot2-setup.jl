@@ -215,7 +215,8 @@ vtarget = rot1*rot2*utarget
 U0 = initial_cond(Ntot, N, Ne, Ng)
 
 # assemble problem description for the optimization
-params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, U0, vtarget, om, H0, Hsym_ops, Hanti_ops)
+params = Juqbox.objparams(Ne, Ng, Tmax, nsteps,  Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
+                          Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops)
 
 # test
 # custom = 0
@@ -249,7 +250,7 @@ casename = "cnot2" # for constructing file names
 
 # min and max B-spline coefficient values
 useBarrier = true
-minCoeff, maxCoeff = Juqbox.assign_thresholds(params,D1,maxpar,[])
+minCoeff, maxCoeff = Juqbox.assign_thresholds(params,D1,maxpar)
 println("Number of min coeff: ", length(minCoeff), "Max Coeff: ", length(maxCoeff))
 
 maxIter = 150 # 0 #250 #50 # optional argument

@@ -155,11 +155,13 @@ else
 end
 
 # Estimate time step for simulation
-maxeig,nsteps = Juqbox.calculate_timestep(T,D1,H0,Hsym_ops,Hanti_ops,Hunc_ops,[maxpar],[max_flux])
+nsteps = Juqbox.calculate_timestep(T,D1,H0,Hsym_ops,Hanti_ops,Hunc_ops,[maxpar],[max_flux])
 println("Max est. eigenvalue = ", maxeig, " # time steps: ", nsteps)
 
 # setup the simulation parameters
-params = Juqbox.objparams([N], [Nguard], T, nsteps, U0, vtarget, om, H0, Hsym_ops, Hanti_ops, Hunc_ops)
+params = Juqbox.objparams([N], [Nguard], T, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
+                          Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, Hunc_ops=Hunc_ops)
+
 # params = Juqbox.objparams([N], [Nguard], T, nsteps, U0, vtarget, om, H0, Hunc_ops)
 params.saveConvHist = true
 

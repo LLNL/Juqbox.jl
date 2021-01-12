@@ -280,7 +280,8 @@ vtarget = rot1*rot2*rot3*utarget
 U0 = initial_cond(Ntot, N, Ne, Ng)
 
 # NOTE: maxpar is now a vector with 3 elements: amax, bmax, cmax
-params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, U0, vtarget, om, H0, Hsym_ops, Hanti_ops)
+params = Juqbox.objparams(Ne, Ng, Tmax, nsteps,  Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
+                          Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops)
 
 Random.seed!(2456)
 
@@ -307,7 +308,7 @@ end
 # min and max B-spline coefficient values
 useBarrier = true
 # minCoeff, maxCoeff = Juqbox.assign_thresholds(maxpar, Ncoupled, Nfreq, D1)
-minCoeff, maxCoeff = Juqbox.assign_thresholds(params,D1,maxpar,[])
+minCoeff, maxCoeff = Juqbox.assign_thresholds(params,D1,maxpar)
 
 # for ipopt
 maxIter = 0 #100 # 0 # 250 #50 # optional argument
