@@ -10,7 +10,7 @@ gradbcarrier2!
 objparams
 assign_thresholds
 evalctrl
-WorkingArrays
+Working_Arrays
 plot_conv_hist
 identify_guard_levels
 identify_forbidden_levels

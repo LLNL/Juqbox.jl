@@ -267,19 +267,6 @@ mutable struct Working_Arrays
     gradobjfadj ::Array{Float64,1}
     tr_adj      ::Array{Float64,1}
 
-    function Working_Arrays(params::objparams,Ntot::Int64,N::Int64,nCoeff::Int64)
-        println("Deprecation warning: this Working_Array constructor will be removed in future versions of the Juqbox package")
-        println("\t Instead use Working_Arrays(params::objparams, nCoeff::Int64)")
-        K0,S0,K05,S05,K1,S1,vtargetr,vtargeti = KS_alloc(params)
-        lambdar,lambdar0,lambdai,lambdai0,lambdar05,κ₁,κ₂,ℓ₁,ℓ₂,rhs,gr0,gi0,gr1,gi1,hr0,hi0,hr1,vr,vi,vi05,vr0,vfinalr,vfinali = time_step_alloc(Ntot,N)
-        if params.pFidType == 3
-            gr, gi, gradobjfadj, tr_adj = grad_alloc(nCoeff-1)
-        else
-            gr, gi, gradobjfadj, tr_adj = grad_alloc(nCoeff)
-        end            
-        new(K0,S0,K05,S05,K1,S1,vtargetr,vtargeti,lambdar,lambdar0,lambdai,lambdai0,lambdar05,κ₁,κ₂,ℓ₁,ℓ₂,rhs,gr0,gi0,gr1,gi1,hr0,hi0,hr1,vr,vi,vi05,vr0,vfinalr,vfinali,gr, gi, gradobjfadj, tr_adj)
-    end
-
     function Working_Arrays(params::objparams, nCoeff::Int64)
         N = params.N
         Ntot = N + params.Nguard

@@ -11,11 +11,11 @@ using Ipopt
 using FileIO
 
 export splineparams, bspline2, gradbspline2
-export bcparams, bcarrier2, gradbcarrier2
+export bcparams, bcarrier2, gradbcarrier2!
 
 export objparams, traceobjgrad, identify_guard_levels, identify_forbidden_levels, plotunitary, plotspecified, evalctrl
 export setup_ipopt_problem, Working_Arrays, estimate_Neumann!, assign_thresholds, setup_rotmatrices
-export run_optimizer, plot_conv_hist
+export run_optimizer, plot_conv_hist, neumann!
 export wmatsetup, assign_thresholds_freq 
 export calculate_timestep, marginalize3
 
