@@ -301,7 +301,7 @@ end
 # min and max B-spline coefficient values
 useBarrier = true
 # minCoeff, maxCoeff = Juqbox.assign_thresholds(maxpar, Ncoupled, Nfreq, D1)
-minCoeff, maxCoeff = Juqbox.assign_thresholds(params,D1,maxpar,[])
+minCoeff, maxCoeff = Juqbox.assign_thresholds(params,D1,maxpar)
 
 # for ipopt
 maxIter = 100 # 0 # 250 #50 # optional argument

@@ -245,7 +245,7 @@ casename = "cnot2" # for constructing file names
 
 # min and max B-spline coefficient values
 useBarrier = true
-minCoeff, maxCoeff = Juqbox.assign_thresholds(params,D1,maxpar,[])
+minCoeff, maxCoeff = Juqbox.assign_thresholds(params,D1,maxpar)
 #println("Number of min coeff: ", length(minCoeff), "Max Coeff: ", length(maxCoeff))
 
 maxIter = 150 # 0 #250 #50 # optional argument

@@ -209,12 +209,6 @@ U0 = initial_cond(Ntot, N, Ne, Ng)
 params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
                           Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, use_sparse=use_sparse)
 
-# test
-# custom = 0
-# guardlev = Juqbox.identify_guard_levels(params, custom)
-# forbiddenlev = Juqbox.identify_forbidden_levels(params, custom)
-# end
-
 # initial parameter guess
 startFromScratch = true # false
 startFile = "cnot2-pcof-opt.dat"
@@ -241,7 +235,7 @@ casename = "cnot2" # for constructing file names
 
 # min and max B-spline coefficient values
 useBarrier = true
-minCoeff, maxCoeff = Juqbox.assign_thresholds(params,D1,maxpar,[])
+minCoeff, maxCoeff = Juqbox.assign_thresholds(params,D1,maxpar)
 println("Number of min coeff: ", length(minCoeff), "Max Coeff: ", length(maxCoeff))
 
 maxIter = 150 # 0 #250 #50 # optional argument

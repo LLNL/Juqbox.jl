@@ -1,13 +1,16 @@
 """
     splineparams(T, D1, Nseg, pcof)
 
-Constructor for struct splineparams
+Constructor for struct splineparams.
 
 # Arguments
 - `T:: Float64`: Duration of spline function
 - `D1:: Int64`: Number of basis functions in each segment
 - `Nseg:: Int64`:  Number of segments  (real, imaginary, different ctrl func)
 - `pcof:: Array{Float64, 1}`: Coefficient vector. Must have D1*Nseg elements
+
+# External links
+* [Spline Wavelet](https://en.wikipedia.org/wiki/Spline_wavelet#Quadratic_B-spline) on Wikipedia.
 """
 struct splineparams 
     T::Float64
@@ -66,7 +69,19 @@ Evaluate a B-spline function. See also the `splineparams` constructor.
 end
 
 
-# gradbspline2: gradient with respect to pcof of quadratic bspline
+"""
+    g = gradbspline2(t, param, splinefunc)
+
+Evaluate the gradient of a control function with respect to the parameters.
+NOTE: the functions are 0-indexed. Specifically, mod(`func`,2)=0 corresponds to 
+p and mod(`func`,1) = 1 corresponds to q if `func`<2 `*` Ncoupled for a set of 
+coupled controls. 
+
+# Arguments
+- `t::Float64`: Evaluate spline at parameter t ∈ [0, param.T]
+- `param::splineparams`: Parameters for the spline
+- `splinefunc::Int64`: Spline function index ∈ [0, param.Nseg-1]
+"""
 @inline function gradbspline2(t::Float64,param::splineparams, splinefunc::Int64)
 
 # NOTE: param.Nseg used to be '2'
@@ -97,10 +112,33 @@ end
   return g
 end
 
-#####
-##### B-splines with carrier waves
-#####
 
+"""
+    bcparams(T, D1, omega, pcof)
+
+Constructor for struct bcparams.
+
+# Arguments
+- `T:: Float64`: Duration of spline function
+- `D1:: Int64`: Number of basis functions in each segment
+- `omega::Array{Float64,2}`: Array where `omega[i,j]` is the `i`th carrier wave frequency for the 
+`j`th control
+- `pcof:: Array{Float64, 1}`: Coefficient vector. Must have D1*Nseg elements
+
+bcparams(T::Float64, D1::Int64, Ncoupled::Int64, Nunc::Int64, omega::Array{Float64,2}, pcof::Array{Float64,1})
+
+# Arguments
+- `T:: Float64`: Duration of spline function
+- `D1:: Int64`: Number of basis functions in each segment
+- `Ncoupled::Int64`: Number of coupled controls in the simulation
+- `Nunc::Int64`: Number of uncoupled controls in the simulation
+- `omega::Array{Float64,2}`: Array where `omega[i,j]` is the `i`th carrier wave frequency for the 
+`j`th control
+- `pcof:: Array{Float64, 1}`: Coefficient vector. Must have D1*Nseg elements
+
+# External links
+* [Spline Wavelet](https://en.wikipedia.org/wiki/Spline_wavelet#Quadratic_B-spline) on Wikipedia.
+"""
 struct bcparams
     T ::Float64
     D1::Int64 # number of B-spline coefficients per control function
@@ -113,19 +151,19 @@ struct bcparams
     Ncoupled::Int64 # Number of coupled B-splines functions
     Nunc::Int64 # Number of uncoupled B-spline functions
 
-    # simplified constructor (assumes no uncoupled terms)
-    function bcparams(T::Float64, D1::Int64, omega::Array{Float64,2}, pcof::Array{Float64,1})
-        dtknot = T/(D1 -2)
-        tcenter = dtknot.*(collect(1:D1) .- 1.5)
-        Ncoupled = size(omega,1) # should check that Ncoupled >=1
-        Nfreq = size(omega,2)
-        Nunc = 0
-        nCoeff = Nfreq*D1*(2*Ncoupled + Nunc)
-        if(nCoeff != length(pcof))
-            throw(DimensionMismatch("Inconsistent number of coefficients and size of parameter vector (nCoeff ≠ length(pcof)."))
-        end
-        new(T, D1, omega, tcenter, dtknot, pcof, Nfreq, nCoeff, Ncoupled, Nunc)
-    end
+    # # simplified constructor (assumes no uncoupled terms)
+    # function bcparams(T::Float64, D1::Int64, omega::Array{Float64,2}, pcof::Array{Float64,1})
+    #     dtknot = T/(D1 -2)
+    #     tcenter = dtknot.*(collect(1:D1) .- 1.5)
+    #     Ncoupled = size(omega,1) # should check that Ncoupled >=1
+    #     Nfreq = size(omega,2)
+    #     Nunc = 0
+    #     nCoeff = Nfreq*D1*(2*Ncoupled + Nunc)
+    #     if(nCoeff != length(pcof))
+    #         throw(DimensionMismatch("Inconsistent number of coefficients and size of parameter vector (nCoeff ≠ length(pcof)."))
+    #     end
+    #     new(T, D1, omega, tcenter, dtknot, pcof, Nfreq, nCoeff, Ncoupled, Nunc)
+    # end
 
     # New constructor to allow defining number of symmetric Hamiltonian terms
     function bcparams(T::Float64, D1::Int64, Ncoupled::Int64, Nunc::Int64, omega::Array{Float64,2}, pcof::Array{Float64,1})
@@ -141,8 +179,30 @@ struct bcparams
 
 end
 
+# simplified constructor (assumes no uncoupled terms)
+function bcparams(T::Float64, D1::Int64, omega::Array{Float64,2}, pcof::Array{Float64,1})
+  dtknot = T/(D1 -2)
+  tcenter = dtknot.*(collect(1:D1) .- 1.5)
+  Ncoupled = size(omega,1) # should check that Ncoupled >=1
+  Nfreq = size(omega,2)
+  Nunc = 0
+  nCoeff = Nfreq*D1*(2*Ncoupled + Nunc)
+  if(nCoeff != length(pcof))
+    throw(DimensionMismatch("Inconsistent number of coefficients and size of parameter vector (nCoeff ≠ length(pcof)."))
+  end
+  bcparams(T, D1, Ncoupled, Nunc, omega, pcof)
+end
 
-# bspline2: Evaluate quadratic bspline function
+"""
+    bcarrier2(t, params, func)
+
+Evaluate a B-spline function with carrier waves. See also the `bcparams` constructor.
+
+# Arguments
+- `t::Float64`: Evaluate spline at parameter t ∈ [0, param.T]
+- `param::params`: Parameters for the spline
+- `func::Int64`: Spline function index ∈ [0, param.Nseg-1]
+"""
 @inline function bcarrier2(t::Float64, params::bcparams, func::Int64)
     # for a single oscillator, func=0 corresponds to p(t) and func=1 to q(t)
     # in general, 0 <= func < 2*Ncoupled + Nunc
@@ -239,7 +299,21 @@ end
     return f
 end
 
-# gradient with respect to pcof of quadratic bspline with carrier waves 
+
+"""
+    gradbcarrier2!(t, params, func, g) -> g
+
+Evaluate the gradient of a control function with respect to the parameters.
+NOTE: the functions are 0-indexed. Specifically, mod(`func`,2)=0 corresponds to 
+p and mod(`func`,1) = 1 corresponds to q if `func`<2 `*` Ncoupled for a set of 
+coupled controls. 
+
+# Arguments
+- `t::Float64`: Evaluate spline at parameter t ∈ [0, param.T]
+- `params::bcparams`: Parameters for the spline
+- `func::Int64`: Spline function index ∈ [0, param.Nseg-1]
+- `g::Array{Float64,1}`: Preallocated array to store calculated gradient
+"""
 function gradbcarrier2!(t::Float64, params::bcparams, func::Int64, g::Array{Float64,1})
 
     # compute basic offset: func 0 and 1 use the same spline coefficients, but combined in a different way

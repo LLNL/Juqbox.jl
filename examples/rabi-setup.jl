@@ -142,6 +142,7 @@ U0 = Ident[1:Ntot,1:N]
 # setup the simulation parameters
 params = Juqbox.objparams([N], [Nguard], T, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
                           Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops)
+
 params.saveConvHist = true
 params.use_bcarrier = true 
 
