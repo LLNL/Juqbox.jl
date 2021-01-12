@@ -1664,36 +1664,9 @@ end
 # Estimate the number of terms used in the Neumann series linear solve during timestepping. 
 # FMG: This will work but appears to be pessimistic. One can use fewer terms, perhaps a 
 # better estimate can be found.
-# old version
-function estimate_Neumann(tol::Float64, T::Float64, nsteps::Int64, maxpar::Array{Float64,1}, Hanti_ops::Array{Array{Float64,N},1}) where N
-    k = Float64(T/nsteps)
-    S = 0.5*k*maxpar[1]*Hanti_ops[1]
-    for j = 2:length(Hanti_ops)
-        axpy!(0.5*k*maxpar[j],Hanti_ops[j],S)
-    end
-    normS = opnorm(S)
-    nterms = ceil(Int64,log(tol)/log(normS))-1
-    return nterms
-end
-
-# old version
-# Sparse version of above
-function estimate_Neumann(tol::Float64, T::Float64, nsteps::Int64, maxpar::Array{Float64,1}, Hanti_ops::Array{SparseMatrixCSC{Float64,Int64},1})
-    k = Float64(T/nsteps)
-    S = 0.5*k*maxpar[1]*Hanti_ops[1]
-    for j = 2:length(Hanti_ops)
-        axpy!(0.5*k*maxpar[j],Hanti_ops[j],S)
-    end
-    S = Array(S) #In case input is sparse
-    normS = opnorm(S)
-    nterms = ceil(Int64,log(tol)/log(normS))-1
-    return nterms
-end
-
-# new version
-function estimate_Neumann!(tol::Float64, T::Float64, params::objparams, maxpar::Array{Float64,1})
+function estimate_Neumann!(tol::Float64, params::objparams, maxpar::Array{Float64,1})
     nsteps = params.nsteps
-    k = Float64(T/nsteps)
+    k = Float64(params.T/nsteps)
 
     if(params.Ncoupled > 0 && params.Nunc == 0)
         # If only coupled Hamiltonian terms are present
@@ -1726,9 +1699,9 @@ end
 
 # Estimate the number of terms used in the Neumann series linear solve during timestepping. 
 # Both coupled and uncoupled terms present.
-function estimate_Neumann!(tol::Float64, T::Float64, params::objparams, maxpar::Array{Float64,1}, maxunc::Array{Float64,1})
+function estimate_Neumann!(tol::Float64, params::objparams, maxpar::Array{Float64,1}, maxunc::Array{Float64,1})
     nsteps = params.nsteps
-    k = Float64(T/nsteps)
+    k = Float64(params.T/nsteps)
     if(params.Ncoupled > 0)
         S = 0.5*k*maxpar[1]*params.Hanti_ops[1]
         for j = 2:length(params.Hanti_ops)
@@ -1787,8 +1760,8 @@ function calculate_timestep(T::Float64, D1::Int64, H0::AbstractArray,Hsym_ops::A
 end
 
 # Function to estimate the number of time steps needed for the simulation. Includes uncoupled controls.
-function calculate_timestep(T::Float64, D1::Int64, H0::AbstractArray,Hsym_ops::AbstractArray,Hanti_ops::AbstractArray,
-                            Hunc_ops::AbstractArray,maxpar::Array{Float64,1},max_flux::Array{Float64,1}, Pmin::Int64 = 40)
+function calculate_timestep(T::Float64, D1::Int64, H0::AbstractArray, Hsym_ops::AbstractArray, Hanti_ops::AbstractArray,
+                            Hunc_ops::AbstractArray, maxpar::Array{Float64,1}, max_flux::Array{Float64,1}, Pmin::Int64 = 40)
     K1 = copy(H0) 
     Ncoupled = length(Hsym_ops)
     Nunc = length(Hunc_ops)
@@ -1831,7 +1804,7 @@ function calculate_timestep(T::Float64, D1::Int64, H0::AbstractArray,Hsym_ops::A
 end
 
 # Function to estimate the number of time steps needed for the simulation. Only uncoupled controls.
-function calculate_timestep(T::Float64, D1::Int64, H0::AbstractArray, Hunc_ops::AbstractArray,max_unc::Array{Float64,1}, Pmin = 40)
+function calculate_timestep(T::Float64, D1::Int64, H0::AbstractArray, Hunc_ops::AbstractArray,max_unc::Array{Float64,1}, Pmin::Int64 = 40)
     K1 = copy(H0) 
     Nunc = length(Hunc_ops)
 

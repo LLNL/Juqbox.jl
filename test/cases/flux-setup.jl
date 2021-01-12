@@ -182,7 +182,7 @@ end
 
 # Estimate number of terms in Neumann series for time stepping (Default 3)
 tol = eps(1.0); # machine precision
-Juqbox.estimate_Neumann!(tol, T, params, [maxpar], [max_flux])
+Juqbox.estimate_Neumann!(tol, params, [maxpar], [max_flux])
 
 wa = Juqbox.Working_Arrays(params, nCoeff)
 prob = Juqbox.setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff, maxIter, lbfgsMax)

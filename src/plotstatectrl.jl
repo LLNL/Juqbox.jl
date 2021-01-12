@@ -201,7 +201,7 @@ function evalctrl(params::objparams, pcof0:: Array{Float64, 1}, td:: Array{Float
 
     if (params.use_bcarrier)
         # B-splines with carrier waves
-        splinepar = bcparams(params.T, D1, params.Ncoupled, params.Nunc, params.om, pcof)
+        splinepar = bcparams(params.T, D1, params.Ncoupled, params.Nunc, params.Cfreq, pcof)
     else
         # regular B-splines
         splinepar = splinepar(params.T, D1, 2*params.Ncoupled + params.Nunc, pcof)

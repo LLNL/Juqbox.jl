@@ -40,7 +40,7 @@ samplerate = 32 # default number of time steps per unit time
 casename = "rabi" # base file name (used in optimize-once.jl)
 
 # frequencies (in GHz, will be multiplied by 2*pi to get angular frequencies in the Hamiltonian matrix)
-fa = 0.0
+fa = 5.0
 xa = 2* 0.1099
 rot_freq = [fa] # Rotational frequencies
 
@@ -72,7 +72,10 @@ omega1 = Juqbox.setup_rotmatrices([N], [Nguard], rot_freq)
 rot1 = Diagonal(exp.(im*omega1*T))
 
 # target in the rotating frame
-vtarget = rot1*utarget
+# vtarget = rot1*utarget
+
+# target in rotating frame
+vtarget = utarget
 
 # setup ansatz for control functions
 use_bcarrier = true # new Bcarrier allows a constant control function
@@ -137,7 +140,8 @@ Ident = Matrix{Float64}(I, Ntot, Ntot)
 U0 = Ident[1:Ntot,1:N]
 
 # setup the simulation parameters
-params = Juqbox.objparams([N], [Nguard], T, nsteps, U0, vtarget, om, H0, Hsym_ops, Hanti_ops)
+params = Juqbox.objparams([N], [Nguard], T, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
+                          Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops)
 params.saveConvHist = true
 params.use_bcarrier = true 
 
@@ -192,11 +196,11 @@ println("Tikhonov coefficients: tik0 = ", params.tik0)
 
 # Estimate number of terms in Neumann series for time stepping (Default 3)
 tol = eps(1.0); # machine precision
-Juqbox.estimate_Neumann!(tol, T, params, [maxpar])
+Juqbox.estimate_Neumann!(tol, params, [maxpar])
 
 # Allocate all working arrays
 wa = Juqbox.Working_Arrays(params, nCoeff)
-prob = Juqbox.setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff, maxIter, lbfgsMax)
+prob = Juqbox.setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff, maxIter, lbfgsMax, startFromScratch)
 
 # uncomment to run the gradient checker for the initial pcof
 # addOption( prob, "derivative_test", "first-order"); # for testing the gradient

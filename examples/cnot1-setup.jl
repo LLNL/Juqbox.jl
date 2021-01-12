@@ -55,7 +55,7 @@ Hanti_ops=[Array(amat - adag)]
 H0 = Array(H0)
 
 # Estimate time step
-maxctrl = 0.001*2*pi * 9.0 #  9, 10.5, 12, 15 MHz
+maxctrl = 0.001*2*pi * 8.5 #  9, 10.5, 12, 15 MHz
 K1 =  H0 + maxctrl.*( amat +  amat') + 1im* maxctrl.*(amat - amat')
 lamb = eigvals(Array(K1))
 maxeig = maximum(abs.(lamb)) 
@@ -108,10 +108,8 @@ vtarget = rot1*utarget
 # Initial conditions
 U0 = Ident[1:Ntot,1:N]
 
-params = Juqbox.objparams([N], [Nguard], T, nsteps, U0, vtarget, om, H0, Hsym_ops, Hanti_ops)
-params.saveConvHist = true
-
-params.tik0 = 0.1 # Used to be tik0*tik0 in the regularization term
+params = Juqbox.objparams([N], [Nguard], T, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
+                          Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops)
 
 # initial parameter guess
 
@@ -166,7 +164,7 @@ println("Tikhonov coefficients: tik0 = ", params.tik0)
 
 # Estimate number of terms in Neumann series for time stepping (Default 3)
 tol = eps(1.0); # machine precision
-Juqbox.estimate_Neumann!(tol, T, params, [maxpar])
+Juqbox.estimate_Neumann!(tol, params, [maxpar])
 
 wa = Juqbox.Working_Arrays(params,nCoeff)
 prob = Juqbox.setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff, maxIter, lbfgsMax, startFromScratch)

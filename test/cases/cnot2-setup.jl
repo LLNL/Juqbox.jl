@@ -270,7 +270,7 @@ end
 
 # Estimate number of terms in Neumann series for time stepping (Default 3)
 tol = eps(1.0); # machine precision
-Juqbox.estimate_Neumann!(tol, Tmax, params, maxpar)
+Juqbox.estimate_Neumann!(tol, params, maxpar)
 
 # Allocate all working arrays
 wa = Juqbox.Working_Arrays(params, nCoeff)

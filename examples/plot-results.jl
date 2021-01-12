@@ -15,7 +15,7 @@ using FFTW
 using LaTeXStrings
 using Ipopt
 
-import Juqbox
+using Juqbox
 
 fnt = Plots.font("Helvetica", 12)
 lfnt = Plots.font("Helvetica", 10)
@@ -147,7 +147,7 @@ if(params.Ncoupled > 0)
     # one subfigure for each control function
     plotarray = Array{Plots.Plot}(undef, params.Ncoupled) #empty array for separate plots
     
-    println("Rotational frequencies: ", rot_freq)
+    println("Rotational frequencies: ", params.Rfreq)
 
     for q=1:params.Ncoupled
         # evaluate ctrl functions for the q'th Hamiltonian
@@ -167,7 +167,7 @@ if(params.Ncoupled > 0)
 
         println("Rot. frame ctrl-", q, ": Max-p(t) = ", pmax, " Max-q(t) = ", qmax, " ", unitStr)
         # Accumulate the lab drive
-        omq = 2*pi*rot_freq[q]
+        omq = 2*pi*params.Rfreq[q]
         labdrive .= labdrive .+  2*pfunc .* cos.(omq*td) .- 2*qfunc .* sin.(omq*td)
 
         #    println("q = ", q, " Max amplitude labdrive = ", maximum(abs.(labdrive)) )
@@ -253,13 +253,11 @@ pl5 = Plots.plot(freq, abs.(Fdr_lab), lab="", title = "Spectrum, lab frame ctrl"
 # ticks = range(lb,stop=ub,length=6)
 # Plots.plot!(yticks=ticks)
 
-if (@isdefined rot_freq)
-    fmin = 0.5*minimum(rot_freq) 
-    fmax = maximum(rot_freq) + 0.5
-    xlims!((fmin, fmax))
-    # tmp
-    # xlims!((3.0, 6.5))
-end
+fmin = 0.5*minimum(params.Rfreq) 
+fmax = maximum(params.Rfreq) + 0.5
+xlims!((fmin, fmax))
+# tmp
+# xlims!((3.0, 6.5))
 
 if save_files
     Plots.savefig(pl5, fftname)
