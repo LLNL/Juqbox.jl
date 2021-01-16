@@ -1,10 +1,10 @@
 1. ~~Rename parameters() -> objparams()~~
 
-2. Replace import objfunc -> using objfunc in all setup files in examples/\*.jl. Add missing functions to the - [ ] list.
+2. ~~Replace import objfunc -> using objfunc in all setup files in examples/\*.jl. Add missing functions to the - [ ] list? ~~
 
 3. ~~Rename module objfunc -> Juqbox (?)~~
 
-4. Document all exported functions (add more?):
+4. ~~Document all exported functions (add more?)~~
 
 
 - [x] ~~splineparams~~
@@ -29,5 +29,5 @@
 - [x] ~~plot_conv_hist~~
 - [x] ~~wmatsetup~~
 - [x] ~~assign_thresholds_freq~~
-- [x] calculate_timestep
-- [ ] marginalize3
+- [x] ~~calculate_timestep~~
+- [x] ~~marginalize3~~
