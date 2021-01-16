@@ -547,8 +547,8 @@ end
 """
 		neumann!(nterms, h, S, B, T, X) -> X
 
-Invert the linear system `(I - 0.5  * h * S)X = B` by using the Neumann series 
-		`(I - 0.5 * h * S)^{-1} = I + (0.5 * h * S) + (0.5 * h * S)^2 + (0.5 * h * S)^3 + …`.
+Solve the linear system `(I - 0.5  * h * S)X = B` by using the Neumann series 
+`(I - 0.5 * h * S)^{-1} = I + (0.5 * h * S) + (0.5 * h * S)^2 + (0.5 * h * S)^3 + …`.
 
 # Arguments
 - `nterms:: Int64`: Number of terms used in the Neumann series
@@ -574,8 +574,8 @@ end
 """
 		neumann!(nterms, h, S, B, T, X) -> X
 
-Invert the linear system `(I - 0.5  * h * S)X = B` by using the Neumann series 
-		`(I - 0.5 * h * S)^{-1} = I + (0.5 * h * S) + (0.5 * h * S)^2 + (0.5 * h * S)^3 + …`.
+Solve the linear system `(I - 0.5  * h * S)X = B` by using the Neumann series 
+`(I - 0.5 * h * S)^{-1} = I + (0.5 * h * S) + (0.5 * h * S)^2 + (0.5 * h * S)^3 + …`.
 
 # Arguments
 - `nterms:: Int64`: Number of terms used in the Neumann series

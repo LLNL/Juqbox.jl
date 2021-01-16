@@ -66,8 +66,8 @@ function intermediate_par(
 end
 
 """
-        prob = setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff[, maxIter, 
-                            lbfgsMax, startFromScratch, ipTol, acceptTol, acceptIter])
+        prob = setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff [, maxIter=50, 
+                            lbfgsMax=10, startFromScratch=true, ipTol=1e-5, acceptTol=1e-5, acceptIter=15])
 
 Setup structure containing callback functions and convergence criteria for 
 optimization via IPOPT.
@@ -78,12 +78,12 @@ optimization via IPOPT.
 - `nCoeff:: Int64`: Number of parameters in optimization
 - `minCoeff:: Array{Float64, 1}`: Minimum allowable value for each parameter
 - `maxCoeff:: Array{Float64, 1}`: Maximum allowable value for each parameter
-- `maxIter:: Int64=50`: Maximum number of iterations to be taken by optimizer
-- `lbfgsMax:: Int64=10`: Maximum number of past iterates for Hessian approximation by L-BFGS
-- `startFromScratch:: Bool=true`: Specify whether the optimization is starting from file or not
-- `ipTol:: Float64=1e-5`: Desired convergence tolerance (relative)
-- `acceptTol:: Float64=1e-5`: Acceptable convergence tolerance (relative)
-- `acceptIter:: Int64=15`: Number of acceptable iterates before triggering termination
+- `maxIter:: Int64`: Maximum number of iterations to be taken by optimizer
+- `lbfgsMax:: Int64`: Maximum number of past iterates for Hessian approximation by L-BFGS
+- `startFromScratch:: Bool`: Specify whether the optimization is starting from file or not
+- `ipTol:: Float64`: Desired convergence tolerance (relative)
+- `acceptTol:: Float64`: Acceptable convergence tolerance (relative)
+- `acceptIter:: Int64`: Number of acceptable iterates before triggering termination
 """
 function setup_ipopt_problem(params:: Juqbox.objparams, wa::Working_Arrays, nCoeff:: Int64, minCoeff:: Array{Float64, 1}, maxCoeff:: Array{Float64, 1}, maxIter:: Int64=50, lbfgsMax:: Int64=10, startFromScratch:: Bool=true, ipTol:: Float64=1e-5, acceptTol:: Float64=1e-5, acceptIter:: Int64=15)
     # callback functions need access to the params object
@@ -140,15 +140,14 @@ function setup_ipopt_problem(params:: Juqbox.objparams, wa::Working_Arrays, nCoe
 end
 
 """
-        pcof = run_optimizer(prob, pcof0[, fileName:: String=""])
+        pcof = run_optimizer(prob, pcof0 [, fileName:: String=""])
 
-Call IPOPT to perform a constrained optimization for the optimal 
-controls.
+Call IPOPT to  optimizize the control functions.
 
 # Arguments
-- `prob:: IpoptProblem`: Struct containing Ipopt callback functions
-- `pcof0:: Array{Float64, 1}`: Initial guess of parameter values
-- `fileName:: String`: Name of file optimal solution is to be written to
+- `prob:: IpoptProblem`: Struct containing Ipopt parameters callback functions
+- `pcof0:: Array{Float64, 1}`: Initial guess for the parameter values
+- `fileName:: String`: Name of file for saving the optimized parameters
 """
 function run_optimizer(prob:: IpoptProblem, pcof0:: Array{Float64, 1}, fileName:: String="")
     # takes at most max_iter >= 0 iterations. Set with addOption(prob, "max_iter", nIter)

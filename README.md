@@ -27,6 +27,7 @@ Our software relies on the following Julia packages:
 - SparseArrays (Sparse matrix support)
 - Printf (C-style printf macro)
 - Test (for testing)
+- Documenter (for stand-alone documentation)
 
 You can check which packages you have installed by starting Julia and entering the package manager:<br>
 sh> cd ~/src<br>
@@ -49,7 +50,6 @@ sh> <br>
 sh> cd ~/src/Juqbox<br>
 sh> julia<br>
 julia> ]<br>
-(Juqbox) pkg> build<br>
 (Juqbox) pkg> precompile<br>
 (Juqbox) pkg> test<br>
 ... all tests should pass ...<br>

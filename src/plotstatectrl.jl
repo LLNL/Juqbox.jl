@@ -212,12 +212,13 @@ end
 
 # Evaluate the control functions on a grid in time in units of GHz
 """
-        pj[, qj] = evalctrl(params, pcof0, td, jHam) 
+        pj[, qj] = evalctrl(params, pcof0, td, func) 
 
-Evaluate the control signal with the specified index. 
-NOTE: the functions are 0-indexed. Specifically, mod(`func`,2)=0 corresponds to 
-p and mod(`func`,1) = 1 corresponds to q if `func`<2 `*` Ncoupled for a set of 
-coupled controls. 
+Evaluate the control function with index `func` at an array of time levels `td`.  
+
+NOTE: the control function index is 0-based. For `func∈[0,2*Ncoupled -1]`, mod(`func`,2)=0
+corresponds to p_j(t) and mod(`func`,1) = 1 corresponds to q_j(t) for , where `j=div(func,2)`. An
+uncoupled control function is evaluated when `func >= 2*Ncoupled`.
 
 # Arguments
 - `params:: objparams`: Struct with problem definition
@@ -272,7 +273,7 @@ level in the simulation.
  
 # Arguments
 - `params:: objparams`: Struct with problem definition
-- `custom:: Int64`: For nonzero value special stirap pulses case
+- `custom:: Int64`: A nonzero value gives a special stirap pulses case
 """
 function identify_guard_levels(params::Juqbox.objparams, custom:: Int64 = 0)
     # identify all guard levels
@@ -311,8 +312,9 @@ end #identify_guard_levels
 """
         forbiddenlev = identify_guard_levels(params[, custom = 0])
 
-Build a Bool array indicating if a given energy level is a forbidden
-level in the simulation.
+Build a Bool array indicating which energy levels are forbidden levels in the state vector. The
+forbidden levels in a state vector are defined as thos corresponding to the highest energy level in
+at least one of its subsystems.
  
 # Arguments
 - `params:: objparams`: Struct with problem definition
@@ -382,7 +384,7 @@ end #specify_level3
 """
         marg_prob = marginalize3(params, unitaryhist)
 
-Evaluate marginalized probabilities.
+Evaluate marginalized probabilities for the case of 3 subsystems.
  
 # Arguments
 - `param:: objparams`: Struct with problem definition
@@ -409,10 +411,10 @@ function marginalize3(params:: Juqbox.objparams, unitaryhist:: Array{Complex{Flo
 end #marginalize3
 
 """
-        pconv = plot_conv_hist(params[, convname:: String=""])
+        pconv = plot_conv_hist(params [, convname:: String=""])
 
 Plot the optimization convergence history, including history of 
-objective function (by term) and norm of gradient.
+the different terms in the objective function and the norm of the gradient.
 
 # Arguments
 - `param:: objparams`: Struct with problem definition

@@ -1,19 +1,24 @@
 """
         objparams(Ne, Ng, T, Nsteps;
-                        Uinit=Uinit, Utarget=Utarget,
-                        Cfreq=Cfreq, Rfreq=Rfreq, 
-                        Hconst=Hconst, 
-                        [Hsym_ops=Hsym_ops,
+                        Uinit=Uinit, 
+                        Utarget=Utarget,
+                        Cfreq=Cfreq, 
+                        Rfreq=Rfreq, 
+                        Hconst=Hconst [, 
+                        Hsym_ops=Hsym_ops,
                         Hanti_ops=Hanti_ops, 
                         Hunc_ops=Hunc_ops,
                         wmatScale=wmatScale, 
                         use_sparse=use_sparse])
 
-Constructor for the mutable struct objparams. TODO: document all keyword args
+Constructor for the mutable struct objparams. The sizes of the arrays in the argument list are based on
+`Ntot = prod(Ne + Ng)`, `Ness = prod(Ne)`, `Nosc = length(Ne) = length(Ng)`.
 
-Ntot = prod(Ne + Ng), Ness = prod(Ne), Nosc = length(Ne) = length(Ng)
-
-Ncoupled = length(Hsym-ops) = length(Hanti-ops), Nunc = length(Hunc-ops)
+Notes: It is assumed that `length(Hsym_ops) = length(Hanti_ops) =: Ncoupled`. The matrices `Hconst`,
+`Hsym_ops[j]`and `Hanti_ops[j]`, for j∈[1,Ncoupled], must all be of size `Ntot × Ntot`. The matrices
+`Hsym_ops[j]` must be symmetric and `Hanti_ops[j]` must be skew-symmetric. The matrices
+`Hunc_ops[j]`, for j∈[1,Nunc], where `Nunc = length(Hunc_ops)`, must also be of size `Ntot × Ntot`
+and either be symmetric or skew-symmetric.
  
 # Arguments
 - `Ne::Array{Int64,1}`: Number of essential energy levels for each subsystem
@@ -24,10 +29,10 @@ Ncoupled = length(Hsym-ops) = length(Hanti-ops), Nunc = length(Hunc-ops)
 - `Utarget::Array{Complex{Float64},2}`: (keyword) Matrix holding the target gate matrix of size Uinit[Ntot, Ness]
 - `Cfreq::Array{Float64,2}`: (keyword) Carrier wave frequencies of size Cfreq[Ncoupled, Nfreq]
 - `Rfreq::Array{Float64,2}`: (keyword) Rotational frequencies of size Rfreq[Nosc]
-- `Hconst::Array{Float64,2}`: (keyword) Time-independent part of the Hamiltonian matrix of size Hconst[Ntot, Ntot]
-- `Hsym_ops:: Array{Array{Float64,2},1}`: (keyword) Array of symmetric control Hamiltonians, each of size Hconst[Ntot, Ntot]
-- `Hanti_ops:: Array{Array{Float64,2},1}`: (keyword) Array of anti-symmetric control Hamiltonians, each of size Hconst[Ntot, Ntot]
-- `Hunc_ops:: Array{Array{Float64,2},1}`: (keyword) Array of uncoupled control Hamiltonians, each of size Hconst[Ntot, Ntot]
+- `Hconst::Array{Float64,2}`: (keyword) Time-independent part of the Hamiltonian matrix of size Ntot × Ntot
+- `Hsym_ops:: Array{Array{Float64,2},1}`: (keyword) Array of symmetric control Hamiltonians, each of size Ntot × Ntot
+- `Hanti_ops:: Array{Array{Float64,2},1}`: (keyword) Array of anti-symmetric control Hamiltonians, each of size Ntot × Ntot
+- `Hunc_ops:: Array{Array{Float64,2},1}`: (keyword) Array of uncoupled control Hamiltonians, each of size Ntot × Ntot
 - `wmatScale::Float64 = 1.0`: (keyword) Scaling factor for suppressing guarded energy levels
 - `use_sparse::Bool = false`: (keyword) Set to true to sparsify all Hamiltonian matrices
 """
@@ -733,7 +738,7 @@ end
 """
         wmat = wmatsetup(Ne, Ng)
 
-Build the positive semi-definite weighting matrix W to calculate the 
+Build the default positive semi-definite weighting matrix W to calculate the 
 leakage into higher energy forbidden states
  
 # Arguments
@@ -868,13 +873,13 @@ end
 """
         omega1[, omega2, omega3] = setup_rotmatrices(Ne, Ng, fund_freq)
 
-Build the terms of the drift Hamiltonian that include the fundamental 
-frequency (i.e. ω a^†a)
+Build diagonal rotation matrices based on the |0⟩to |1⟩ transition frequency in each sub-system.
+
  
 # Arguments
 - `Ne::Array{Int64,1}`: Number of essential energy levels for each subsystem
 - `Ng::Array{Int64,1}`: Number of guard energy levels for each subsystem
-- `fund_freq::Array{Float64}`: Fundamental frequency for each subsystem
+- `fund_freq::Array{Float64}`: Transitions frequency [GHz] for each subsystem
 """
 function setup_rotmatrices(Ne::Array{Int64,1}, Ng::Array{Int64,1}, fund_freq::Array{Float64})
     Nosc = length(Ne)
@@ -962,13 +967,14 @@ end
 """
         minCoeff, maxCoeff = assign_thresholds_freq(maxamp, Ncoupled, Nfreq, D1)
 
-Build vector of min/max bound constraints for the parameters.
+Build vector of frequency dependent min/max parameter constraints, with `minCoeff = -maxCoeff`, when
+there are no uncoupled control functions.
  
 # Arguments
 - `maxamp::Array{Float64,1}`: Maximum parameter value for each subsystem
 - `Ncoupled::Int64`: Number of coupled controls in the simulation
 - `Nfreq::Int64`: Number of carrier wave frequencies used in the controls
-- `D1:: Int64`: Number of basis functions in each segment
+- `D1:: Int64`: Number of basis functions in each control function
 """
 function assign_thresholds_freq(maxamp::Array{Float64,1}, Ncoupled::Int64, Nfreq::Int64, D1::Int64)
     nCoeff = 2*Ncoupled*Nfreq*D1
@@ -987,17 +993,18 @@ function assign_thresholds_freq(maxamp::Array{Float64,1}, Ncoupled::Int64, Nfreq
 end
 
 """
-        minCoeff, maxCoeff = assign_thresholds_freq(params, D1, params, maxpar, maxpar_unc)
+        minCoeff, maxCoeff = assign_thresholds(params, D1, params, maxpar [, maxpar_unc])
 
-Build vector of min/max bound constraints for the parameters.
+Build vector of frequency independent min/max parameter constraints for each coupled and
+(optionally) uncoupled control function. Here, `minCoeff = -maxCoeff`.
  
 # Arguments
-- `params:: objparams`: Struct containing problem definition
-- `D1:: Int64`: Number of basis functions in each segment
-- `maxpar::Array{Float64,1}`: Maximum parameter value for each subsystem (coupled controls)
-- `maxpar_unc::Array{Float64,1}`: Maximum parameter value for each subsystem (uncoupled controls)
+- `params:: objparams`: Struct containing problem definition.
+- `D1:: Int64`: Number of basis functions in each segment.
+- `maxpar::Array{Float64,1}`: Maximum parameter value for each coupled control.
+- `maxpar_unc::Array{Float64,1}=`: (optional) Maximum parameter value for each uncoupled control.
 """
-function assign_thresholds(params::objparams,D1::Int64,maxpar::Array{Float64,1},maxpar_unc::Array{Float64,1}=Float64[])
+function assign_thresholds(params::objparams, D1::Int64, maxpar::Array{Float64,1}, maxpar_unc::Array{Float64,1}=Float64[])
     Nfreq = params.Nfreq
     nCoeff =  (2*params.Ncoupled + params.Nunc)*Nfreq*D1
     minCoeff = zeros(nCoeff) # Initialize storage
@@ -1716,14 +1723,14 @@ end
 """
         estimate_Neumann!(tol, params, maxpar[, maxunc])
 
-Estimate the number of terms used in the Neumann series to invert
-the implicit term in the Störmer-Verlet scheme. See also neumann!
+Estimate the number of terms needed by the Neumann series approach for solving the linear system
+during the implicit steps of the Störmer-Verlet scheme. See also neumann!
  
 # Arguments
 - `tol:: Float64`: Error tolerance in inverting implicit SV term
 - `params:: objparams`: Struct containing problem definition
-- `maxpar:: Array{Float64,1}`: Maximum parameter value for each subsystem (coupled controls)
-- 'maxunc:: Array{Float64,1}: (optional) Maximum parameter value for each subsystem (uncoupled controls)'
+- `maxpar:: Array{Float64,1}`: Maximum parameter value for each coupled control
+- `maxunc:: Array{Float64,1}`: (optional) Maximum parameter value for each uncoupled controls
 """
 function estimate_Neumann!(tol::Float64, params::objparams, maxpar::Array{Float64,1}, maxunc::Array{Float64,1}=Float64[])
     nsteps = params.nsteps
@@ -1765,9 +1772,9 @@ end
 
 
 """
-        nsteps = calculate_timestep(T, D1, H0, Hsym_ops, Hanti_ops, maxpar[, Pmin = 40])
+        nsteps = calculate_timestep(T, D1, H0, Hsym_ops, Hanti_ops, maxpar [, Pmin = 40])
 
-Estimate the number of time steps needed for the simulation.
+Estimate the number of time steps needed for the simulation, for the case without uncoupled controls.
  
 # Arguments
 - `T:: Float64`: Final simulation
@@ -1776,7 +1783,7 @@ Estimate the number of time steps needed for the simulation.
 - `Hsym_ops:: Array{Float64,2}`: Array of symmetric control Hamiltonians
 - `Hanti_ops:: Array{Float64,2}`: Array of symmetric control Hamiltonians
 - `maxpar:: Array{Float64,1}`: Maximum parameter value for each subsystem
-- `Pmin:: Int64`: Sample rate for accuracy
+- `Pmin:: Int64`: Number of time steps per shortest period (assuming a slowly varying Hamiltonian).
 """
 function calculate_timestep(T::Float64, D1::Int64, H0::AbstractArray,Hsym_ops::AbstractArray,Hanti_ops::AbstractArray, maxpar::Array{Float64,1}, Pmin::Int64 = 40)
     K1 = copy(H0) 
@@ -1806,7 +1813,7 @@ end
 """
         nsteps = calculate_timestep(T, D1, H0, Hsym_ops, Hanti_ops, Hunc_ops, maxpar, max_flux[, Pmin = 40])
 
-Estimate the number of time steps needed for the simulation.
+Estimate the number of time steps needed for the simulation, when there are uncoupled controls.
  
 # Arguments
 - `T:: Float64`: Final simulation
@@ -1815,9 +1822,9 @@ Estimate the number of time steps needed for the simulation.
 - `Hsym_ops:: Array{Float64,2}`: Array of symmetric control Hamiltonians
 - `Hanti_ops:: Array{Float64,2}`: Array of symmetric control Hamiltonians
 - `Hunc_ops:: Array{Float64,2}`: Array of uncoupled control Hamiltonians
-- `maxpar:: Array{Float64,1}`: Maximum parameter value for each subsystem (coupled)
-- `max_flux:: Array{Float64,1}`: Maximum parameter value for each subsystem (uncoupled)
-- `Pmin:: Int64`: Sample rate for accuracy
+- `maxpar:: Array{Float64,1}`: Maximum parameter value for each coupled control
+- `max_flux:: Array{Float64,1}`: Maximum parameter value for each uncoupled control
+- `Pmin:: Int64`: Number of time steps per shortest period (assuming a slowly varying Hamiltonian).
 """
 function calculate_timestep(T::Float64, D1::Int64, H0::AbstractArray,Hsym_ops::AbstractArray,Hanti_ops::AbstractArray,
                             Hunc_ops::AbstractArray,maxpar::Array{Float64,1},max_flux::Array{Float64,1}, Pmin::Int64 = 40)
@@ -1864,9 +1871,9 @@ end
 
 # Function to estimate the number of time steps needed for the simulation. Only uncoupled controls.
 """
-        nsteps = calculate_timestep(T, D1, H0, Hsym_ops, Hanti_ops, maxpar[, Pmin = 40])
+        nsteps = calculate_timestep(T, D1, H0, Hunc_ops, maxpar [, Pmin = 40])
 
-Estimate the number of time steps needed for the simulation.
+Estimate the number of time steps needed for an accurate simulation, when there are no coupled controls
  
 # Arguments
 - `T:: Float64`: Final simulation
@@ -1874,9 +1881,9 @@ Estimate the number of time steps needed for the simulation.
 - `H0::Array{Float64,2}`: Time-independent part of the Hamiltonian matrix
 - `Hunc_ops:: Array{Float64,2}`: Array of uncoupled control Hamiltonians
 - `max_unc:: Array{Float64,1}`: Maximum parameter value for each subsystem (uncoupled)
-- `Pmin:: Int64`: Sample rate for accuracy
+- `Pmin:: Int64`: Sample rate for accuracy (assuming a slowly varying Hamiltonian)
 """
-function calculate_timestep(T::Float64, D1::Int64, H0::AbstractArray, Hunc_ops::AbstractArray,max_unc::Array{Float64,1}, Pmin::Int64 = 40)
+function calculate_timestep(T::Float64, D1::Int64, H0::AbstractArray, Hunc_ops::AbstractArray, max_unc::Array{Float64,1}, Pmin::Int64 = 40)
     K1 = copy(H0) 
     Nunc = length(Hunc_ops)
 

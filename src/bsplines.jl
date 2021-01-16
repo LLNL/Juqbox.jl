@@ -1,12 +1,13 @@
 """
     splineparams(T, D1, Nseg, pcof)
 
-Constructor for struct splineparams.
+Constructor for struct splineparams, which sets up the parameters for a regular B-spline function
+(without carrier waves).
 
 # Arguments
 - `T:: Float64`: Duration of spline function
-- `D1:: Int64`: Number of basis functions in each segment
-- `Nseg:: Int64`:  Number of segments  (real, imaginary, different ctrl func)
+- `D1:: Int64`: Number of basis functions in each spline
+- `Nseg:: Int64`:  Number of splines (real, imaginary, different ctrl func)
 - `pcof:: Array{Float64, 1}`: Coefficient vector. Must have D1*Nseg elements
 
 # External links
@@ -72,14 +73,14 @@ end
 """
     g = gradbspline2(t, param, splinefunc)
 
-Evaluate the gradient of a control function with respect to the parameters.
-NOTE: the functions are 0-indexed. Specifically, mod(`func`,2)=0 corresponds to 
-p and mod(`func`,1) = 1 corresponds to q if `func`<2 `*` Ncoupled for a set of 
-coupled controls. 
+Evaluate the gradient of a spline function with respect to all coefficient.
+NOTE: the index of the spline functions are 0-based. For a set of 
+coupled controls, mod(`splinefunc`,2)=0 corresponds to ∇ p_j(t) and mod(`splinefunc`,2) = 1 
+corresponds to ∇ q_j(t), where j = div(splinefunc,2).
 
 # Arguments
 - `t::Float64`: Evaluate spline at parameter t ∈ [0, param.T]
-- `param::splineparams`: Parameters for the spline
+- `param::splineparams`: Spline parameter object
 - `splinefunc::Int64`: Spline function index ∈ [0, param.Nseg-1]
 """
 @inline function gradbspline2(t::Float64,param::splineparams, splinefunc::Int64)
@@ -114,26 +115,21 @@ end
 
 
 """
+    bcparams(T, D1, Ncoupled, Nunc, omega, pcof)
+
+General constructor of struct bcparams for setting up B-plines with carrier waves.
+
     bcparams(T, D1, omega, pcof)
 
-Constructor for struct bcparams.
-
-# Arguments
-- `T:: Float64`: Duration of spline function
-- `D1:: Int64`: Number of basis functions in each segment
-- `omega::Array{Float64,2}`: Array where `omega[i,j]` is the `i`th carrier wave frequency for the 
-`j`th control
-- `pcof:: Array{Float64, 1}`: Coefficient vector. Must have D1*Nseg elements
-
-bcparams(T::Float64, D1::Int64, Ncoupled::Int64, Nunc::Int64, omega::Array{Float64,2}, pcof::Array{Float64,1})
+Simplified constructor for the case when there are no uncoupled controls and `Ncoupled = size(omega,1)`.
 
 # Arguments
 - `T:: Float64`: Duration of spline function
 - `D1:: Int64`: Number of basis functions in each segment
 - `Ncoupled::Int64`: Number of coupled controls in the simulation
 - `Nunc::Int64`: Number of uncoupled controls in the simulation
-- `omega::Array{Float64,2}`: Array where `omega[i,j]` is the `i`th carrier wave frequency for the 
-`j`th control
+- `omega::Array{Float64,2}`:  Here `omega[i,j]` is the `i`th carrier wave frequency for the 
+`j`th spline function
 - `pcof:: Array{Float64, 1}`: Coefficient vector. Must have D1*Nseg elements
 
 # External links
@@ -302,16 +298,16 @@ end
 
 """
     gradbcarrier2!(t, params, func, g) -> g
+Evaluate the gradient of a control function with respect to all coefficient.
 
-Evaluate the gradient of a control function with respect to the parameters.
-NOTE: the functions are 0-indexed. Specifically, mod(`func`,2)=0 corresponds to 
-p and mod(`func`,1) = 1 corresponds to q if `func`<2 `*` Ncoupled for a set of 
-coupled controls. 
+NOTE: the index of the control functions is 0-based. For a set of 
+coupled controls, mod(`func`,2)=0 corresponds to ∇ p_j(t) and mod(`func`,2) = 1 
+corresponds to ∇ q_j(t), where j = div(func,2).
 
 # Arguments
 - `t::Float64`: Evaluate spline at parameter t ∈ [0, param.T]
 - `params::bcparams`: Parameters for the spline
-- `func::Int64`: Spline function index ∈ [0, param.Nseg-1]
+- `func::Int64`: Control function index ∈ [0, param.Nseg-1]
 - `g::Array{Float64,1}`: Preallocated array to store calculated gradient
 """
 function gradbcarrier2!(t::Float64, params::bcparams, func::Int64, g::Array{Float64,1})
