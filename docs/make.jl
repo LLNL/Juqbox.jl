@@ -1,4 +1,4 @@
-using Documenter, Juqbox
+using Documenter, DocumenterLaTeX, Juqbox
 root = ""
 source = "src"
 build = "build"
@@ -9,7 +9,7 @@ repo = "https://lc.llnl.gov/bitbucket/scm/wave/juqbox.jl.git"
 
 
 makedocs(
-#    format=LaTeX(), # doesn't work?
+#    format= LaTeX(), # doesn't work?
     modules = [Juqbox],
     sitename="Juqbox.jl"
 )

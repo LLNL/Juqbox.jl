@@ -1,29 +1,11 @@
 # Juqbox.jl Documentation
 
-```@docs
-splineparams
-bspline2
-gradbspline2
-bcparams
-bcarrier2
-gradbcarrier2!
-objparams
-assign_thresholds
-evalctrl
-Working_Arrays
-plot_conv_hist
-identify_guard_levels
-identify_forbidden_levels
-run_optimizer
-calculate_timestep
-setup_ipopt_problem
-traceobjgrad
-marginalize3
-plotunitary
-neumann!
-assign_thresholds_freq
-plotspecified
-estimate_Neumann!
-wmatsetup
-setup_rotmatrices
+```@index
+Modules = [Juqbox]
 ```
+
+```@autodocs
+Modules = [Juqbox]
+Order = [:type, :function]
+```
+
