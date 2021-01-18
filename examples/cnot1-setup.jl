@@ -66,7 +66,7 @@ maxctrl = 0.001*2*pi * 8.5 #  9, 10.5, 12, 15 MHz
 # nsteps = ceil(Int64, T*samplerate1)
 
 nsteps = calculate_timestep(T, H0, Hsym_ops, Hanti_ops, [maxctrl])
-println("Max est. eigenvalue = ", maxeig, " Min period = ", 2*pi/maxeig, " # time steps per min-period, P = ", Pmin, " # time steps: ", nsteps)
+println("# time steps: ", nsteps)
 
 use_bcarrier = true # Use carrier waves in the control pulses?
 
