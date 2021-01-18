@@ -1,5 +1,5 @@
 """
-        objparams(Ne, Ng, T, Nsteps;
+    params = objparams(Ne, Ng, T, Nsteps;
                         Uinit=Uinit, 
                         Utarget=Utarget,
                         Cfreq=Cfreq, 
@@ -223,7 +223,7 @@ end # mutable struct objparams
 
 # This struct holds all of the working arrays needed to call traceobjgrad. Preallocated for efficiency
 """
-        Working_Arrays(params::objparams, nCoeff::Int64)
+    wa = Working_Arrays(params::objparams, nCoeff::Int64)
 
 Constructor for the mutable struct Working_Arrays containing preallocated working arrays.
 
@@ -288,7 +288,7 @@ mutable struct Working_Arrays
 end
 
 """
-        traceobjgrad(pcof0, params, wa[, verbose = false, evaladjoint = true])
+    objf = traceobjgrad(pcof0, params, wa[, verbose = false, evaladjoint = true])
 
 Perform a forward and/or adjoint Schrödinger solve to evaluate the objective
 function and/or gradient.
@@ -736,7 +736,7 @@ function setup_prior!(params::objparams, priorFile::String)
 end
 
 """
-        wmat = wmatsetup(Ne, Ng)
+    wmat = wmatsetup(Ne, Ng)
 
 Build the default positive semi-definite weighting matrix W to calculate the 
 leakage into higher energy forbidden states
@@ -871,7 +871,7 @@ end
 
 # Matrices for the Hamiltonian in rotation frame
 """
-        omega1[, omega2, omega3] = setup_rotmatrices(Ne, Ng, fund_freq)
+    omega1[, omega2, omega3] = setup_rotmatrices(Ne, Ng, fund_freq)
 
 Build diagonal rotation matrices based on the |0⟩to |1⟩ transition frequency in each sub-system.
 
@@ -965,7 +965,7 @@ function assign_thresholds_old(maxpar, Ncoupled, Nfreq, D1)
 end
 
 """
-        minCoeff, maxCoeff = assign_thresholds_freq(maxamp, Ncoupled, Nfreq, D1)
+    minCoeff, maxCoeff = assign_thresholds_freq(maxamp, Ncoupled, Nfreq, D1)
 
 Build vector of frequency dependent min/max parameter constraints, with `minCoeff = -maxCoeff`, when
 there are no uncoupled control functions.
@@ -993,7 +993,7 @@ function assign_thresholds_freq(maxamp::Array{Float64,1}, Ncoupled::Int64, Nfreq
 end
 
 """
-        minCoeff, maxCoeff = assign_thresholds(params, D1, params, maxpar [, maxpar_unc])
+    minCoeff, maxCoeff = assign_thresholds(params, D1, params, maxpar [, maxpar_unc])
 
 Build vector of frequency independent min/max parameter constraints for each coupled and
 (optionally) uncoupled control function. Here, `minCoeff = -maxCoeff`.
@@ -1721,7 +1721,7 @@ end
 # FMG: This will work but appears to be pessimistic. One can use fewer terms, perhaps a better estimate can be found.
 # TODO: Make maxpar and maxunc keyword arguments to simplify calling when maxpar=Float64[]?
 """
-        estimate_Neumann!(tol, params, maxpar[, maxunc])
+    estimate_Neumann!(tol, params, maxpar[, maxunc])
 
 Estimate the number of terms needed by the Neumann series approach for solving the linear system
 during the implicit steps of the Störmer-Verlet scheme. See also neumann!
@@ -1772,20 +1772,19 @@ end
 
 
 """
-        nsteps = calculate_timestep(T, D1, H0, Hsym_ops, Hanti_ops, maxpar [, Pmin = 40])
+    nsteps = calculate_timestep(T, H0, Hsym_ops, Hanti_ops, maxpar [, Pmin = 40])
 
 Estimate the number of time steps needed for the simulation, for the case without uncoupled controls.
  
 # Arguments
 - `T:: Float64`: Final simulation
-- `D1:: Int64`: Number of basis functions in each segment
 - `H0::Array{Float64,2}`: Time-independent part of the Hamiltonian matrix
 - `Hsym_ops:: Array{Float64,2}`: Array of symmetric control Hamiltonians
 - `Hanti_ops:: Array{Float64,2}`: Array of symmetric control Hamiltonians
 - `maxpar:: Array{Float64,1}`: Maximum parameter value for each subsystem
 - `Pmin:: Int64`: Number of time steps per shortest period (assuming a slowly varying Hamiltonian).
 """
-function calculate_timestep(T::Float64, D1::Int64, H0::AbstractArray,Hsym_ops::AbstractArray,Hanti_ops::AbstractArray, maxpar::Array{Float64,1}, Pmin::Int64 = 40)
+function calculate_timestep(T::Float64, H0::AbstractArray,Hsym_ops::AbstractArray,Hanti_ops::AbstractArray, maxpar::Array{Float64,1}, Pmin::Int64 = 40)
     K1 = copy(H0) 
     Ncoupled = length(Hsym_ops)
 
@@ -1802,22 +1801,20 @@ function calculate_timestep(T::Float64, D1::Int64, H0::AbstractArray,Hsym_ops::A
     samplerate1 = maxeig*Pmin/(2*pi)
     nsteps = ceil(Int64, T*samplerate1)
 
-    # The above estimate does not account for quickly varying signals or a large number of splines. 
+    # NOTE: The above estimate does not account for quickly varying signals or a large number of splines.  
     # Double check at least 2-3 points per spline to resolve control function.
-    nsteps_pps = 3*(D1-2)
-    nsteps = max(nsteps_pps,nsteps)
 
     return nsteps
 end
 
 """
-        nsteps = calculate_timestep(T, D1, H0, Hsym_ops, Hanti_ops, Hunc_ops, maxpar, max_flux[, Pmin = 40])
+    nsteps = calculate_timestep(T, H0, Hsym_ops, Hanti_ops, Hunc_ops, 
+                                              maxpar, max_flux[, Pmin = 40])
 
 Estimate the number of time steps needed for the simulation, when there are uncoupled controls.
  
 # Arguments
 - `T:: Float64`: Final simulation
-- `D1:: Int64`: Number of basis functions in each segment
 - `H0::Array{Float64,2}`: Time-independent part of the Hamiltonian matrix
 - `Hsym_ops:: Array{Float64,2}`: Array of symmetric control Hamiltonians
 - `Hanti_ops:: Array{Float64,2}`: Array of symmetric control Hamiltonians
@@ -1826,7 +1823,7 @@ Estimate the number of time steps needed for the simulation, when there are unco
 - `max_flux:: Array{Float64,1}`: Maximum parameter value for each uncoupled control
 - `Pmin:: Int64`: Number of time steps per shortest period (assuming a slowly varying Hamiltonian).
 """
-function calculate_timestep(T::Float64, D1::Int64, H0::AbstractArray,Hsym_ops::AbstractArray,Hanti_ops::AbstractArray,
+function calculate_timestep(T::Float64, H0::AbstractArray,Hsym_ops::AbstractArray,Hanti_ops::AbstractArray,
                             Hunc_ops::AbstractArray,maxpar::Array{Float64,1},max_flux::Array{Float64,1}, Pmin::Int64 = 40)
     K1 = copy(H0) 
     Ncoupled = length(Hsym_ops)
@@ -1861,29 +1858,26 @@ function calculate_timestep(T::Float64, D1::Int64, H0::AbstractArray,Hsym_ops::A
     samplerate1 = maxeig*Pmin/(2*pi)
     nsteps = ceil(Int64, T*samplerate1)
 
-    # The above estimate does not account for quickly varying signals or a large number of splines. 
+    # NOTE: The above estimate does not account for quickly varying signals or a large number of splines. 
     # Double check at least 2-3 points per spline to resolve control function.
-    nsteps_pps = 3*(D1-2)
-    nsteps = max(nsteps_pps,nsteps)
 
     return nsteps
 end
 
 # Function to estimate the number of time steps needed for the simulation. Only uncoupled controls.
 """
-        nsteps = calculate_timestep(T, D1, H0, Hunc_ops, maxpar [, Pmin = 40])
+    nsteps = calculate_timestep(T, H0, Hunc_ops, maxpar [, Pmin = 40])
 
 Estimate the number of time steps needed for an accurate simulation, when there are no coupled controls
  
 # Arguments
 - `T:: Float64`: Final simulation
-- `D1:: Int64`: Number of basis functions in each segment
 - `H0::Array{Float64,2}`: Time-independent part of the Hamiltonian matrix
 - `Hunc_ops:: Array{Float64,2}`: Array of uncoupled control Hamiltonians
 - `max_unc:: Array{Float64,1}`: Maximum parameter value for each subsystem (uncoupled)
 - `Pmin:: Int64`: Sample rate for accuracy (assuming a slowly varying Hamiltonian)
 """
-function calculate_timestep(T::Float64, D1::Int64, H0::AbstractArray, Hunc_ops::AbstractArray, max_unc::Array{Float64,1}, Pmin::Int64 = 40)
+function calculate_timestep(T::Float64, H0::AbstractArray, Hunc_ops::AbstractArray, max_unc::Array{Float64,1}, Pmin::Int64 = 40)
     K1 = copy(H0) 
     Nunc = length(Hunc_ops)
 
@@ -1911,10 +1905,8 @@ function calculate_timestep(T::Float64, D1::Int64, H0::AbstractArray, Hunc_ops::
     samplerate1 = maxeig*Pmin/(2*pi)
     nsteps = ceil(Int64, T*samplerate1)
 
-    # The above estimate does not account for quickly varying signals or a large number of splines. 
+    # NOTE: The above estimate does not account for quickly varying signals or a large number of splines. 
     # Double check at least 2-3 points per spline to resolve control function.
-    nsteps_pps = 3*(D1-2)
-    nsteps = max(nsteps_pps,nsteps)
 
     return nsteps
 end

@@ -66,7 +66,7 @@ function intermediate_par(
 end
 
 """
-        prob = setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff [, maxIter=50, 
+    prob = setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff [, maxIter=50, 
                             lbfgsMax=10, startFromScratch=true, ipTol=1e-5, acceptTol=1e-5, acceptIter=15])
 
 Setup structure containing callback functions and convergence criteria for 
@@ -140,7 +140,7 @@ function setup_ipopt_problem(params:: Juqbox.objparams, wa::Working_Arrays, nCoe
 end
 
 """
-        pcof = run_optimizer(prob, pcof0 [, fileName:: String=""])
+    pcof = run_optimizer(prob, pcof0 [, fileName:: String=""])
 
 Call IPOPT to  optimizize the control functions.
 

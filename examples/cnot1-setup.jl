@@ -56,14 +56,16 @@ H0 = Array(H0)
 
 # Estimate time step
 maxctrl = 0.001*2*pi * 8.5 #  9, 10.5, 12, 15 MHz
-K1 =  H0 + maxctrl.*( amat +  amat') + 1im* maxctrl.*(amat - amat')
-lamb = eigvals(Array(K1))
-maxeig = maximum(abs.(lamb)) 
 
-Pmin = 40
-samplerate1 = maxeig*Pmin/(2*pi)
-nsteps = ceil(Int64, T*samplerate1)
+# K1 =  H0 + maxctrl.*( amat +  amat') + 1im* maxctrl.*(amat - amat')
+# lamb = eigvals(Array(K1))
+# maxeig = maximum(abs.(lamb)) 
 
+# Pmin = 40
+# samplerate1 = maxeig*Pmin/(2*pi)
+# nsteps = ceil(Int64, T*samplerate1)
+
+nsteps = calculate_timestep(T, H0, Hsym_ops, Hanti_ops, [maxctrl])
 println("Max est. eigenvalue = ", maxeig, " Min period = ", 2*pi/maxeig, " # time steps per min-period, P = ", Pmin, " # time steps: ", nsteps)
 
 use_bcarrier = true # Use carrier waves in the control pulses?

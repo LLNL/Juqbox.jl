@@ -129,7 +129,7 @@ else
 end
 
 # Estimate time step for simulation
-nsteps = Juqbox.calculate_timestep(T, D1, H0, Hunc_ops, [max_unc])
+nsteps = Juqbox.calculate_timestep(T, H0, Hunc_ops, [max_unc])
 
 # setup the simulation parameters
 params = Juqbox.objparams([N], [Nguard], T, nsteps, Uinit=U0, Utarget=utarget, Cfreq=om, Rfreq=[fa], Hconst=H0, Hunc_ops=Hunc_ops)

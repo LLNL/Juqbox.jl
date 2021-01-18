@@ -1,6 +1,6 @@
 # Works for Nosc={1, 2, 3}
 """
-        plt = plotunitary(us, params, guardlev)
+    plt = plotunitary(us, params, guardlev)
 
 Plot the evolution of the state vector.
  
@@ -84,7 +84,7 @@ end
 
 # Works for Nosc={1, 2, 3}
 """
-        plt = plotspecified(us, params, guardlev, specifiedlev)
+    plt = plotspecified(us, params, guardlev, specifiedlev)
 
 Plot the evolution of the state vector for specified levels.
  
@@ -212,13 +212,14 @@ end
 
 # Evaluate the control functions on a grid in time in units of GHz
 """
-        pj[, qj] = evalctrl(params, pcof0, td, func) 
+    pj [, qj] = evalctrl(params, pcof0, td, func) 
 
 Evaluate the control function with index `func` at an array of time levels `td`.  
 
-NOTE: the control function index is 0-based. For `func∈[0,2*Ncoupled -1]`, mod(`func`,2)=0
-corresponds to p_j(t) and mod(`func`,1) = 1 corresponds to q_j(t) for , where `j=div(func,2)`. An
-uncoupled control function is evaluated when `func >= 2*Ncoupled`.
+NOTE: the control function index `func` is 0-based. 
+
+NOTE: The return value(s) depend on `func`. For `func∈[1,Ncoupled]`, `pj, qj` are returned. Otherwise, 
+only `pj` is returned, corresponding to control number `func`.
 
 # Arguments
 - `params:: objparams`: Struct with problem definition
@@ -266,7 +267,7 @@ function evalctrl(params::objparams, pcof0:: Array{Float64, 1}, td:: Array{Float
 end
 
 """
-        guardlev = identify_guard_levels(params[, custom = 0])
+    guardlev = identify_guard_levels(params[, custom = 0])
 
 Build a Bool array indicating if a given energy level is a guard
 level in the simulation.
@@ -310,7 +311,7 @@ function identify_guard_levels(params::Juqbox.objparams, custom:: Int64 = 0)
 end #identify_guard_levels
 
 """
-        forbiddenlev = identify_guard_levels(params[, custom = 0])
+    forbiddenlev = identify_guard_levels(params[, custom = 0])
 
 Build a Bool array indicating which energy levels are forbidden levels in the state vector. The
 forbidden levels in a state vector are defined as thos corresponding to the highest energy level in
@@ -382,7 +383,7 @@ end #specify_level3
 
 
 """
-        marg_prob = marginalize3(params, unitaryhist)
+    marg_prob = marginalize3(params, unitaryhist)
 
 Evaluate marginalized probabilities for the case of 3 subsystems.
  
@@ -411,7 +412,7 @@ function marginalize3(params:: Juqbox.objparams, unitaryhist:: Array{Complex{Flo
 end #marginalize3
 
 """
-        pconv = plot_conv_hist(params [, convname:: String=""])
+    pconv = plot_conv_hist(params [, convname:: String=""])
 
 Plot the optimization convergence history, including history of 
 the different terms in the objective function and the norm of the gradient.

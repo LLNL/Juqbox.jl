@@ -1,5 +1,5 @@
 """
-    splineparams(T, D1, Nseg, pcof)
+    spar = splineparams(T, D1, Nseg, pcof)
 
 Constructor for struct splineparams, which sets up the parameters for a regular B-spline function
 (without carrier waves).
@@ -33,7 +33,7 @@ end
 
 # bspline2: Evaluate quadratic bspline function
 """
-    bspline2(t, splineparam, splinefunc)
+    f = bspline2(t, splineparam, splinefunc)
 
 Evaluate a B-spline function. See also the `splineparams` constructor.
 
@@ -115,11 +115,11 @@ end
 
 
 """
-    bcparams(T, D1, Ncoupled, Nunc, omega, pcof)
+    bcpar = bcparams(T, D1, Ncoupled, Nunc, omega, pcof)
 
-General constructor of struct bcparams for setting up B-plines with carrier waves.
+General constructor of struct bcparams for setting up B-splines with carrier waves.
 
-    bcparams(T, D1, omega, pcof)
+    bcpar = bcparams(T, D1, omega, pcof)
 
 Simplified constructor for the case when there are no uncoupled controls and `Ncoupled = size(omega,1)`.
 
@@ -190,7 +190,7 @@ function bcparams(T::Float64, D1::Int64, omega::Array{Float64,2}, pcof::Array{Fl
 end
 
 """
-    bcarrier2(t, params, func)
+    f = bcarrier2(t, params, func)
 
 Evaluate a B-spline function with carrier waves. See also the `bcparams` constructor.
 
