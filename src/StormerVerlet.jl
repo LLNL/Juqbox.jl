@@ -544,20 +544,6 @@ end
 end
 
 
-"""
-    neumann!(nterms, h, S, B, T, X) -> X
-
-Solve the linear system `(I - 0.5  * h * S)X = B` by using the Neumann series 
-`(I - 0.5 * h * S)^{-1} = I + (0.5 * h * S) + (0.5 * h * S)^2 + (0.5 * h * S)^3 + …`.
-
-# Arguments
-- `nterms:: Int64`: Number of terms used in the Neumann series
-- `h:: Float64`: Time step size
-- `S:: SparseMatrixCSC{Float64,Int64}`: Matrix defining Neumann series
-- `B:: ::SparseMatrixCSC{Float64,Int64}`: Right hand side(s)
-- `T:: ::SparseMatrixCSC{Float64,Int64}`: Temporary working array
-- `X:: ::SparseMatrixCSC{Float64,Int64}`: Solution of the system
-"""
 @inline function neumann!(nterms::Int64, h::Float64, S::SparseMatrixCSC{Float64,Int64}, 
 						 B::Array{Float64,N}, T::Array{Float64,N}, X::Array{Float64,N}) where N
 	copy!(X,B)
@@ -571,20 +557,6 @@ Solve the linear system `(I - 0.5  * h * S)X = B` by using the Neumann series
 	end
 end
 
-"""
-    neumann!(nterms, h, S, B, T, X) -> X
-
-Solve the linear system `(I - 0.5  * h * S)X = B` by using the Neumann series 
-`(I - 0.5 * h * S)^{-1} = I + (0.5 * h * S) + (0.5 * h * S)^2 + (0.5 * h * S)^3 + …`.
-
-# Arguments
-- `nterms:: Int64`: Number of terms used in the Neumann series
-- `h:: Float64`: Time step size
-- `S:: Array{Float64,N}`: Matrix defining Neumann series
-- `B:: Array{Float64,N}`: Right hand side(s)
-- `T:: Array{Float64,N}`: Temporary working array
-- `X:: Array{Float64,N}`: Solution of the system
-"""
 @inline function neumann!(nterms::Int64, h::Float64, S::Array{Float64,N}, B::Array{Float64,N}, 
 						T::Array{Float64,N}, X::Array{Float64,N}) where N
 	copy!(X,B)
