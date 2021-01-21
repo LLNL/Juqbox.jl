@@ -21,6 +21,10 @@ function eval_grad_f_par(pcof::Vector{Float64}, grad_f::Vector{Float64}, params:
     params.lastTraceInfidelity = traceinfid
     params.lastLeakIntegral = secondaryobjf
 
+    # Save intermediate parameter vectors
+    if params.save_pcof_hist
+        push!(params.pcof_hist, copy(pcof)) #pcof_hist is and Array of Vector{Float64}
+    end
 end
 
 function eval_jac_g(

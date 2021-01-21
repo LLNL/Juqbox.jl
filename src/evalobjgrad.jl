@@ -95,6 +95,9 @@ mutable struct objparams
     quiet:: Bool # quiet mode?
 
     Rfreq::Array{Float64,1}
+
+    save_pcof_hist:: Bool
+    pcof_hist:: Array{Vector{Float64},1}
     
 # Regular arrays
     function objparams(Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64;
@@ -216,7 +219,7 @@ mutable struct objparams
             Hanti_ops1 = Hanti_ops
             Hunc_ops1 = Hunc_ops
         end
-        new(Nosc, N, Nguard, Ne, Ng, Ne+Ng, T, nsteps, Uinit, Utarget, use_bcarrier, Nfreq, Cfreq, kpar, tik0, Hconst, Hsym_ops1, Hanti_ops1, Hunc_ops1, Ncoupled, Nunc, isSymm, Ident, wmat, pFidType, 0.0, saveConvHist, zeros(0), zeros(0), zeros(0), zeros(0), nNeumann, traceInfidelityThreshold, 0.0, 0.0, usingPriorCoeffs, priorCoeffs, quiet, Rfreq)
+        new(Nosc, N, Nguard, Ne, Ng, Ne+Ng, T, nsteps, Uinit, Utarget, use_bcarrier, Nfreq, Cfreq, kpar, tik0, Hconst, Hsym_ops1, Hanti_ops1, Hunc_ops1, Ncoupled, Nunc, isSymm, Ident, wmat, pFidType, 0.0, saveConvHist, zeros(0), zeros(0), zeros(0), zeros(0), nNeumann, traceInfidelityThreshold, 0.0, 0.0, usingPriorCoeffs, priorCoeffs, quiet, Rfreq, false, [])
     end
 
 end # mutable struct objparams

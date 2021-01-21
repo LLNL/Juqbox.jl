@@ -1,7 +1,7 @@
 name = "Juqbox"
 uuid = "d847742d-ef10-4feb-8f3c-cfc2faa2caf7"
 authors = ["Anders Petersson <petersson1@llnl.gov>"]
-version = "0.1.14"
+version = "0.1.15"
 
 [deps]
 FileIO = "5789e2e9-d7fb-5bc7-8068-2c6fae9b9549"
