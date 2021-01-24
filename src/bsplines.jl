@@ -128,9 +128,31 @@ Simplified constructor for the case when there are no uncoupled controls and `Nc
 - `D1:: Int64`: Number of basis functions in each segment
 - `Ncoupled::Int64`: Number of coupled controls in the simulation
 - `Nunc::Int64`: Number of uncoupled controls in the simulation
-- `omega::Array{Float64,2}`:  Here `omega[i,j]` is the `i`th carrier wave frequency for the 
-`j`th spline function
+- `omega::Array{Float64,2}`: Carrier wave frequencies
 - `pcof:: Array{Float64, 1}`: Coefficient vector. Must have D1*Nseg elements
+
+# First dimensions of the `omega` array:
+- With no uncoupled controls, `Nunc=0` and `size(omega,1) = Ncoupled`.
+- With uncoupled controls, `Nunc > 0` and `size(omega,1) = Ncoupled + Nunc`.
+
+# Second dimension of the `omega` array:
+- `size(omega, 2) = Nfreq`
+
+# Ordering of the `pcof` array:
+First consider the case without uncoupled control functions, `Nunc = 0`: 
+Then the `pcof` array then has `2*Ncoupled*Nfreq*D1` elements. 
+Each `ctrl ∈ [1,Ncoupled]` and `freq ∈ [1,Nfreq]` corresponds to `D1` elements in 
+the `pcof` vector. For the case `Ncoupled = 2` and `Nfreq = 2`, the elements are ordered according to
+
+| ctrl    | freq    | pcof  |
+| ------- | -------- | -------- |
+| 1      | 1        | 1:D1             |
+| 1      | 2        | D1+1:2 D1    |
+| 2      | 1        | 2 D1+1:3 D1 |
+| 2      | 2        | 3 D1+1:4 D1 |
+
+If there are uncoupled controls, `Nunc > 0`, the `pcof` array should have `(2*Ncoupled + Nunc)*Nfreq*D1` elements. 
+The last `Nunc*Nfreq*D1` elements correspond to the uncoupled control functions and are ordered in a corresponding way.
 
 # External links
 * [Spline Wavelet](https://en.wikipedia.org/wiki/Spline_wavelet#Quadratic_B-spline) on Wikipedia.

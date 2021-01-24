@@ -974,7 +974,7 @@ Build vector of frequency dependent min/max parameter constraints, with `minCoef
 there are no uncoupled control functions.
  
 # Arguments
-- `maxamp::Array{Float64,1}`: Maximum parameter value for each subsystem
+- `maxamp::Array{Float64,1}`: Maximum parameter value for each frequency
 - `Ncoupled::Int64`: Number of coupled controls in the simulation
 - `Nfreq::Int64`: Number of carrier wave frequencies used in the controls
 - `D1:: Int64`: Number of basis functions in each control function
@@ -1793,7 +1793,7 @@ function calculate_timestep(T::Float64, H0::AbstractArray,Hsym_ops::AbstractArra
 
     # Coupled control Hamiltonians
     for i = 1:Ncoupled
-        K1 = K1 + maxpar.*Hsym_ops[i] + 1im*maxpar.*Hanti_ops[i]
+        K1 = K1 + maxpar[i].*Hsym_ops[i] + 1im*maxpar[i].*Hanti_ops[i]
     end
 
     # Estimate time step
