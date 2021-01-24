@@ -700,13 +700,16 @@ if verbose
     # Also output L2 norm of last energy level
     if Ntot>N
         #       normlastguard = zeros(N)
-        maxpop = zeros(N)
-        for q in 1:N
-#            normlastguard[q] = sqrt( (usaver[Ntot,q,:]' * usaver[Ntot,q,:] + usavei[Ntot,q,:]' * usavei[Ntot,q,:])/nsteps );
-            maxpop[q] = maximum( abs.(usaver[Ntot,q,:]).^2 + abs.(usavei[Ntot,q,:]).^2 )
+        maxpop = zeros(Ng, N)
+        guardLev = identify_guard_levels(params)
+        for lev in 1:Ntot
+            if guardLev[lev]
+                for q in 1:N
+                    maxpop[guard, q] = maximum( abs.(usaver[lev, q, :]).^2 + abs.(usavei[lev, q, :]).^2 )
+                end
+                println("Row = ", lev, " is a guard level, max population = ", maximum(maxpop[guard,:]) )
+            end #if
         end
-#        println("L2 norm last guard level (max) = ", maximum(normlastguard))
-        println("Max population of last guard level = ", maximum(maxpop))
     else
         println("No guard levels in this simulation");
     end
