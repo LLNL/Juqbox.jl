@@ -700,18 +700,21 @@ if verbose
     # Also output L2 norm of last energy level
     if Ntot>N
         #       normlastguard = zeros(N)
-        maxpop = zeros(Ng, N)
-        guardLev = identify_guard_levels(params)
+        forbLev = identify_forbidden_levels(params)
+        maxLev = zeros(Ntot)
         for lev in 1:Ntot
-            if guardLev[lev]
+            maxpop = zeros(N)
+            if forbLev[lev]
                 for q in 1:N
-                    maxpop[guard, q] = maximum( abs.(usaver[lev, q, :]).^2 + abs.(usavei[lev, q, :]).^2 )
+                    maxpop[q] = maximum( abs.(usaver[lev, q, :]).^2 + abs.(usavei[lev, q, :]).^2 )
                 end
-                println("Row = ", lev, " is a guard level, max population = ", maximum(maxpop[guard,:]) )
+                maxLev[lev] = maximum(maxpop)
+                println("Row = ", lev, " is a forbidden level, max population = ", maxLev[lev])
             end #if
         end
+        println("Max population over all forbidden levels = ", maximum(maxLev))
     else
-        println("No guard levels in this simulation");
+        println("No forbidden levels in this simulation");
     end
     
 end #if verbose
