@@ -144,12 +144,12 @@ Then the `pcof` array then has `2*Ncoupled*Nfreq*D1` elements.
 Each `ctrl ∈ [1,Ncoupled]` and `freq ∈ [1,Nfreq]` corresponds to `D1` elements in 
 the `pcof` vector. For the case `Ncoupled = 2` and `Nfreq = 2`, the elements are ordered according to
 
-| ctrl    | freq    | pcof  |
-| ------- | -------- | -------- |
-| 1      | 1        | 1:D1             |
-| 1      | 2        | D1+1:2 D1    |
-| 2      | 1        | 2 D1+1:3 D1 |
-| 2      | 2        | 3 D1+1:4 D1 |
+| ctrl    | freq    | α_1  | α_2 |
+| ------- | -------- | -------- | -------|
+| 1      | 1        | 1:D1             | D1+1:2 D1 |
+| 1      | 2        | 2 D1+1: 3 D1 | 3 D1+1:4 D1 |
+| 2      | 1        | 4 D1+1: 5 D1 | 5 D1+1:6 D1 |
+| 2      | 2        | 6 D1+1: 7 D1 | 7 D1+1: 8D1 |
 
 If there are uncoupled controls, `Nunc > 0`, the `pcof` array should have `(2*Ncoupled + Nunc)*Nfreq*D1` elements. 
 The last `Nunc*Nfreq*D1` elements correspond to the uncoupled control functions and are ordered in a corresponding way.
