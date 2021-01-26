@@ -957,7 +957,22 @@ function setup_rotmatrices(Ne::Array{Int64,1}, Ng::Array{Int64,1}, fund_freq::Ar
 end
 
 #------------------------------------------------------------
-function assign_thresholds_old(maxpar, Ncoupled, Nfreq, D1)
+"""
+    minCoeff, maxCoeff = assign_thresholds_ctrl_freq(params, D1, maxamp)
+
+Build vector of frequency dependent min/max parameter constraints, with `minCoeff = -maxCoeff`, when
+there are no uncoupled control functions.
+ 
+# Arguments
+- `params:: objparams`: Struct containing problem definition.
+- `D1:: Int64`: Number of basis functions in each segment.
+- `maxamp:: Matrix{Float64}`: Maximum parameter value for each ctrl and frequency
+"""
+function assign_thresholds_ctrl_freq(params::objparams, D1:: Int64, maxpar:: Matrix{Float64})
+    @assert(params.Nunc == 0)
+    
+    Nfreq = params.Nfreq
+    Ncoupled = params.Ncoupled
     nCoeff = 2*Ncoupled*Nfreq*D1
     minCoeff = zeros(nCoeff) # Initialize storage
     maxCoeff = zeros(nCoeff)
@@ -966,8 +981,8 @@ function assign_thresholds_old(maxpar, Ncoupled, Nfreq, D1)
     for c in 1:Ncoupled
         for f in 1:Nfreq
             offset1 = 2*(c-1)*Nfreq*D1 + (f-1)*2*D1
-            minCoeff[ offset1 + 1:offset1+2*D1] .= -maxpar[c] # same for p(t) and q(t)
-            maxCoeff[offset1 + 1:offset1+2*D1] .= maxpar[c]
+            minCoeff[ offset1 + 1:offset1+2*D1] .= -maxpar[c,f] # same for p(t) and q(t)
+            maxCoeff[offset1 + 1:offset1+2*D1] .= maxpar[c,f]
         end
     end
     return minCoeff, maxCoeff
@@ -1002,7 +1017,7 @@ function assign_thresholds_freq(maxamp::Array{Float64,1}, Ncoupled::Int64, Nfreq
 end
 
 """
-    minCoeff, maxCoeff = assign_thresholds(params, D1, params, maxpar [, maxpar_unc])
+    minCoeff, maxCoeff = assign_thresholds(params, D1, maxpar [, maxpar_unc])
 
 Build vector of frequency independent min/max parameter constraints for each coupled and
 (optionally) uncoupled control function. Here, `minCoeff = -maxCoeff`.
