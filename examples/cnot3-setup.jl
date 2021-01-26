@@ -287,10 +287,8 @@ if startFromScratch
     pcof0 = amax*0.01 * rand(nCoeff)
     println("*** Starting from random pcof with amplitude ", amax*0.01)
 else
-    # use if you want to have initial coefficients read from file
-    dict = load(startFile)
-    pcof0 = dict["pcof"]
-
+    #  read initial coefficients from file
+    pcof0 = read_pcof(startFile);
     nCoeff = length(pcof0)
     D1 = div(nCoeff, 2*Ncoupled*Nfreq)  # number of B-spline coeff per control function
     nCoeff = 2*Nosc*Nfreq*D1 # just to be safe if the file doesn't contain the right number of elements

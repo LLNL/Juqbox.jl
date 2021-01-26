@@ -18,6 +18,7 @@ export setup_ipopt_problem, Working_Arrays, estimate_Neumann!, assign_thresholds
 export run_optimizer, plot_conv_hist
 export wmatsetup, assign_thresholds_freq 
 export calculate_timestep, marginalize3
+export save_pcof, read_pcof
 
 # Julia versions prior to v"1.3.1" can't use LinearAlgebra's 5 argument mul!, routines
 # included here for backwards compatability
@@ -39,5 +40,7 @@ include("evalobjgrad.jl")
 include("plotstatectrl.jl")
 
 include("ipopt_interface.jl")
+
+include("save_pcof.jl")
 
 end # module
