@@ -48,9 +48,8 @@ probname = casename * "-prob" * ".png"
 forbname = casename * "-forb" * ".png"
 fftname = casename * "-fft-lab-ctrl-lin" * ".png"
 fftname2 = casename * "-fft-lab-ctrl-log" * ".png"
-labplotname = casename * "-ctrl-lab" * ".png"
 # data file names
-labname = casename * "-ctrl-lab.dat"
+labbasename = casename * "-ctrl-lab"
 ctrlbasename = casename * "-ctrl-rot"
 
 println("Tikhonov coefficient: tik0 = ", params.tik0)
@@ -143,98 +142,81 @@ else
     unitStr = "rad/ns"
 end
 
-if(params.Ncoupled > 0)
-    # one subfigure for each control function
-    plotarray = Array{Plots.Plot}(undef, params.Ncoupled) #empty array for separate plots
+# one subfigure for each control function
+plotarray = Array{Plots.Plot}(undef, params.Ncoupled) #empty array for separate plots
+plotarray_lab = Array{Plots.Plot}(undef, params.Ncoupled + params.Nunc) #empty array for separate plots
+
+println("Rotational frequencies: ", params.Rfreq)
+
+for q=1:params.Ncoupled
+    # evaluate ctrl functions for the q'th Hamiltonian
+    pfunc, qfunc = Juqbox.evalctrl(params, pcof, td, q)
+
+    pfunc = scalefactor .* pfunc
+    qfunc = scalefactor .* qfunc
+
+    pmax = maximum(abs.(pfunc))
+    qmax = maximum(abs.(qfunc))
+    # first plot for control function for the symmetric Hamiltonian
+    local titlestr = "Rotating frame coupled ctrl - " * string(q) * " Max-p=" *@sprintf("%.3e", pmax) * " Max-q=" * @sprintf("%.3e", qmax) * " " * unitStr
+    plotarray[q] = Plots.plot(td, pfunc, lab=L"p(t)", title = titlestr, xlabel="Time [ns]",
+                              ylabel=unitStr, legend= :outerright)
+    # add in the control function for the anti-symmetric Hamiltonian
+    Plots.plot!(td, qfunc, lab=L"q(t)")
+
+    println("Rot. frame ctrl-", q, ": Max-p(t) = ", pmax, " Max-q(t) = ", qmax, " ", unitStr)
+
+    # Corresponding lab frame control
+    omq = 2*pi*params.Rfreq[q]
+    labdrive .= 2*pfunc .* cos.(omq*td) .- 2*qfunc .* sin.(omq*td)
+
+    lmax = maximum(abs.(labdrive))
+    local titlestr = "Lab frame coupled ctrl - " * string(q) * " Max=" *@sprintf("%.3e", lmax) * " " * unitStr
+    plotarray_lab[q]= Plots.plot(td, labdrive, lab="", title = titlestr, size = (650, 250), xlabel="Time [ns]", ylabel=unitStr)
+
+    println("Lab frame ctrl-", q, " Max amplitude = ", lmax, " ", unitStr)
     
-    println("Rotational frequencies: ", params.Rfreq)
-
-    for q=1:params.Ncoupled
-        # evaluate ctrl functions for the q'th Hamiltonian
-        pfunc, qfunc = Juqbox.evalctrl(params, pcof, td, q)
-
-        pfunc = scalefactor .* pfunc
-        qfunc = scalefactor .* qfunc
-
-        pmax = maximum(abs.(pfunc))
-        qmax = maximum(abs.(qfunc))
-        # first plot for control function for the symmetric Hamiltonian
-        local titlestr = "Rotating frame ctrl - " * string(q) * " Max-p=" *@sprintf("%.3e", pmax) * " Max-q=" * @sprintf("%.3e", qmax) * " " * unitStr
-        plotarray[q] = Plots.plot(td, pfunc, lab=L"p(t)", title = titlestr, xlabel="Time [ns]",
-                                  ylabel=unitStr, legend= :outerright)
-        # add in the control function for the anti-symmetric Hamiltonian
-        Plots.plot!(td, qfunc, lab=L"q(t)")
-
-        println("Rot. frame ctrl-", q, ": Max-p(t) = ", pmax, " Max-q(t) = ", qmax, " ", unitStr)
-        # Accumulate the lab drive
-        omq = 2*pi*params.Rfreq[q]
-        labdrive .= labdrive .+  2*pfunc .* cos.(omq*td) .- 2*qfunc .* sin.(omq*td)
-
-        #    println("q = ", q, " Max amplitude labdrive = ", maximum(abs.(labdrive)) )
-        
-        if save_files
-            # Save ctrl functions on file
-            pqname = ctrlbasename * "-" * string(q) * ".dat"
-            writedlm(pqname, pfunc, qfunc)
-            println("Saved ctrl functions for Hamiltonian #", q, " on file '", pqname, "', samplerate = ", samplerate);
-        end
-    end
-
-    # Accumulate all ctrl function sub-plots
-    pl2  = Plots.plot(plotarray..., layout = (params.Ncoupled, 1))
-    rotplotname = ""
     if save_files
-        rotplotname = ctrlbasename * ".png"
-        Plots.savefig(pl2, rotplotname)
-        println("Saved rotating frame ctrl plot on file '", rotplotname);
-    end
+        # Save ctrl functions on file
+        pqname = ctrlbasename * "-" * string(q) * ".dat"
+        writedlm(pqname, pfunc, qfunc)
+        println("Saved ctrl functions for Hamiltonian #", q, " on file '", pqname, "', samplerate = ", samplerate);
 
-    # Evaluate labdrive
-    maxamp = maximum(abs.(labdrive))
-    plotarray_lab = Array{Plots.Plot}(undef, 1 + params.Nunc) #empty array for separate plots
-    println("Max amplitude lab-frame ctrl = ", maxamp, ) #, approx = ", 12*pi*maxamp, " Volt(?)")
-    local titlestr = "Lab Frame Coupled Ctrl Function" # approx max amp " * string(12*pi*maxamp) * " Volt"
-    plotarray_lab[1]= Plots.plot(td, labdrive, lab="", title = titlestr, size = (650, 250), xlabel="Time [ns]", ylabel=unitStr)
-
-    # Add in uncoupled controls
-    if(params.Nunc >  0)
-        max_uncoupled = zeros(length(params.Hunc_ops))
-        for q =1:params.Nunc
-            qu = 2*params.Ncoupled + q - 1
-            pfunc = scalefactor .* Juqbox.evalctrl(params, pcof, td, qu)
-            max_uncoupled[q] = maximum(abs.(pfunc))
-            plotarray_lab[params.Ncoupled+q] =  Plots.plot(td, pfunc, lab="", title = "Lab Frame Uncoupled Ctrl Function", size = (650, 250), xlabel="Time [ns]", ylabel= unitStr)
-        end
-        println("Max amplitude lab-frame uncoupled ctrl = ", maximum(max_uncoupled), unitStr)
-    end
-    pl4  = Plots.plot(plotarray_lab..., layout = (1+params.Nunc, 1))
-
-else
-    # Only uncoupled controls
-    if(params.Nunc >  0)
-        labdrive .= 0.0
-        plotarray_lab = Array{Plots.Plot}(undef, params.Nunc) #empty array for separate plots
-        max_uncoupled = zeros(length(params.Hunc_ops))
-        for q =1:params.Nunc
-            qu = q - 1
-            pfunc = scalefactor .* Juqbox.evalctrl(params, pcof, td, qu)
-            max_uncoupled[q] = maximum(abs.(pfunc))
-            plotarray_lab[q] =  Plots.plot(td, pfunc, lab="", linewidth = 2, title = "Lab Frame Uncoupled Ctrl Function",
-                                                           size = (650, 250), xlabel="Time [ns]", ylabel=unitStr)
-            labdrive .+= pfunc
-        end
-        println("Max amplitude lab-frame uncoupled ctrl = ", maximum(max_uncoupled), " ", unitStr)
-        pl4  = Plots.plot(plotarray_lab..., layout = (params.Nunc, 1))
+        # save the lab frame ctrl func
+        labname = labbasename * "-" * string(q) * ".dat"
+        writedlm(labname, labdrive)
+        println("Saved lab frame ctrl function on file '", labname, "'", " samplerate = ", samplerate);
     end
 end
 
+# Add in uncoupled controls
+if(params.Nunc >  0)
+    max_uncoupled = zeros(length(params.Hunc_ops))
+    for q =1:params.Nunc
+        qu = 2*params.Ncoupled + q - 1
+        pfunc = scalefactor .* Juqbox.evalctrl(params, pcof, td, qu)
+        max_uncoupled[q] = maximum(abs.(pfunc))
+        plotarray_lab[params.Ncoupled + q] =  Plots.plot(td, pfunc, lab="", linewidth = 2, title = "Uncoupled Ctrl Function",
+                                                         size = (650, 250), xlabel="Time [ns]", ylabel=unitStr)
+    end
+    println("Max amplitude uncoupled ctrl = ", maximum(max_uncoupled), unitStr)
+
+    # TODO: save uncoupled controls on file
+end
+
+# Accumulate all ctrl function sub-plots
+pl2  = Plots.plot(plotarray..., layout = (params.Ncoupled, 1))
+pl4  = Plots.plot(plotarray_lab..., layout = (params.Ncoupled, 1))
+
+rotplotname = ""
 if save_files
+    rotplotname = ctrlbasename * ".png"
+    Plots.savefig(pl2, rotplotname)
+    println("Saved rotating frame ctrl plot on file '", rotplotname);
+
+    local labplotname = labbasename * ".png"
     Plots.savefig(pl4, labplotname)
     println("Saved lab frame ctrl plot on file '", labplotname);
-
-    # save the lab frame ctrl func
-    writedlm(labname, labdrive)
-    println("Saved lab frame ctrl function on file '", labname, "'", " samplerate = ", samplerate);
 end
 
 # plot the Fourier transform of the control function in the lab frame
