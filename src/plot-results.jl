@@ -1,10 +1,20 @@
-function plot_results(params::objparams, pcof::Array{Float64,1}; casename::String = "test", save_files::Bool = false)
+"""
+    pl = plot_results(params, pcof; casename = "test", save_files, samplerate)
+
+Create array of plot objects that can be visualized by, e.g., `display(pl[1])`.
+
+# Arguments
+- `params::objparams`: Object holding problem definition
+- `pcof::Array{Float64,1}`: Parameter vector
+- `casename::String`: Default: `"test"`. String used in plot titles and in file names
+- `save_files::Bool`: Default: `false`.Set to `true` to save plots on files with automatically generated filenames
+- `samplerate:: Int64`: Default: `32` samples per unit time (ns). Sample rate for generating plots.
+"""
+function plot_results(params::objparams, pcof::Array{Float64,1}; casename::String = "test", save_files::Bool = false, samplerate:: Int64 = 32)
     # Set default font sizes
     fnt = Plots.font("Helvetica", 12)
     lfnt = Plots.font("Helvetica", 10)
     Plots.default(titlefont=fnt, guidefont=fnt, tickfont=fnt, legendfont=lfnt, linewidth=1, size=(650, 350))
-
-    samplerate = params.samplerate
 
     custom = 0
 
