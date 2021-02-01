@@ -16,6 +16,10 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
     lfnt = Plots.font("Helvetica", 10)
     Plots.default(titlefont=fnt, guidefont=fnt, tickfont=fnt, legendfont=lfnt, linewidth=1, size=(650, 350))
 
+    nCoeff = length(pcof)
+    # Is there a better approach that avoids re-allocating the working_arrays object?
+    wa = Juqbox.Working_Arrays(params, nCoeff)
+
     custom = 0
 
     # filenames
