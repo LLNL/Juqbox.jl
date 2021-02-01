@@ -9,11 +9,13 @@ using LaTeXStrings
 using SparseArrays
 using Ipopt
 using FileIO
+using FFTW
 
 export splineparams, bspline2, gradbspline2
 export bcparams, bcarrier2, gradbcarrier2!
 
-export objparams, traceobjgrad, identify_guard_levels, identify_forbidden_levels, plotunitary, plotspecified, evalctrl
+export objparams, traceobjgrad, identify_guard_levels, identify_forbidden_levels
+export plotunitary, plotspecified, evalctrl, plot_results
 export setup_ipopt_problem, Working_Arrays, estimate_Neumann!, assign_thresholds, setup_rotmatrices
 export run_optimizer, plot_conv_hist
 export wmatsetup, assign_thresholds_freq 
@@ -38,6 +40,8 @@ MyRealMatrix = Union{Array{Float64,2}, SparseMatrixCSC{Float64, Int64}}
 include("evalobjgrad.jl")
 
 include("plotstatectrl.jl")
+
+include("plot-results.jl")
 
 include("ipopt_interface.jl")
 

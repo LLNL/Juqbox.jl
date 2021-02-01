@@ -380,6 +380,9 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, wa::Working_A
     end
 
     Psize = size(pcof,1) #must provide separate coefficients for real,imaginary, and uncoupled parts of the control fcn
+    #
+    # NOTE: Nsig  = 2*Ncoupled + Nunc
+    #
     if Psize%Nsig != 0 || Psize < 3*Nsig
         error("pcof must have an even number of elements >= ",3*Nsig,", not ", Psize)
     end

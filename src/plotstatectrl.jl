@@ -216,7 +216,7 @@ end
 
 Evaluate the control function with index `func` at an array of time levels `td`.  
 
-NOTE: the control function index `func` is 0-based. 
+NOTE: the control function index `func` is 1-based. 
 
 NOTE: The return value(s) depend on `func`. For `func∈[1,Ncoupled]`, `pj, qj` are returned. Otherwise, 
 only `pj` is returned, corresponding to control number `func`.
