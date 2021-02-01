@@ -48,7 +48,7 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
 
     # scatter plot of control parameters
     tstring = casename * "-control-vector"
-    pl0 = scatter(pcof, lab="", title=tstring, xlabel="Index", ylabel="rad/ns")
+    plcof = scatter(pcof, lab="", title=tstring, xlabel="Index", ylabel="rad/ns")
 
     guardlev = Juqbox.identify_guard_levels(params, custom)
     forbiddenlev = Juqbox.identify_forbidden_levels(params, custom)
@@ -238,7 +238,7 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
     end
 
     # Return an array of plot objects
-    return [pl0, pl1, pl2, pl3, pl4, pl5, pl6, pconv]
+    return [pl1, pl2, pl3, pl4, pl5, pl6, plcof, pconv]
 
 end
 
