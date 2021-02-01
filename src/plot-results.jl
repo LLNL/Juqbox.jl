@@ -1,5 +1,5 @@
 """
-    pl = plot_results(params, pcof; casename = "test", save_files, samplerate)
+    pl = plot_results(params, pcof; [casename = "test", save_files = false, samplerate = 32])
 
 Create array of plot objects that can be visualized by, e.g., `display(pl[1])`.
 

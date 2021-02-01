@@ -144,16 +144,16 @@ function setup_ipopt_problem(params:: Juqbox.objparams, wa::Working_Arrays, nCoe
 end
 
 """
-    pcof = run_optimizer(prob, pcof0 [, fileName:: String=""])
+    pcof = run_optimizer(prob, pcof0 [, baseName:: String=""])
 
 Call IPOPT to  optimizize the control functions.
 
 # Arguments
 - `prob:: IpoptProblem`: Struct containing Ipopt parameters callback functions
 - `pcof0:: Array{Float64, 1}`: Initial guess for the parameter values
-- `fileName:: String`: Name of file for saving the optimized parameters
+- `baseName:: String`: Name of file for saving the optimized parameters; extension ".jld2" is appended
 """
-function run_optimizer(prob:: IpoptProblem, pcof0:: Array{Float64, 1}, fileName:: String="")
+function run_optimizer(prob:: IpoptProblem, pcof0:: Array{Float64, 1}, baseName:: String="")
     # takes at most max_iter >= 0 iterations. Set with addOption(prob, "max_iter", nIter)
 
     # initial guess for IPOPT
@@ -165,8 +165,9 @@ function run_optimizer(prob:: IpoptProblem, pcof0:: Array{Float64, 1}, fileName:
     pcof = prob.x;
 
     #save the b-spline coeffs on a JLD2 file
-    if length(fileName)>0
-        save(fileName, "pcof", pcof)
+    if length(baseName)>0
+        fileName = baseName * ".jld2"
+        save_pcof(fileName, pcof)
         println("Saved B-spline parameters on binary jld2-file '", fileName, "'");
     end
 
