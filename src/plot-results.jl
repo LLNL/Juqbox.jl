@@ -159,7 +159,7 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
         if save_files
             # Save ctrl functions on file
             pqname = ctrlbasename * "-" * string(q) * ".dat"
-            writedlm(pqname, pfunc, qfunc)
+            writedlm(pqname, [pfunc, qfunc])
             println("Saved ctrl functions for Hamiltonian #", q, " on file '", pqname, "', samplerate = ", samplerate);
 
             # save the lab frame ctrl func
