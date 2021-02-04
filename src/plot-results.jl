@@ -1,5 +1,5 @@
 """
-    pl = plot_results(params, pcof; [casename = "test", save_files = false, samplerate = 32])
+    pl = plot_results(params, pcof; [casename = "test", savefiles = false, samplerate = 32])
 
 Create array of plot objects that can be visualized by, e.g., `display(pl[1])`.
 
@@ -7,10 +7,10 @@ Create array of plot objects that can be visualized by, e.g., `display(pl[1])`.
 - `params::objparams`: Object holding problem definition
 - `pcof::Array{Float64,1}`: Parameter vector
 - `casename::String`: Default: `"test"`. String used in plot titles and in file names
-- `save_files::Bool`: Default: `false`.Set to `true` to save plots on files with automatically generated filenames
+- `savefiles::Bool`: Default: `false`.Set to `true` to save plots on files with automatically generated filenames
 - `samplerate:: Int64`: Default: `32` samples per unit time (ns). Sample rate for generating plots.
 """
-function plot_results(params::objparams, pcof::Array{Float64,1}; casename::String = "test", save_files::Bool = false, samplerate:: Int64 = 32)
+function plot_results(params::objparams, pcof::Array{Float64,1}; casename::String = "test", savefiles::Bool = false, samplerate:: Int64 = 32)
     # Set default font sizes
     fnt = Plots.font("Helvetica", 12)
     lfnt = Plots.font("Helvetica", 10)
@@ -22,12 +22,6 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
 
     custom = 0
 
-    # filenames
-    cfname = casename * "-ctrl-rot" * ".png"
-    probname = casename * "-prob" * ".png"
-    forbname = casename * "-forb" * ".png"
-    fftname = casename * "-fft-lab-ctrl-lin" * ".png"
-    fftname2 = casename * "-fft-lab-ctrl-log" * ".png"
     # data file names
     labbasename = casename * "-ctrl-lab"
     ctrlbasename = casename * "-ctrl-rot"
@@ -41,7 +35,7 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
 
     # save convergence history
     convname = ""
-    if save_files
+    if savefiles
         convname = casename * "-conv" * ".png"
     end
     pconv = Juqbox.plot_conv_hist(params, convname)
@@ -57,12 +51,14 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
     pl1 = Juqbox.plotunitary(unitaryhistory, params, guardlev)
     pl3 = Juqbox.plotspecified(unitaryhistory, params, guardlev, forbiddenlev)
 
-    if save_files
+    if savefiles
         # save the figure with the state probabilities
+        probname = casename * "-prob" * ".png"
         Plots.savefig(pl1,probname)
         println("Saved state population plot on file '", probname, "'");
 
         # save the figure with the forbidden state
+        forbname = casename * "-forb" * ".png"
         Plots.savefig(pl3,forbname)
         println("Saved forbidden state population plot on file '", forbname, "'");
     end
@@ -112,6 +108,10 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
     # Initialize storing of the lab drive
     labdrive = zeros(nplot+1)
 
+    nFFT = length(labdrive)
+    dt = td[2] - td[1]
+    freq = fftshift( fftfreq(nFFT, 1.0/dt) )
+    
     useMHz = true
     if useMHz
         scalefactor = 1000/(2*pi)
@@ -123,6 +123,8 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
 
     # one subfigure for each control function
     plotarray = Array{Plots.Plot}(undef, params.Ncoupled) #empty array for separate plots
+    plotarray_fft = Array{Plots.Plot}(undef, params.Ncoupled) #empty array for separate plots
+    plotarray_fftlog = Array{Plots.Plot}(undef, params.Ncoupled) #empty array for separate plots
     plotarray_lab = Array{Plots.Plot}(undef, params.Ncoupled + params.Nunc) #empty array for separate plots
 
     println("Rotational frequencies: ", params.Rfreq)
@@ -156,7 +158,27 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
 
         println("Lab frame ctrl-", q, " Max amplitude = ", lmax, " ", unitStr)
         
-        if save_files
+        # plot the Fourier transform of the control function in the lab frame
+        # Fourier transform
+        Fdr_lab = fftshift( fft(labdrive) ) / nFFT
+
+        local titlestr = "Spectrum, lab frame ctrl - " * string(q)
+        plotarray_fft[q] = Plots.plot(freq, abs.(Fdr_lab), lab="", title = titlestr, size = (650, 350), xlabel="Frequency [GHz]",
+                                      ylabel="Amplitude " * unitStr, framestyle = :box) #, grid = :hide
+
+        fmin = 0.5*minimum(params.Rfreq) 
+        fmax = maximum(params.Rfreq) + 0.5
+        xlims!((fmin, fmax))
+
+        # log-scale spectrum
+        mag_Fdr_lab = abs.(Fdr_lab)
+        if minimum(mag_Fdr_lab) > 0.0
+            plotarray_fftlog[q] = Plots.plot(freq, mag_Fdr_lab, lab="", title = titlestr, xlabel="Frequency [GHz]",
+                                             ylabel="Amplitude " * unitStr, yaxis=:log10, framestyle = :box)
+            xlims!((fmin, fmax))
+        end
+
+        if savefiles
             # Save ctrl functions on file
             pqname = ctrlbasename * "-" * string(q) * ".dat"
             writedlm(pqname, [pfunc, qfunc])
@@ -187,8 +209,10 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
     # Accumulate all ctrl function sub-plots
     pl2  = Plots.plot(plotarray..., layout = (params.Ncoupled, 1))
     pl4  = Plots.plot(plotarray_lab..., layout = (params.Ncoupled, 1))
+    pl5  = Plots.plot(plotarray_fft..., layout = (params.Ncoupled, 1))
+    pl6  = Plots.plot(plotarray_fftlog..., layout = (params.Ncoupled, 1))
 
-    if save_files
+    if savefiles
         rotplotname = ctrlbasename * ".png"
         Plots.savefig(pl2, rotplotname)
         println("Saved rotating frame ctrl plot on file '", rotplotname);
@@ -196,45 +220,13 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
         local labplotname = labbasename * ".png"
         Plots.savefig(pl4, labplotname)
         println("Saved lab frame ctrl plot on file '", labplotname);
-    end
 
-    # plot the Fourier transform of the control function in the lab frame
-    # Fourier transform
-    nplot = length(labdrive)
-    Fdr_lab = fftshift( fft(labdrive) ) / nplot
-    dt = td[2] - td[1]
-    freq = fftshift( fftfreq(nplot, 1.0/dt) )
-    #pl5 = Plots.scatter(freq, abs.(Fdr_lab), lab="", title = "abs(FFT Lab frame)", size = (650, 250), xlabel="Frequency [GHz]", markersize=7)
-    pl5 = Plots.plot(freq, abs.(Fdr_lab), lab="", title = "Spectrum, lab frame ctrl", size = (650, 350), xlabel="Frequency [GHz]",
-                 ylabel="Amplitude " * unitStr, framestyle = :box, grid = :hide) #, yaxis=:log10)
-
-    # messing with yticks
-    # lb=0.0
-    # ub = 0.01
-    # ticks = range(lb,stop=ub,length=6)
-    # Plots.plot!(yticks=ticks)
-
-    fmin = 0.5*minimum(params.Rfreq) 
-    fmax = maximum(params.Rfreq) + 0.5
-    xlims!((fmin, fmax))
-    # tmp
-    # xlims!((3.0, 6.5))
-
-    if save_files
+        fftname = labbasename * "-fft" * ".png"
+        fftname2 = labbasename * "-fft-log" * ".png"
         Plots.savefig(pl5, fftname)
-    end
-
-    # log-scale spectrum
-    mag_Fdr_lab = abs.(Fdr_lab)
-    if minimum(mag_Fdr_lab) > 0.0
-        pl6 = Plots.plot(freq, mag_Fdr_lab, lab="", title = "Spectrum, lab frame ctrl", xlabel="Frequency [GHz]",
-                         ylabel="Amplitude " * unitStr, yaxis=:log10)
-        # tmp
-        xlims!((3.0, 6.5))
-        if save_files
-            Plots.savefig(pl6, fftname2)
-            println("Saved FFT of lab ctrl function on files '", fftname, "' and '", fftname2, "'");
-        end
+        Plots.savefig(pl6, fftname2)
+        println("Saved FFT of lab ctrl function on files '", fftname, "' and '", fftname2, "'");
+        
     end
 
     # Return an array of plot objects
