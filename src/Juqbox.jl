@@ -10,6 +10,7 @@ using SparseArrays
 using Ipopt
 using FileIO
 using FFTW
+using DelimitedFiles
 
 export splineparams, bspline2, gradbspline2
 export bcparams, bcarrier2, gradbcarrier2!
