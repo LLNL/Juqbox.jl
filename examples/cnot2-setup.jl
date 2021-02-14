@@ -65,7 +65,7 @@ Nosc = 2 # number of coupled oscillators
 Ne1 = 2 # essential energy levels per oscillator 
 Ne2 = 2
 Ng1 = 1 # 0 # Osc-1, number of guard states
-Ng2 = 2 # 0 # Osc-2, number of guard states
+Ng2 = 1 # 0 # Osc-2, number of guard states
 
 Ne = [Ne1, Ne2]
 Ng = [Ng1, Ng2]

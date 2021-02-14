@@ -961,15 +961,57 @@ end
 
 #------------------------------------------------------------
 """
-    minCoeff, maxCoeff = assign_thresholds_ctrl_freq(params, D1, maxamp)
+    zero_start_end!(params, D1, minCoeff, maxCoeff)
 
-Build vector of frequency dependent min/max parameter constraints, with `minCoeff = -maxCoeff`, when
-there are no uncoupled control functions.
+Force the control functions to start and end at zero by setting zero bounds for the first two and last 
+two parameters in each B-spline segment.
  
 # Arguments
 - `params:: objparams`: Struct containing problem definition.
 - `D1:: Int64`: Number of basis functions in each segment.
-- `maxamp:: Matrix{Float64}`: Maximum parameter value for each ctrl and frequency
+- `minCoeff:: Vector{Float64}`: Lower parameter bounds to be modified
+- `maxCoeff:: Vector{Float64}`: Upper parameter bounds to be modified
+"""
+function zero_start_end!(params::objparams, D1:: Int64, minCoeff:: Array{Float64,1}, maxCoeff:: Array{Float64,1} )
+    @assert(params.Nunc == 0)
+    @assert(D1 >= 5) # Need at least 5 parameters per B-spline segment
+    
+    Nfreq = params.Nfreq
+    Ncoupled = params.Ncoupled
+    nCoeff = 2*Ncoupled*Nfreq*D1
+
+#    @printf("Ncoupled = %d, Nfreq = %d, D1 = %d, nCoeff = %d\n", Ncoupled, Nfreq, D1, nCoeff)
+    for c in 1:Ncoupled
+        for f in 1:Nfreq
+            for q in 0:1
+                offset1 = 2*(c-1)*Nfreq*D1 + (f-1)*2*D1 + q*D1
+                # start
+                minCoeff[ offset1 + 1] = 0.0
+                minCoeff[ offset1 + 2] = 0.0
+                maxCoeff[ offset1 + 1] = 0.0
+                maxCoeff[ offset1 + 2] = 0.0
+                # end
+                offset2 = offset1+D1
+                minCoeff[ offset2-1] = 0.0
+                minCoeff[ offset2] = 0.0
+                maxCoeff[ offset2-1] = 0.0
+                maxCoeff[ offset2 ] = 0.0
+            end
+        end
+    end
+end
+
+#------------------------------------------------------------
+"""
+    minCoeff, maxCoeff = assign_thresholds_ctrl_freq(params, D1, maxamp)
+
+Build vector of parameter min/max constraints that can depend on the control function and carrier wave frequency, 
+with `minCoeff = -maxCoeff`, assuming no uncoupled control functions.
+ 
+# Arguments
+- `params:: objparams`: Struct containing problem definition.
+- `D1:: Int64`: Number of basis functions in each segment.
+- `maxamp:: Matrix{Float64}`: `maxamp[c,f]` is the maximum parameter value for ctrl `c` and frequency `f`
 """
 function assign_thresholds_ctrl_freq(params::objparams, D1:: Int64, maxpar:: Matrix{Float64})
     @assert(params.Nunc == 0)
