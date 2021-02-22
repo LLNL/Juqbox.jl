@@ -172,9 +172,10 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
 
         # log-scale spectrum
         mag_Fdr_lab = abs.(Fdr_lab)
+        plotarray_fftlog[q] = Plots.plot(title = titlestr, xlabel="Frequency [GHz]",
+                                         ylabel="Amplitude " * unitStr, yaxis=:log10, framestyle = :box)
         if minimum(mag_Fdr_lab) > 0.0
-            plotarray_fftlog[q] = Plots.plot(freq, mag_Fdr_lab, lab="", title = titlestr, xlabel="Frequency [GHz]",
-                                             ylabel="Amplitude " * unitStr, yaxis=:log10, framestyle = :box)
+            Plots.plot!(freq, mag_Fdr_lab, lab="")
             xlims!((fmin, fmax))
         end
 
