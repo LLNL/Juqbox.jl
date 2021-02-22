@@ -231,10 +231,10 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
     end
 
     # final solution matrix
-    ufinal = unitaryhistory[:,:,end]
+    # ufinal = unitaryhistory[:,:,end]
 
     # Return an array of plot objects
-    return [pl1, pl2, pl3, pl4, pl5, pl6, plcof, pconv], ufinal
+    return [pl1, pl2, pl3, pl4, pl5, pl6, plcof, pconv]
 
 end
 
