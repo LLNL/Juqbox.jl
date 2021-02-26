@@ -13,6 +13,16 @@ sh> cd ~/src<br>
 sh> git clone https://lc.llnl.gov/bitbucket/scm/wave/Juqbox.jl.git<br>
 <br>
 
+## Note: FFTW.jl license
+Juqbox.jl uses the Julia package FFTW.jl for post processing of the results. That package provides Julia
+bindings to the FFTW library for fast Fourier transforms (FFTs), as well as functionality useful for
+signal processing. Note that the FFTW library is licensed under GPLv2 or higher (see its license
+file), but the bindings to the FFTW library in the FFTW.jl package are licensed under
+MIT. As an lternative to using the FFTW libary, the FFTs in Intel's Math Kernel Library (MKL) can be used by setting an
+environment variable JULIA_FFTW_PROVIDER to MKL and running Pkg.build("FFTW"). MKL will be provided
+through MKL_jll. Setting this environment variable only needs to be done for the first build of the
+package; after that, the package will remember to use MKL when building and updating.
+
 ## Installing Julia packages
 Our software relies on the following Julia packages:
 - IJulia (for Jupiter notebooks)
