@@ -103,7 +103,7 @@ through MKL_jll. Setting this environment variable only needs to be done for the
 package; after that, the package will remember to use MKL when building and updating.
 
 ### Note: Ipopt.jl license 
-Juqbox.jl uses the Julia package Ipopt.jl for optimizating control
+Juqbox.jl uses the Julia package Ipopt.jl for optimizing control
 functions. That package is released under the MIT Expat License and provides Julia bindings to the
 Ipopt library, which is released under the Eclipse Public License.
 
