@@ -23,8 +23,8 @@ julia> ]<br>
 (Juqbox) pkg> (DEL)<br>
 julia> exit()<br>
 
-Since the **Juqbox** package lives in a separate git repository, you need to make Julia aware of it. Assuming it is in the ~/src/Juqbox directory):<br>
-sh> cd
+Since the **Juqbox** package lives in a separate git repository, you need to make Julia aware of it. Assuming it is in the ~/src/Juqbox directory:<br>
+sh> cd<br>
 sh> julia<br>
 julia> ]<br>
 (@v1.5) pkg> add ~/src/Juqbox.jl <br>
