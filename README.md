@@ -8,9 +8,9 @@ The following instructions assume that you have already installed Julia on your 
 This environment variable tells Julia to look for Project.toml files in your current or parent directory.
 
 ### Downloading the **Juqbox** package
-Clone the Juqbox.jl package into a directory that is **NOT** a subdirectory of any other git repository (e.g. QCC). In this example we put it in the ~/src/Juqbox.jl directory: **UPDATE**<br>
+Clone the Juqbox.jl package into a directory that is **NOT** a subdirectory of any other git repository (e.g. QCC). In this example we put it in the ~/src/Juqbox.jl directory:<br>
 sh> cd ~/src<br>
-sh> git clone https://lc.llnl.gov/bitbucket/scm/wave/Juqbox.jl.git<br>
+sh> git clone https://github.com/LLNL/Juqbox.jl.git<br>
 <br>
 
 ### Building and testing **Juqbox**
