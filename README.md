@@ -91,7 +91,8 @@ Most of the Julia code was written by Anders Petersson and Fortino Garcia. Impor
 ## License
 Juqbox.jl is relased under the MIT license.
 
-### Note: FFTW.jl license Juqbox.jl uses the Julia package FFTW.jl for post processing of the
+### Note: FFTW.jl license 
+Juqbox.jl uses the Julia package FFTW.jl for post processing of the
 results. That package is released under the MIT Expat license and provides Julia bindings to the
 FFTW library for fast Fourier transforms (FFTs), as well as functionality useful for signal
 processing. Note that the FFTW library is licensed under GPLv2 or higher (see its license file), but
@@ -101,7 +102,8 @@ environment variable JULIA_FFTW_PROVIDER to MKL and running Pkg.build("FFTW"). M
 through MKL_jll. Setting this environment variable only needs to be done for the first build of the
 package; after that, the package will remember to use MKL when building and updating.
 
-### Note: Ipopt.jl license Juqbox.jl uses the Julia package Ipopt.jl for optimizating control
+### Note: Ipopt.jl license 
+Juqbox.jl uses the Julia package Ipopt.jl for optimizating control
 functions. That package is released under the MIT Expat License and provides Julia bindings to the
 Ipopt library, which is released under the Eclipse Public License.
 
