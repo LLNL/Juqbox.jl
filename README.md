@@ -7,32 +7,16 @@ The following instructions assume that you have already installed Julia on your 
 **export JULIA_PROJECT="@."**<br>
 This environment variable tells Julia to look for Project.toml files in your current or parent directory.
 
-### Downloading the **Juqbox** package
-Clone the Juqbox.jl package into a directory that is **NOT** a subdirectory of any other git repository (e.g. QCC). In this example we put it in the ~/src/Juqbox.jl directory:<br>
-sh> cd ~/src<br>
-sh> git clone https://github.com/LLNL/Juqbox.jl.git<br>
-<br>
-
 ### Building and testing **Juqbox**
-sh> cd ~/src/Juqbox.jl<br>
-sh> julia<br>
+shell> julia<br>
 julia> ]<br>
-(Juqbox) pkg> precompile<br>
-(Juqbox) pkg> test<br>
+(@v1.5) pkg> add  https://github.com/LLNL/Juqbox.jl.git<br>
+(@v1.5) pkg> precompile
+(@v1.5) pkg> test Juqbox
 ... all tests should pass ...<br>
-(Juqbox) pkg> (DEL)<br>
-julia> exit()<br>
-
-Since the **Juqbox** package lives in a separate git repository, you need to make Julia aware of it. Assuming it is in the ~/src/Juqbox directory:<br>
-sh> cd<br>
-sh> julia<br>
-julia> ]<br>
-(@v1.5) pkg> add ~/src/Juqbox.jl <br>
 
 To exit the package manager and Julia you do<br>
 (@v1.5) pkg> (DEL) <br>
-julia> exit() <br>
-sh> <br>
  
 ## Usage
 To solve a quantum optimal control problem with the **Juqbox** package, the work flow consists of the following general steps:
