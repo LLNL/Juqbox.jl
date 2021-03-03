@@ -1,6 +1,6 @@
-# Juqbox.jl
-
 ![Control functions](examples/cnot2-pop.png)
+
+# Juqbox.jl
 
 The **Juqbox.jl** package contains software for solving quantum optimal control problems in closed quantum systems, where the evolution of the state vector is governed by Schroedinger's equation.
 
