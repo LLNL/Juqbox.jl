@@ -1,6 +1,8 @@
 # Juqbox.jl
 
-## The **Juqbox.jl** package contains software for solving quantum optimal control problems in closed quantum systems, where the evolution of the state vector is governed by Schroedinger's equation.
+![Control functions](examples/cnot2-pop.png)
+
+The **Juqbox.jl** package contains software for solving quantum optimal control problems in closed quantum systems, where the evolution of the state vector is governed by Schroedinger's equation.
 
 ## Installation
 The following instructions assume that you have already installed Julia (currently version 1.5.3) on your system. Before you do anything else, make sure you add the following line to your .bash_profile (or corresponding file):<br>
