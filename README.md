@@ -17,6 +17,7 @@ julia> ]<br>
 
 To exit the package manager and Julia you do<br>
 (@v1.5) pkg> (DEL) <br>
+julia> exit()
  
 ## Usage
 To solve a quantum optimal control problem with the **Juqbox** package, the work flow consists of the following general steps:
