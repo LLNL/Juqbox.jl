@@ -8,7 +8,7 @@ makedocs(
 #    format= LaTeX(), # doesn't work?
     modules = [Juqbox],
     sitename="Juqbox.jl",
-    repo = "https://lc.llnl.gov/bitbucket/scm/wave/juqbox.jl.git",
+    repo = "https://github.com/LLNL/Juqbox.jl.git",
     root = ".",
     source = "src",
     build = "build"
