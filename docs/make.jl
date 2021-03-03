@@ -1,15 +1,29 @@
-using Documenter, DocumenterLaTeX, Juqbox
+using Documenter, DocumenterTools, Juqbox
 
-clean = true
-doctest = false # set to true once initial implementation is done
+const ROOT = joinpath(@__DIR__, "..")
+
 
 
 makedocs(
-#    format= LaTeX(), # doesn't work?
     modules = [Juqbox],
+    format = Documenter.HTML(prettyurls=false),
+    #format = Documenter.LaTeX(platform = "docker"), # errors with no such file or directory???
+    clean = false,
     sitename="Juqbox.jl",
+    authors = "Anders Petersson, Fortino Garcia, and contributors.",
+    pages = [
+        "Home" => "index.md"
+    ],
+    doctest = false, # set to true once initial implementation is done
+    source = "src",
+)
+
+deploydocs(
     repo = "https://github.com/LLNL/Juqbox.jl.git",
     root = ".",
-    source = "src",
-    build = "build"
+#    build = "build"
+#    julia="1.5",
+    target = "build",
+    deps=nothing,
+    make=nothing,
 )
