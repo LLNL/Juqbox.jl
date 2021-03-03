@@ -11,8 +11,8 @@ This environment variable tells Julia to look for Project.toml files in your cur
 shell> julia<br>
 julia> ]<br>
 (@v1.5) pkg> add  https://github.com/LLNL/Juqbox.jl.git<br>
-(@v1.5) pkg> precompile
-(@v1.5) pkg> test Juqbox
+(@v1.5) pkg> precompile<br>
+(@v1.5) pkg> test Juqbox<br>
 ... all tests should pass ...<br>
 
 To exit the package manager and Julia you do<br>
