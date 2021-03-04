@@ -8,8 +8,6 @@ on:
   pull_request:
 
 jobs:
-  env:
-    PYTHON:
   build:
     runs-on: ubuntu-latest
     steps:
@@ -17,6 +15,9 @@ jobs:
       - uses: julia-actions/setup-julia@latest
         with:
           version: '1.5'
+      - name: Setting PYTHON environment
+        env:
+           PYTHON:
       - name: Checking PYTHON environment
         run: |
            echo "PYTHON='" ${PYTHON} "'"
