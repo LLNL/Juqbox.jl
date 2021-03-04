@@ -15,14 +15,13 @@ jobs:
       - uses: julia-actions/setup-julia@latest
         with:
           version: '1.5'
-      - name: Setting PYTHON environment
+      - name: Install dependencies, part 1
         env:
            PYTHON:
+        run: julia --project=docs/ -e 'using Pkg; Pkg.add("PyCall"); Pkg.build("PyCall") '
       - name: Checking PYTHON environment
         run: |
            echo "PYTHON='" ${PYTHON} "'"
-      - name: Install dependencies, part 1
-        run: julia --project=docs/ -e 'using Pkg; Pkg.add("PyCall"); Pkg.build("PyCall") '
       - name: Install dependencies, part 2
         run: julia --project=docs/ -e 'using Pkg; Pkg.develop(PackageSpec(path=pwd())); Pkg.instantiate(); Pkg.add("Documenter"); Pkg.add("DocumenterTools"); Pkg.add("PyPlot") '
       - name: Build and deploy
