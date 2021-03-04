@@ -8,7 +8,7 @@ makedocs(
     modules = [Juqbox],
     format = Documenter.HTML(prettyurls=false),
     #format = Documenter.LaTeX(platform = "docker"), # errors with no such file or directory???
-    clean = false,
+    #clean = false,
     sitename="Juqbox.jl",
     authors = "Anders Petersson, Fortino Garcia, and contributors.",
     pages = [
@@ -19,11 +19,10 @@ makedocs(
 )
 
 deploydocs(
-    repo = "https://github.com/LLNL/Juqbox.jl.git",
-    root = ".",
+    repo = "github.com/LLNL/Juqbox.jl",
+#    root = ".",
 #    build = "build"
-#    julia="1.5",
-    target = "build",
-    deps=nothing,
-    make=nothing,
+#    target = "build",
+#    deps=nothing,
+#    make=nothing,
 )
