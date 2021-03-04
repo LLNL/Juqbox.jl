@@ -16,7 +16,7 @@ jobs:
         with:
           version: '1.5'
       - name: Install dependencies
-        run: julia --project=docs/ -e 'using Pkg; Pkg.develop(PackageSpec(path=pwd())); Pkg.instantiate(); Pkg.add("Documenter"); Pkg.add("DocumenterTools"); Pkg.add("DelimitedFiles"); Pkg.add("FFTW"); Pkg.add("FileIO"); Pkg.add("Ipopt"); Pkg.add("JLD2"); Pkg.add("LaTeXStrings"); Pkg.add("LinearAlgebra"); Pkg.add("Plots"); Pkg.add("Printf"); Pkg.add("PyPlot"); Pkg.add("Random"); Pkg.add("SparseArrays"); Pkg.add("Test")'
+        run: julia --project=docs/ -e 'using Pkg; Pkg.develop(PackageSpec(path=pwd())); Pkg.instantiate(); Pkg.add("Documenter"); Pkg.add("DocumenterTools"); Pkg.add("PyPlot") '
       - name: Build and deploy
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # For authentication with GitHub Actions token
