@@ -2,7 +2,7 @@
 
 # Juqbox.jl
 
-The **Juqbox.jl** package contains software for solving quantum optimal control problems in closed quantum systems, where the evolution of the state vector is governed by Schroedinger's equation.
+Juqbox.jl is a package for solving quantum optimal control problems in closed quantum systems, where the evolution of the state vector is governed by Schroedinger's equation.
 
 ## Installation
 The following instructions assume that you have already installed Julia (currently version 1.5.3) on your system. Before you do anything else, make sure you add the following line to your .bash_profile (or corresponding file):<br>
@@ -21,7 +21,7 @@ To exit the package manager and Julia you do<br>
 (@v1.5) pkg> (DEL) <br>
 julia> exit()
  
-## Usage
+## Workflow
 The work flow for solving a quantum optimal control problem consists of the following general steps:
 1. Specify the problem
 2. Optimize the control functions
@@ -45,13 +45,6 @@ The next steps are
 - Assign convergence criteria and other parameters for the optimizer
 - Build the optimization structure by calling **prob = Juqbox.setup_ipopt_problem()**
 
-Examples of the setup procedure can be found in the following script in the **Juqbox.jl/examples** directory (invoke by, e.g. **include("cnot1-setup.jl")**) 
-- **rabi-setup.jl** Pi-pulse (X-gate) for a qubit, i.e. a Rabi oscillator.
-- **cnot1-setup.jl** CNOT gate for a single qudit with 4 essential and 2 guard levels. 
-- **flux-setup.jl** CNOT gate for single qubit with a flux-tuning control Hamiltonian.
-- **cnot2-setup.jl** CNOT gate for a pair of coupled qubits with guard levels.
-- **cnot3-setup.jl** Cross-resonance CNOT gate for a pair of qubits that are coupled by a cavity resonator. **Note:** This case reads an optimized solution from file."
-
 ### 2. Optimization
 Once you have been assigned the **params** and **prob** objects, as well as the initial parameter vector **pcof0**, the optimizer is invoked by
 - **pcof = Juqbox.run_optimizer(prob, pcof0 [, filename])**
@@ -68,6 +61,15 @@ The figures are shown using, e.g. **display(pla[1])**, where **pla** is an array
 - **pla[6]** Fourier transform of the lab-frame control functions (log scale)
 - **pla[7]** Coefficients of the optimized parameter vector
 - **pla[8]** Convergence of the optimization
+
+## Examples
+
+Examples of the setup procedure can be found in the following scripts in the **Juqbox.jl/examples** directory (invoke by, e.g. **include("cnot1-setup.jl")**) 
+- **rabi-setup.jl** Pi-pulse (X-gate) for a qubit, i.e. a Rabi oscillator.
+- **cnot1-setup.jl** CNOT gate for a single qudit with 4 essential and 2 guard levels. 
+- **flux-setup.jl** CNOT gate for single qubit with a flux-tuning control Hamiltonian.
+- **cnot2-setup.jl** CNOT gate for a pair of coupled qubits with guard levels.
+- **cnot3-setup.jl** Cross-resonance CNOT gate for a pair of qubits that are coupled by a cavity resonator. **Note:** This case reads an optimized solution from file."
 
 ## Contributing to Juqbox.jl
 Juqbox.jl is currently under development. The prefered method of contributing is through a pull request (PR). If you are interested in contributing, please contact Anders Petersson (petersson1@llnl.gov) or Fortino Garcia (fortino.garcia@colorado.edu).
