@@ -17,8 +17,8 @@ jobs:
           version: '1.5'
       - name: Setting the environment
         env:
-	  PYTHON:
-	run: |
+          PYTHON:
+        run: |
            echo "PYTHON='" ${PYTHON} "'"
       - name: Install dependencies, part 1
         run: julia --project=docs/ -e 'using Pkg; Pkg.add("PyCall"); Pkg.build("PyCall") '
