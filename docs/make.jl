@@ -23,5 +23,6 @@ makedocs(
 deploydocs(
     repo = "github.com/LLNL/Juqbox.jl",
     target = "build",
+    devurl="docs",
 #    push_preview = true, # builds documentation for every pull request
 )
