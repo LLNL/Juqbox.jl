@@ -23,7 +23,7 @@ julia> exit()
  
 ## Documentation
 
-[Stable](https://github.com/LLNL/Juqbox.jl/tree/gh-pages/dev/index.html)
+<a href="https://github.com/LLNL/Juqbox.jl/tree/gh-pages/dev/index" title="Stable"></a>
 
 ## Workflow
 The work flow for solving a quantum optimal control problem consists of the following general steps:
