@@ -21,6 +21,10 @@ To exit the package manager and Julia you do<br>
 (@v1.5) pkg> (DEL) <br>
 julia> exit()
  
+## Documentation
+
+[Stable](https://github.com/LLNL/Juqbox.jl/tree/gh-pages/dev/index.html)
+
 ## Workflow
 The work flow for solving a quantum optimal control problem consists of the following general steps:
 1. Specify the problem
