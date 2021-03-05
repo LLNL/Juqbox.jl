@@ -16,8 +16,8 @@ makedocs(
     ],
     doctest = false, # set to true once initial implementation is done
     source = "src",
-    build = "build",
-    root = ".",
+#    build = "build",
+#    root = ".",
 )
 
 deploydocs(
