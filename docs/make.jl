@@ -16,14 +16,12 @@ makedocs(
     ],
     doctest = false, # set to true once initial implementation is done
     source = "src",
+    build = "build",
+    root = ".",
 )
 
 deploydocs(
     repo = "github.com/LLNL/Juqbox.jl",
     target = "build",
 #    push_preview = true, # builds documentation for every pull request
-#    root = ".",
-#    build = "build"
-#    deps=nothing,
-#    make=nothing,
 )
