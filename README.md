@@ -31,7 +31,6 @@ The work flow for solving a quantum optimal control problem consists of the foll
 2. Optimize the control functions
 3. Visualize the results
 
-
 ### 1. Specifying the problem
 The setup phase includes specifying:
 - The size of the state vector
