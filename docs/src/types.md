@@ -1,4 +1,4 @@
-## Exported types
+## Types
 
 The following types are exported and available by `using Juqbox`.
 ```@autodocs

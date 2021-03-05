@@ -15,11 +15,12 @@ makedocs(
     authors = "Anders Petersson, Fortino Garcia, and contributors.",
     pages = [
         "Home" => "index.md",
-        "Contents" => "contents.md",
+        "Installation" => "installation.md",
         "Workflow" => "workflow.md",
         "Examples" => "examples.md",
         "Types" => "types.md",
         "Methods" => "methods.md",
+        "Index" => "function-index.md",
     ],
     doctest = false, # set to true once initial implementation is done
     source = "src",
