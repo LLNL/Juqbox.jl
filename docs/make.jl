@@ -19,11 +19,12 @@ makedocs(
 )
 
 deploydocs(
-    repo = "github.com/LLNL/Juqbox.jl",
-#    repo = "software.llnl.gov/Juqbox.jl",
+    repo = "software.llnl.gov/Juqbox.jl",
+    target = "build",
+    push_preview = true,
 #    root = ".",
+#    repo = "github.com/LLNL/Juqbox.jl",
 #    build = "build"
-#    target = "build",
 #    deps=nothing,
 #    make=nothing,
 )
