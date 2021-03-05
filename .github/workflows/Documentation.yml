@@ -19,9 +19,10 @@ jobs:
         env:
            PYTHON:
         run: julia --project=docs/ -e 'using Pkg; Pkg.add("PyCall"); Pkg.build("PyCall") '
-      - name: Checking PYTHON environment
+      - name: Checking environment
         run: |
            echo "PYTHON='" ${PYTHON} "'"
+           echo "CI='" ${CI} "'"
       - name: Install dependencies, part 2
         run: julia --project=docs/ -e 'using Pkg; Pkg.develop(PackageSpec(path=pwd())); Pkg.instantiate(); Pkg.add("Documenter"); Pkg.add("DocumenterTools"); Pkg.add("PyPlot") '
       - name: Build and deploy
