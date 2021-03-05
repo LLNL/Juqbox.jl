@@ -11,7 +11,7 @@ The setup phase includes specifying
 - The system and control Hamiltonians
 - The target gate transformation
 - Duration of the gate and number of time steps for integrating Schroedinger's equation.
-For the parameterization the control functions, you need to specify
+For the parameterization of the control functions, you need to specify
 - Carrier wave frequencies
 - Number of B-spline coefficients in each spline
 

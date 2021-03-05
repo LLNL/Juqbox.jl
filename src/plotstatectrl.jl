@@ -92,7 +92,7 @@ Plot the evolution of the state vector for specified levels.
 - `us:: Array{Complex{Float64},3})`: State vector history for each timestep
 - `param:: objparams`: Struct with problem definition
 - `us:: Array{Bool,1})`: Boolean array indicating if a certain level is a guard level
-- 'specifiedlev:: Array{Bool,1}': Boolean array indicating which levels to be plotted
+- `specifiedlev:: Array{Bool,1}`: Boolean array indicating which levels to be plotted
 """
 function plotspecified(us, params, guardlev::Array{Bool,1}, specifiedlev::Array{Bool,1})
     nsteps = length(us[1,1,:])
