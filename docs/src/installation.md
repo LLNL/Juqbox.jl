@@ -1,5 +1,3 @@
-## Installing and testing **Juqbox**
-
 The following instructions assume that you have already installed Julia (currently version 1.5.3) on your system. Before proceeding, we recommend that you add the following line to your `.bash_profile` (or corresponding) file:
 
 **export JULIA_PROJECT="@."**
