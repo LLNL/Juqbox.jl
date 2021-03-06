@@ -6,7 +6,7 @@ The following instructions assume that you have already installed Julia (current
 
 This environment variable tells Julia to look for `Project.toml` files in your current or parent directory.
 
-Start julia and type `]` to enter the package manager
+Start julia and type `]` to enter the package manager. Then do:
 - (@v1.5) pkg> add  https://github.com/LLNL/Juqbox.jl.git
 - (@v1.5) pkg> precompile
 - (@v1.5) pkg> test Juqbox

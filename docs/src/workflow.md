@@ -1,11 +1,9 @@
-## Workflow
-
 The work flow for solving a quantum optimal control problem consists of the following general steps:
-1. Specify the problem
+1. Setup
 2. Optimize
 3. Visualize the results
 
-### 1. Specifying the problem
+### 1. Setup
 The setup phase includes specifying
 - The size of the state vector
 - The system and control Hamiltonians

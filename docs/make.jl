@@ -22,7 +22,7 @@ makedocs(
         "Methods" => "methods.md",
         "Index" => "function-index.md",
     ],
-    doctest = false, # set to true once initial implementation is done
+    doctest = true, # set to true once initial implementation is done
     source = "src",
 )
 

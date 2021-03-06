@@ -4,22 +4,30 @@
 
 Juqbox.jl is a package for solving quantum optimal control problems in closed quantum systems, where the evolution of the state vector is governed by Schroedinger's equation.
 
+The main features of Juqbox include
+- Symplectic time integration of Schroedinger's equation using the Stormer-Verlet scheme.
+- Efficient parameterization of the control functions using B-splines with carrier waves.
+- Objective function includes target gate infidelity and occupation of guarded (forbidden) states.
+- Exact computation of the gradient of the objective function by solving the discrete adjoint equation.
+
+The numerical methods in Juqbox.jl are documented in this report:
+1. N. A. Petersson, F. M. Garcia, A. E. Copeland, Y. L. Rydin and J. L. DuBois, “Discrete Adjoints for Accurate Numerical Optimization with Application to Quantum Control”, LLNL-JRNL-800457, arXiv:2001.01013.
+
 ## Installation
-The following instructions assume that you have already installed Julia (currently version 1.5.3) on your system. Before you do anything else, make sure you add the following line to your .bash_profile (or corresponding file):<br>
-**export JULIA_PROJECT="@."**<br>
-This environment variable tells Julia to look for Project.toml files in your current or parent directory.
 
-### Building and testing **Juqbox**
-shell> julia<br>
-julia> ]<br>
-(@v1.5) pkg> add  https://github.com/LLNL/Juqbox.jl.git<br>
-(@v1.5) pkg> precompile<br>
-(@v1.5) pkg> test Juqbox<br>
-... all tests should pass ...<br>
+The following instructions assume that you have already installed Julia (currently version 1.5.3) on your system. Before proceeding, we recommend that you add the following line to your `.bash_profile` (or corresponding) file:
 
-To exit the package manager and Julia you do<br>
-(@v1.5) pkg> (DEL) <br>
-julia> exit()
+**export JULIA_PROJECT="@."**
+
+This environment variable tells Julia to look for `Project.toml` files in your current or parent directory.
+
+Start julia and type `]` to enter the package manager. Then do:
+- (@v1.5) pkg> add  https://github.com/LLNL/Juqbox.jl.git
+- (@v1.5) pkg> precompile
+- (@v1.5) pkg> test Juqbox
+- ... all tests should pass ...
+
+To exit the package manager you type `<DEL>`, and to exit julia you type `exit()`.
  
 ## Documentation
 
