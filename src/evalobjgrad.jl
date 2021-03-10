@@ -27,8 +27,8 @@ and either be symmetric or skew-symmetric.
 - `Nsteps::Int64`: Number of timesteps for integrating Schroedinger's equation
 - `Uinit::Array{Float64,2}`: (keyword) Matrix holding the initial conditions for the solution matrix of size Uinit[Ntot, Ness]
 - `Utarget::Array{Complex{Float64},2}`: (keyword) Matrix holding the target gate matrix of size Uinit[Ntot, Ness]
-- `Cfreq::Array{Float64,2}`: (keyword) Carrier wave frequencies of size Cfreq[Ncoupled, Nfreq]
-- `Rfreq::Array{Float64,2}`: (keyword) Rotational frequencies of size Rfreq[Nosc]
+- `Cfreq::Array{Float64,2}`: (keyword) Carrier wave (angular) frequencies of size Cfreq[Ncoupled, Nfreq]
+- `Rfreq::Array{Float64,2}`: (keyword) Rotational (regular) frequencies of size Rfreq[Nosc]
 - `Hconst::Array{Float64,2}`: (keyword) Time-independent part of the Hamiltonian matrix of size Ntot × Ntot
 - `Hsym_ops:: Array{Array{Float64,2},1}`: (keyword) Array of symmetric control Hamiltonians, each of size Ntot × Ntot
 - `Hanti_ops:: Array{Array{Float64,2},1}`: (keyword) Array of anti-symmetric control Hamiltonians, each of size Ntot × Ntot
@@ -161,9 +161,9 @@ mutable struct objparams
         end
 
         # Exit if uncoupled controls with more than 1 oscillator present
-        if(Nunc > 0 && Nosc > 1)
-            throw(ArgumentError("Uncoupled Hamiltonians for more than a single oscillator not currently supported.\n"))
-        end
+        # if(Nunc > 0 && Nosc > 1)
+        #     throw(ArgumentError("Uncoupled Hamiltonians for more than a single oscillator not currently supported.\n"))
+        # end
 
         # Default number of Neumann series terms
         nNeumann = 3
@@ -326,7 +326,7 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, wa::Working_A
     Nunc  = params.Nunc # Number of uncoupled control functions.
     Nosc  = params.Nosc
     Nfreq = params.Nfreq
-    Nsig  = 2*Ncoupled + Nunc
+    Nsig  = 2*(Ncoupled + Nunc) # Updated for uncoupled ctrl
 
     nNeumann = params.nNeumann
 
@@ -381,7 +381,7 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, wa::Working_A
 
     Psize = size(pcof,1) #must provide separate coefficients for real,imaginary, and uncoupled parts of the control fcn
     #
-    # NOTE: Nsig  = 2*Ncoupled + Nunc
+    # NOTE: Nsig  = 2*(Ncoupled + Nunc)
     #
     if Psize%Nsig != 0 || Psize < 3*Nsig
         error("pcof must have an even number of elements >= ",3*Nsig,", not ", Psize)
@@ -484,9 +484,9 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, wa::Working_A
             
             # Update K and S matrices
             # general case
-            KS!(K0, S0, t, params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0) 
-            KS!(K05, S05, t + 0.5*dt*gamma[q], params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0) 
-            KS!(K1, S1, t + dt*gamma[q], params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0) 
+            KS!(K0, S0, t, params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq) 
+            KS!(K05, S05, t + 0.5*dt*gamma[q], params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq) 
+            KS!(K1, S1, t + dt*gamma[q], params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq) 
             
             # Take a step forward and accumulate weight matrix integral. Note the √2 multiplier is to account
             # for the midpoint rule in the numerical integration of the imaginary part of the signal.
@@ -606,9 +606,9 @@ if evaladjoint
             # Since t is negative we have that K0 is K^{n+1}, K05 = K^{n-1/2}, 
             # K1 = K^{n} and similarly for S.
             # general case
-            KS!(K0, S0, t, params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0) 
-            KS!(K05, S05, t + 0.5*dt*gamma[q], params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0) 
-            KS!(K1, S1, t + dt*gamma[q], params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0) 
+            KS!(K0, S0, t, params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq) 
+            KS!(K05, S05, t + 0.5*dt*gamma[q], params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq) 
+            KS!(K1, S1, t + dt*gamma[q], params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq) 
 
             # Integrate state variables backwards in time one step
             @inbounds t = step!(t, nNeumann, vr, vi, vi05, dt*gamma[q], K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs)
@@ -1018,12 +1018,13 @@ function assign_thresholds_ctrl_freq(params::objparams, D1:: Int64, maxpar:: Mat
     
     Nfreq = params.Nfreq
     Ncoupled = params.Ncoupled
-    nCoeff = 2*Ncoupled*Nfreq*D1
+    Nunc = params.Nunc
+    nCoeff = 2*(Ncoupled+Nunc)*Nfreq*D1
     minCoeff = zeros(nCoeff) # Initialize storage
     maxCoeff = zeros(nCoeff)
 
 #    @printf("Ncoupled = %d, Nfreq = %d, D1 = %d, nCoeff = %d\n", Ncoupled, Nfreq, D1, nCoeff)
-    for c in 1:Ncoupled
+    for c in 1:Ncoupled+Nunc  # We assume that either Nunc = 0 or Ncoupled = 0
         for f in 1:Nfreq
             offset1 = 2*(c-1)*Nfreq*D1 + (f-1)*2*D1
             minCoeff[ offset1 + 1:offset1+2*D1] .= -maxpar[c,f] # same for p(t) and q(t)
@@ -1064,22 +1065,20 @@ end
 """
     minCoeff, maxCoeff = assign_thresholds(params, D1, maxpar [, maxpar_unc])
 
-Build vector of frequency independent min/max parameter constraints for each coupled and
-(optionally) uncoupled control function. Here, `minCoeff = -maxCoeff`.
+Build vector of frequency independent min/max parameter constraints for each control function. Here, `minCoeff = -maxCoeff`.
  
 # Arguments
 - `params:: objparams`: Struct containing problem definition.
 - `D1:: Int64`: Number of basis functions in each segment.
 - `maxpar::Array{Float64,1}`: Maximum parameter value for each coupled control.
-- `maxpar_unc::Array{Float64,1}=`: (optional) Maximum parameter value for each uncoupled control.
 """
-function assign_thresholds(params::objparams, D1::Int64, maxpar::Array{Float64,1}, maxpar_unc::Array{Float64,1}=Float64[])
+function assign_thresholds(params::objparams, D1::Int64, maxpar::Array{Float64,1})
     Nfreq = params.Nfreq
-    nCoeff =  (2*params.Ncoupled + params.Nunc)*Nfreq*D1
+    nCoeff =  2*(params.Ncoupled + params.Nunc)*Nfreq*D1
     minCoeff = zeros(nCoeff) # Initialize storage
     maxCoeff = zeros(nCoeff)
 
-    for c in 1:params.Ncoupled
+    for c in 1:params.Ncoupled+params.Nunc # We assume that either Nunc = 0 or Ncoupled = 0
         for f in 1:Nfreq
             offset1 = 2*(c-1)*Nfreq*D1 + (f-1)*2*D1
             minCoeff[ offset1 + 1:offset1+2*D1] .= -maxpar[c] # same for p(t) and q(t)
@@ -1087,14 +1086,14 @@ function assign_thresholds(params::objparams, D1::Int64, maxpar::Array{Float64,1
         end
     end
 
-    offset0 = 2*params.Ncoupled*params.Nfreq*D1
-    for c in 1:params.Nunc
-        for f in 1:Nfreq
-            offset1 = (c-1)*Nfreq*D1 + (f-1)*D1
-            minCoeff[offset0+offset1+1:offset0+offset1+D1] .= -maxpar_unc[c]
-            maxCoeff[offset0+offset1+1:offset0+offset1+D1] .= maxpar_unc[c]
-        end
-    end
+    # offset0 = 2*params.Ncoupled*params.Nfreq*D1
+    # for c in 1:params.Nunc
+    #     for f in 1:Nfreq
+    #         offset1 = (c-1)*Nfreq*D1 + (f-1)*D1
+    #         minCoeff[offset0+offset1+1:offset0+offset1+D1] .= -maxpar_unc[c]
+    #         maxCoeff[offset0+offset1+1:offset0+offset1+D1] .= maxpar_unc[c]
+    #     end
+    # end
 
     return minCoeff, maxCoeff
 end
@@ -1346,18 +1345,12 @@ end
 
 
 function KS!(K::Array{Float64,N}, S::Array{Float64,N}, t::Float64, Hsym_ops::Array{MyRealMatrix,1}, Hanti_ops::Array{MyRealMatrix, 1},
-             Hunc_ops::Array{MyRealMatrix, 1}, Nunc::Int64, isSymm::BitArray{1}, splinepar::BsplineParams, H0::Array{Float64,N}) where N
+             Hunc_ops::Array{MyRealMatrix, 1}, Nunc::Int64, isSymm::BitArray{1}, splinepar::BsplineParams, H0::Array{Float64,N}, Rfreq::Array{Float64,1}) where N
 
-    # NEW ordering:
-    # rfeval = controlfunc(t,splinepar, 0)
-    # ifeval = controlfunc(t,splinepar, 1)
-    # rgeval = controlfunc(t,splinepar, 2)
-    # igeval = controlfunc(t,splinepar, 3)
-    
-    # Ncoupled = length(Hsym_ops) # Nq equals the number of oscillators
+    # Isn't the H0 matrix always 2-dimensional? Why do we need to declare it as N-dimensional? 
+
     Ncoupled = splinepar.Ncoupled
 
-    # K .= H0
     copy!(K,H0)
     S .= 0.0
     for q=1:Ncoupled # Assumes that Hanti_ops has the same length as Hsym_ops
@@ -1369,9 +1362,16 @@ function KS!(K::Array{Float64,N}, S::Array{Float64,N}, t::Float64, Hsym_ops::Arr
         axpy!(qt,Hanti_ops[q],S)
     end
 
-    offset = 2*Ncoupled-1
-    for q=1:Nunc
-        ft = controlfunc(t,splinepar, offset+q)
+#    offset = 2*Ncoupled-1
+    offset = 2*Ncoupled
+    for q=1:splinepar.Nunc  # Will not work for splineparams object
+        qs = offset + (q-1)*2
+        qa = qs+1
+        pt = controlfunc(t,splinepar, qs)
+        qt = controlfunc(t,splinepar, qa)
+
+#        ft = controlfunc(t,splinepar, offset+q)
+        ft = 2*( pt*cos(2*pi*Rfreq[q]*t) - qt*sin(2*pi*Rfreq[q]*t) )
         if(isSymm[q])
             axpy!(ft,Hunc_ops[q],K)
         else
@@ -1383,13 +1383,7 @@ end
 
 # Sparse version
 @inline function KS!(K::SparseMatrixCSC{Float64,Int64}, S::SparseMatrixCSC{Float64,Int64}, t::Float64, Hsym_ops::Array{MyRealMatrix,1}, Hanti_ops::Array{MyRealMatrix, 1},
-             Hunc_ops::Array{MyRealMatrix, 1}, Nunc::Int64, isSymm::BitArray{1}, splinepar::BsplineParams, H0::SparseMatrixCSC{Float64,Int64})
-
-    # NEW ordering:
-    # rfeval = controlfunc(t,splinepar, 0)
-    # ifeval = controlfunc(t,splinepar, 1)
-    # rgeval = controlfunc(t,splinepar, 2)
-    # igeval = controlfunc(t,splinepar, 3)
+             Hunc_ops::Array{MyRealMatrix, 1}, Nunc::Int64, isSymm::BitArray{1}, splinepar::BsplineParams, H0::SparseMatrixCSC{Float64,Int64}, Rfreq::Array{Float64,1})
     
     Ncoupled = splinepar.Ncoupled
     K.nzval .= 0.0
@@ -1405,9 +1399,16 @@ end
         accumulate_matrix!(S, Hanti_ops[q], qt)
     end
 
-    offset = 2*Ncoupled-1
-    for q=1:Nunc
-        ft = controlfunc(t,splinepar, offset+q)
+#    offset = 2*Ncoupled-1
+    offset = 2*Ncoupled
+    for q=1:splinepar.Nunc # Will not work for splineparams object
+        qs = offset + (q-1)*2
+        qa = qs+1
+        pt = controlfunc(t,splinepar, qs)
+        qt = controlfunc(t,splinepar, qa)
+
+#        ft = controlfunc(t,splinepar, offset+q)
+        ft = 2*( pt*cos(2*pi*Rfreq[q]*t) - qt*sin(2*pi*Rfreq[q]*t) )
         if(isSymm[q])
             accumulate_matrix!(K, Hunc_ops[q], ft)
         else
@@ -1736,7 +1737,7 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
     t       ::Float64 = 0.0
     step    :: Int64 = 0
 
-    KS!(K0, S0, t, params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0) 
+    KS!(K0, S0, t, params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq) 
     # Forward time stepping loop
     for step in 1:nsteps
 
@@ -1744,9 +1745,9 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
         for q in 1:stages
             
             # Update K and S matrices
-            KS!(K0, S0, t, params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0)
-            KS!(K05, S05, t + 0.5*dt*gamma[q], params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0)
-            KS!(K1, S1, t + dt*gamma[q], params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0)
+            KS!(K0, S0, t, params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq)
+            KS!(K05, S05, t + 0.5*dt*gamma[q], params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq)
+            KS!(K1, S1, t + dt*gamma[q], params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq)
 
             # Take a step forward and accumulate weight matrix integral. Note the √2 multiplier is to account
             # for the midpoint rule in the numerical integration of the imaginary part of the signal.
@@ -1915,7 +1916,7 @@ function calculate_timestep(T::Float64, H0::AbstractArray,Hsym_ops::AbstractArra
         elseif(norm(Hunc_ops[i]+Hunc_ops[i]') < 1e-14)
             K1 .+= 1im*max_flux[i].*Hunc_ops[i]
         else 
-            throw(ArgumentError("Uncoupled Hamiltonians for more than a single oscillator not currently supported.\n"))
+            throw(ArgumentError("Uncoupled Hamiltonians must currently be either symmetric or anti-symmetric.\n"))
         end
     end
 
@@ -1962,7 +1963,7 @@ function calculate_timestep(T::Float64, H0::AbstractArray, Hunc_ops::AbstractArr
         elseif(norm(Hunc_ops[i]+Hunc_ops[i]') < 1e-14)
             K1 .+= 1im*max_unc[i].*Hunc_ops[i]
         else 
-            throw(ArgumentError("Uncoupled Hamiltonians for more than a single oscillator not currently supported.\n"))
+            throw(ArgumentError("Uncoupled Hamiltonians must currently be either symmetric or anti-symmetric.\n"))
         end
     end
 

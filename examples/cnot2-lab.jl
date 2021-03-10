@@ -116,11 +116,11 @@ num2 = Diagonal(collect(0:Nt2-1))
 N1 = Diagonal(kron(I2, num1) )
 N2 = Diagonal(kron(num2, I1) )
 
-# System Hamiltonian
-H0 = -2*pi*( x1/2*(N1*N1-N1) + x2/2*(N2*N2-N2) + x12*(N1*N2) )
+# System Hamiltonian in the lab frame
+H0 = 2*pi*( fa*N1 + fb*N2 -x1/2*(N1*N1-N1) - x2/2*(N2*N2-N2) - x12*(N1*N2) )
 
-Hsym_ops=[Array(amat+adag), Array(bmat+bdag)]
-Hanti_ops=[Array(amat-adag), Array(bmat-bdag)]
+# dense matrices run faster, but take more memory
+Hunc_ops=[Array(amat+adag), Array(bmat+bdag)]
 H0 = Array(H0)
 
 # max coefficients, rotating frame
@@ -129,15 +129,15 @@ bmax = 0.020 # max amplitude ctrl func for Hamiltonian #2
 maxpar = [amax, bmax]
 
 # Estimate time step
-Pmin = 40 # should be 20 or higher
-nsteps = calculate_timestep(Tmax, H0, Hsym_ops, Hanti_ops, maxpar, Pmin)
+Pmin = 100 # should be 20 or higher
+nsteps = calculate_timestep(Tmax, H0, Hunc_ops, maxpar, Pmin)
 
 println("Number of time steps = ", nsteps)
 
 # package the lowering and raising matrices together into an one-dimensional array of two-dimensional arrays
 # Here we choose dense or sparse representation
-use_sparse = true
-# use_sparse = false
+#use_sparse = true
+use_sparse = false
 
 Nfreq = 2 # number of carrier frequencies
 
@@ -182,17 +182,17 @@ omega1, omega2 = Juqbox.setup_rotmatrices(Ne, Ng, rot_freq)
 rot1 = Diagonal(exp.(im*omega1*Tmax))
 rot2 = Diagonal(exp.(im*omega2*Tmax))
 
-# target in the rotating frame
-vtarget = rot1*rot2*utarget
+# target in the lab frame
+vtarget = utarget
 
 U0 = initial_cond(Ntot, N, Ne, Ng)
 
 # assemble problem description for the optimization
 params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
-                          Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, use_sparse=use_sparse)
+                          Hconst=H0, Hunc_ops=Hunc_ops)
 
 # initial parameter guess
-startFromScratch = true # false
+startFromScratch = false # true
 startFile = "drives/cnot2-pcof-opt-t100.jld2"
 
 # dimensions for the parameter vector
@@ -202,8 +202,8 @@ nCoeff = 2*Nosc*Nfreq*D1 # Total number of parameters.
 
 Random.seed!(2456)
 if startFromScratch
-    pcof0 = amax*0.01 * rand(nCoeff)
-    println("*** Starting from pcof with random amplitude ", amax*0.01)
+  pcof0 = amax*0.01 * rand(nCoeff)
+  println("*** Starting from pcof with random amplitude ", amax*0.01)
 else
     # the data on the startfile must be consistent with the setup!
     # use if you want to have initial coefficients read from file
@@ -249,4 +249,8 @@ prob = Juqbox.setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff, maxIte
 # addOption(prob, "print_level", 0); # for testing the gradient
 
 println("Initial coefficient vector stored in 'pcof0'")
+
+# evaluate objective function
+objf, uhist, trfid = traceobjgrad(pcof0, params, wa, true, false);
+println("Trace fidelity: ", trfid);
 

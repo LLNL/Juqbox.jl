@@ -20,6 +20,7 @@ example.
 ==========================================================# 
 using LinearAlgebra
 using Plots
+pyplot()
 using FFTW
 using DelimitedFiles
 using Printf
@@ -27,7 +28,6 @@ using Ipopt
 using Random
 
 Base.show(io::IO, f::Float64) = @printf(io, "%20.13e", f)
-pyplot()
 
 using Juqbox
 
@@ -72,10 +72,10 @@ omega1 = Juqbox.setup_rotmatrices([N], [Nguard], rot_freq)
 rot1 = Diagonal(exp.(im*omega1*T))
 
 # target in the rotating frame
-vtarget = rot1*utarget
+# vtarget = rot1*utarget
 
 # target in lab frame
-#vtarget = utarget
+vtarget = utarget
 
 # setup ansatz for control functions
 use_bcarrier = true # new Bcarrier allows a constant control function
@@ -88,14 +88,14 @@ Random.seed!(2456)
 # initial parameter guess
 
 # setup carrier frequencies
-om = zeros(Nosc,Nfreq)
+om = zeros(Nctrl,Nfreq)
 # Note: same frequencies for each p(t) (x-drive) and q(t) (y-drive)
 println("Carrier frequencies [GHz]: ", om[:,:]./(2*pi))
 
 # setup drift Hamiltonian
 number = Diagonal(collect(0:Ntot-1))
 
-H0 = -0.5*(2*pi)*xa* (number*number - number)
+H0 = 2*pi* (fa*number - 0.5*xa* (number*number - number) )
 println("Drift Hamiltonian/2*pi: ", H0)
 
 # lowering matrix
@@ -106,23 +106,13 @@ adag = transpose(amat) # raising operator matrix
 # max parameter amplitude
 maxpar = 1.0*aOmega/Nfreq
 
-# package the lowering and raising matrices together into an one-dimensional array of two-dimensional arrays
-# Here we choose dense or sparse representation
-# NOTE: the above eigenvalue calculation does not work with sparse arrays!
-
-# sparse matrices
-# Hsym_ops=[sparse(amat+adag)]
-# Hanti_ops=[sparse(amat-adag)]
-# H0 = sparse(H0)
-
 # dense matrices
-Hsym_ops=[Array(amat + adag)]
-Hanti_ops=[Array(amat - adag)]
+Hunc_ops=[Array(amat + adag)]
 H0 = Array(H0)
 
 # Estimate time step
-Pmin = 80
-nsteps = calculate_timestep(T, H0, Hsym_ops, Hanti_ops, [maxpar], Pmin)
+Pmin = 100
+nsteps = calculate_timestep(T, H0, Hunc_ops, [maxpar], Pmin)
 println("Duration = ", T, " # time steps per min-period, P = ", Pmin, " # time steps: ", nsteps)
 
 # Initial conditions
@@ -131,14 +121,11 @@ U0 = Ident[1:Ntot,1:N]
 
 # setup the simulation parameters
 params = Juqbox.objparams([N], [Nguard], T, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
-                          Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops)
-
-params.saveConvHist = true
-params.use_bcarrier = true 
+                          Hconst=H0, Hunc_ops=Hunc_ops)
 
 # setup the initial parameter vector, either randomized or from file
-startFromScratch = true # true
-startFile = "rabi-pcof-opt-alpha-0.5.dat"
+startFromScratch = false # true
+startFile = "drives/rabi-pcof-opt-t100.jld2"
 
 if startFromScratch
     # D1 smaller than 3 does not work
@@ -157,7 +144,7 @@ if startFromScratch
 else
     # the data on the startfile must be consistent with the setup!
     # use if you want to have initial coefficients read from file
-    pcof0 = vec(readdlm(startFile))
+    pcof0 = read_pcof(startFile)
     nCoeff = length(pcof0)
     D1 = div(nCoeff, 2*Nosc*Nfreq) # factor '2' is for sin/cos
     nCoeff = 2*Nosc*Nfreq*D1 # just to be safe if the file doesn't contain the right number of elements
@@ -165,7 +152,6 @@ else
 end
 
 # min and max coefficient values
-useBarrier = true
 minCoeff = -maxpar*ones(nCoeff);
 maxCoeff = maxpar*ones(nCoeff);
 
@@ -185,10 +171,6 @@ println("Number of coefficients per spline = ", D1, " Total number of parameters
 println("Max parameter amplitudes: maxpar = ", maxpar)
 println("Tikhonov coefficients: tik0 = ", params.tik0)
 
-# Estimate number of terms in Neumann series for time stepping (Default 3)
-tol = eps(1.0); # machine precision
-Juqbox.estimate_Neumann!(tol, params, [maxpar])
-
 # Allocate all working arrays
 wa = Juqbox.Working_Arrays(params, nCoeff)
 prob = Juqbox.setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff, maxIter, lbfgsMax, startFromScratch)
@@ -197,3 +179,7 @@ prob = Juqbox.setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff, maxIte
 # addOption( prob, "derivative_test", "first-order"); # for testing the gradient
 
 println("Initial coefficient vector stored in 'pcof0'")
+
+# evaluate objective function
+objf, uhist, trfid = traceobjgrad(pcof0, params, wa, true, false);
+println("Trace fidelity: ", trfid);

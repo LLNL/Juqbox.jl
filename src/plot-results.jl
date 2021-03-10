@@ -122,14 +122,14 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
     end
 
     # one subfigure for each control function
-    plotarray = Array{Plots.Plot}(undef, params.Ncoupled) #empty array for separate plots
-    plotarray_fft = Array{Plots.Plot}(undef, params.Ncoupled) #empty array for separate plots
-    plotarray_fftlog = Array{Plots.Plot}(undef, params.Ncoupled) #empty array for separate plots
+    plotarray = Array{Plots.Plot}(undef, params.Ncoupled+ params.Nunc) #empty array for separate plots
+    plotarray_fft = Array{Plots.Plot}(undef, params.Ncoupled+ params.Nunc) #empty array for separate plots
+    plotarray_fftlog = Array{Plots.Plot}(undef, params.Ncoupled+ params.Nunc) #empty array for separate plots
     plotarray_lab = Array{Plots.Plot}(undef, params.Ncoupled + params.Nunc) #empty array for separate plots
 
     println("Rotational frequencies: ", params.Rfreq)
 
-    for q=1:params.Ncoupled
+    for q=1:params.Ncoupled+params.Nunc
         # evaluate ctrl functions for the q'th Hamiltonian
         pfunc, qfunc = Juqbox.evalctrl(params, pcof, td, q)
 
@@ -139,7 +139,7 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
         pmax = maximum(abs.(pfunc))
         qmax = maximum(abs.(qfunc))
         # first plot for control function for the symmetric Hamiltonian
-        local titlestr = "Rotating frame coupled ctrl - " * string(q) * " Max-p=" *@sprintf("%.3e", pmax) * " Max-q=" *
+        local titlestr = "Rotating frame ctrl - " * string(q) * " Max-p=" *@sprintf("%.3e", pmax) * " Max-q=" *
             @sprintf("%.3e", qmax) * " " * unitStr
         plotarray[q] = Plots.plot(td, pfunc, lab=L"p(t)", title = titlestr, xlabel="Time [ns]",
                                   ylabel=unitStr, legend= :outerright)
@@ -149,11 +149,11 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
         println("Rot. frame ctrl-", q, ": Max-p(t) = ", pmax, " Max-q(t) = ", qmax, " ", unitStr)
 
         # Corresponding lab frame control
-        omq = 2*pi*params.Rfreq[q]
+        omq = 2*pi*params.Rfreq[q] # FIX index of Rfreq
         labdrive .= 2*pfunc .* cos.(omq*td) .- 2*qfunc .* sin.(omq*td)
 
         lmax = maximum(abs.(labdrive))
-        local titlestr = "Lab frame coupled ctrl - " * string(q) * " Max=" *@sprintf("%.3e", lmax) * " " * unitStr
+        local titlestr = "Lab frame ctrl - " * string(q) * " Max=" *@sprintf("%.3e", lmax) * " " * unitStr
         plotarray_lab[q]= Plots.plot(td, labdrive, lab="", title = titlestr, size = (650, 250), xlabel="Time [ns]", ylabel=unitStr)
 
         println("Lab frame ctrl-", q, " Max amplitude = ", lmax, " ", unitStr)
@@ -192,43 +192,46 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
         end
     end
 
-    # Add in uncoupled controls
-    if(params.Nunc >  0)
-        max_uncoupled = zeros(length(params.Hunc_ops))
-        for q =1:params.Nunc
-            qu = 2*params.Ncoupled + q - 1
-            pfunc = scalefactor .* Juqbox.evalctrl(params, pcof, td, qu)
-            max_uncoupled[q] = maximum(abs.(pfunc))
-            plotarray_lab[params.Ncoupled + q] =  Plots.plot(td, pfunc, lab="", linewidth = 2, title = "Uncoupled Ctrl Function",
-                                                             size = (650, 250), xlabel="Time [ns]", ylabel=unitStr)
-        end
-        println("Max amplitude uncoupled ctrl = ", maximum(max_uncoupled), unitStr)
+    # # Add in uncoupled controls
+    # if(params.Nunc >  0)
+    #     max_uncoupled = zeros(length(params.Hunc_ops))
 
-        # TODO: save uncoupled controls on file
-    end
+    #     for q =1:params.Nunc
+    #         qs = 2*params.Ncoupled + (q - 1)*2
+    #         qa = qs+1
+    #         pfunc = scalefactor .* Juqbox.evalctrl(params, pcof, td, qs)
+    #         qfunc = scalefactor .* Juqbox.evalctrl(params, pcof, td, qa)
+    #         ffunc = 2*(pfunc .* cos(2*pi*params.Rfreq[q]) .- qfunc .* sin(2*pi*params.Rfreq[q]))
+    #         max_uncoupled[q] = maximum(abs.(ffunc))
+    #         plotarray_lab[params.Ncoupled + q] =  Plots.plot(td, qfunc, lab="", linewidth = 2, title = "Uncoupled Ctrl Function",
+    #                                                          size = (650, 250), xlabel="Time [ns]", ylabel=unitStr)
+    #     end
+    #     println("Max amplitude uncoupled ctrl = ", maximum(max_uncoupled), unitStr)
 
-    # Accumulate all ctrl function sub-plots
-    pl2  = Plots.plot(plotarray..., layout = (params.Ncoupled, 1))
-    pl4  = Plots.plot(plotarray_lab..., layout = (params.Ncoupled, 1))
-    pl5  = Plots.plot(plotarray_fft..., layout = (params.Ncoupled, 1))
-    pl6  = Plots.plot(plotarray_fftlog..., layout = (params.Ncoupled, 1))
+    #     # TODO: save uncoupled controls on file
+    # end
 
-    if savefiles
-        rotplotname = ctrlbasename * ".png"
-        Plots.savefig(pl2, rotplotname)
-        println("Saved rotating frame ctrl plot on file '", rotplotname);
-
-        local labplotname = labbasename * ".png"
-        Plots.savefig(pl4, labplotname)
-        println("Saved lab frame ctrl plot on file '", labplotname);
-
-        fftname = labbasename * "-fft" * ".png"
-        fftname2 = labbasename * "-fft-log" * ".png"
-        Plots.savefig(pl5, fftname)
-        Plots.savefig(pl6, fftname2)
-        println("Saved FFT of lab ctrl function on files '", fftname, "' and '", fftname2, "'");
+   # Accumulate all ctrl function sub-plots
+   pl2  = Plots.plot(plotarray..., layout = (params.Ncoupled + params.Nunc, 1))
+   pl4  = Plots.plot(plotarray_lab..., layout = (params.Ncoupled + params.Nunc, 1))
+   pl5  = Plots.plot(plotarray_fft..., layout = (params.Ncoupled + params.Nunc, 1))
+   pl6  = Plots.plot(plotarray_fftlog..., layout = (params.Ncoupled + params.Nunc, 1))
         
-    end
+   if savefiles
+       rotplotname = ctrlbasename * ".png"
+       Plots.savefig(pl2, rotplotname)
+       println("Saved rotating frame ctrl plot on file '", rotplotname);
+
+       local labplotname = labbasename * ".png"
+       Plots.savefig(pl4, labplotname)
+       println("Saved lab frame ctrl plot on file '", labplotname);
+
+       fftname = labbasename * "-fft" * ".png"
+       fftname2 = labbasename * "-fft-log" * ".png"
+       Plots.savefig(pl5, fftname)
+       Plots.savefig(pl6, fftname2)
+       println("Saved FFT of lab ctrl function on files '", fftname, "' and '", fftname2, "'");
+   end
 
     # final solution matrix
     # ufinal = unitaryhistory[:,:,end]

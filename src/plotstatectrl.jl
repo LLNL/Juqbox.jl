@@ -234,7 +234,7 @@ function evalctrl(params::objparams, pcof0:: Array{Float64, 1}, td:: Array{Float
         nCoeff = length(pcof0)
     end
     pcof = pcof0[1:nCoeff]
-    D1 = div(nCoeff, (2*params.Ncoupled + params.Nunc)*params.Nfreq)  # number of B-spline coeff per control function
+    D1 = div(nCoeff, 2*(params.Ncoupled + params.Nunc)*params.Nfreq)  # number of B-spline coeff per control function
 
     if (params.use_bcarrier)
         # B-splines with carrier waves
@@ -250,19 +250,13 @@ function evalctrl(params::objparams, pcof0:: Array{Float64, 1}, td:: Array{Float
     fact = 1.0/(2*pi) # conversion factor to GHz
     fact = 1.0 # conversion factor to rad/ns
 
-    if(jHam <= params.Ncoupled && params.Ncoupled > 0)
-        # coupled controls
-        qs = (jHam-1)*2
-        qa = qs+1
+    # coupled & uncoupled controls are treated the same way
+    qs = (jHam-1)*2
+    qa = qs+1
         
-        pj = fact.*controlplot.(td, qs)
-        qj = fact.*controlplot.(td, qa)
-        return pj, qj
-    else
-        qu = jHam
-        pj = controlplot.(td, qu)
-        return pj
-    end
+    pj = fact.*controlplot.(td, qs)
+    qj = fact.*controlplot.(td, qa)
+    return pj, qj
     
 end
 
