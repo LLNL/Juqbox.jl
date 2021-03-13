@@ -28,7 +28,7 @@ function read_pcof(refFileName:: String)
 end
 
 """
-	Juq2Qis(params, pcof, samplerate, q_ind, fileName="ctrl.dat", node_loc="c") 
+	juq2qis(params, pcof, samplerate, q_ind, fileName="ctrl.dat", node_loc="c") 
 
 Evaluate control functions and export them into a format that is readable by Qiskit.
 
