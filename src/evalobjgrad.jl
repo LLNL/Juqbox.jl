@@ -27,8 +27,8 @@ and either be symmetric or skew-symmetric.
 - `Nsteps::Int64`: Number of timesteps for integrating Schroedinger's equation
 - `Uinit::Array{Float64,2}`: (keyword) Matrix holding the initial conditions for the solution matrix of size Uinit[Ntot, Ness]
 - `Utarget::Array{Complex{Float64},2}`: (keyword) Matrix holding the target gate matrix of size Uinit[Ntot, Ness]
-- `Cfreq::Array{Float64,2}`: (keyword) Carrier wave (angular) frequencies of size Cfreq[Ncoupled, Nfreq]
-- `Rfreq::Array{Float64,2}`: (keyword) Rotational (regular) frequencies of size Rfreq[Nosc]
+- `Cfreq::Array{Float64,2}`: (keyword) Carrier wave (angular) frequencies of size Cfreq[Nctrl, Nfreq]
+- `Rfreq::Array{Float64,1}`: (keyword) Rotational (regular) frequencies for each control Hamiltonian; size Rfreq[Nctrl]
 - `Hconst::Array{Float64,2}`: (keyword) Time-independent part of the Hamiltonian matrix of size Ntot × Ntot
 - `Hsym_ops:: Array{Array{Float64,2},1}`: (keyword) Array of symmetric control Hamiltonians, each of size Ntot × Ntot
 - `Hanti_ops:: Array{Array{Float64,2},1}`: (keyword) Array of anti-symmetric control Hamiltonians, each of size Ntot × Ntot
@@ -117,7 +117,10 @@ mutable struct objparams
         Nanti  = length(Hanti_ops)
         Nunc   = length(Hunc_ops)
 
-        @assert(length(Rfreq) == Nosc)
+        Nctrl = Ncoupled + Nunc # Number of control Hamiltonians
+        
+        @assert(Ncoupled==0 || Nunc== 0)
+        @assert(length(Rfreq) == Nctrl)
 
         # Track symmetries of uncoupled Hamiltonian terms
         if Nunc > 0
@@ -156,7 +159,7 @@ mutable struct objparams
         for i = 1:Ncoupled
             L = LinearAlgebra.tril(Hsym_ops[i] + Hanti_ops[i]) # tril forms the lower triangular part of a matrix, in this case (a+a^† ) + (a - a^†) = 2 a, which is upper triangular
             if(norm(L) > eps(1.0))
-                throw(ArgumentError("Coupled Hamiltonian inconsistent with currently implemented rotating wave approximation. Please flip sign on Hanti_ops.\n"))
+                println("WARNING: Control Hamiltonian #", i, " may be inconsistently defined because H_sym+H_anti has a lower triangular part.")
             end
         end
 
@@ -304,7 +307,6 @@ function and/or gradient.
 - `evaladjoint::Bool = true`: Solve the adjoint equation and calculate the gradient of the objective function.
 """
 function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, wa::Working_Arrays, verbose::Bool = false, evaladjoint::Bool = true)
-#    @assert(params.Nosc >= 1 && params.Nosc <=2) # Currently the only implemented cases
     order  = 2
     N      = params.N    
     Nguard = params.Nguard  
@@ -973,15 +975,15 @@ two parameters in each B-spline segment.
 - `maxCoeff:: Vector{Float64}`: Upper parameter bounds to be modified
 """
 function zero_start_end!(params::objparams, D1:: Int64, minCoeff:: Array{Float64,1}, maxCoeff:: Array{Float64,1} )
-    @assert(params.Nunc == 0)
     @assert(D1 >= 5) # Need at least 5 parameters per B-spline segment
     
     Nfreq = params.Nfreq
     Ncoupled = params.Ncoupled
+    Nunc = params.Nunc
     nCoeff = 2*Ncoupled*Nfreq*D1
 
 #    @printf("Ncoupled = %d, Nfreq = %d, D1 = %d, nCoeff = %d\n", Ncoupled, Nfreq, D1, nCoeff)
-    for c in 1:Ncoupled
+    for c in 1:Ncoupled+Nunc  # We assume that either Nunc = 0 or Ncoupled = 0
         for f in 1:Nfreq
             for q in 0:1
                 offset1 = 2*(c-1)*Nfreq*D1 + (f-1)*2*D1 + q*D1
@@ -1006,7 +1008,7 @@ end
     minCoeff, maxCoeff = assign_thresholds_ctrl_freq(params, D1, maxamp)
 
 Build vector of parameter min/max constraints that can depend on the control function and carrier wave frequency, 
-with `minCoeff = -maxCoeff`, assuming no uncoupled control functions.
+with `minCoeff = -maxCoeff`.
  
 # Arguments
 - `params:: objparams`: Struct containing problem definition.
@@ -1014,8 +1016,6 @@ with `minCoeff = -maxCoeff`, assuming no uncoupled control functions.
 - `maxamp:: Matrix{Float64}`: `maxamp[c,f]` is the maximum parameter value for ctrl `c` and frequency `f`
 """
 function assign_thresholds_ctrl_freq(params::objparams, D1:: Int64, maxpar:: Matrix{Float64})
-    @assert(params.Nunc == 0)
-    
     Nfreq = params.Nfreq
     Ncoupled = params.Ncoupled
     Nunc = params.Nunc

@@ -33,7 +33,7 @@ using SparseArrays
 
 Base.show(io::IO, f::Float64) = @printf(io, "%20.13e", f)
 
-import Juqbox
+using Juqbox
 
 verbose = false
 N = 4
@@ -49,6 +49,7 @@ use_sparse = true
 # frequencies (in GHz, will be multiplied by 2*pi to get angular frequencies in the Hamiltonian matrix)
 fa = 5.0 # 4.1
 xa = 0.2
+rot_freq = [fa, fa] # Rotational frequencies for each control Hamiltonian
 
 # duration
 T = 11.0 # Tperiod/4
@@ -84,37 +85,33 @@ amat = Bidiagonal(zeros(Ntot),sqrt.(collect(1:Ntot-1)),:U) # standard lowering o
 # raising matrix
 adag = transpose(amat) # raising operator matrix
 
-Hsym_ops=[Array(amat+adag)]
-Hanti_ops=[Array(amat-adag)]
-Hunc_ops=[Array(adag*amat)]
+Hsym_ops=[ Array(amat+adag), Array(adag*amat) ]
+Hanti_ops=[ Array(amat-adag), Array(zeros(Ntot,Ntot)) ]
+
 H0 = Array(H0)
 
-Ncoupled = length(Hsym_ops)
-Nunc = length(Hunc_ops)
+Nctrl = length(Hsym_ops)
 
 # setup carrier frequencies
-om = zeros(Ncoupled,Nfreq)
-use_bcarrier = true
+om = zeros(Nctrl,Nfreq)
 
-if use_bcarrier
-    @assert(Nfreq==1 || Nfreq==2 || Nfreq==3)
-    if Nfreq == 2
-        om[1:Ncoupled,2] .= -2.0*pi*xa # coupling freq for both ctrl funcs (re/im)
-    elseif Nfreq == 3
-        om[:,2] .= -2.0*pi*xa # 1st ctrl, re
-        om[:,3] .= -4.0*pi*xa # coupling freq for both ctrl funcs (re/im)
-    end
+@assert(Nfreq==1 || Nfreq==2 || Nfreq==3)
+if Nfreq == 2
+    om[1:Nctrl,2] .= -2.0*pi*xa # coupling freq for both ctrl funcs (re/im)
+elseif Nfreq == 3
+    om[:,2] .= -2.0*pi*xa # 1st ctrl, re
+    om[:,3] .= -4.0*pi*xa # coupling freq for both ctrl funcs (re/im)
 end
 
 # Note: same frequencies for each p(t) (x-drive) and q(t) (y-drive)
-#println("Carrier frequencies [GHz]: ", om[:,:]./(2*pi))
+if verbose
+    println("Carrier frequencies [GHz]: ", om[:,:]./(2*pi))
+end
 
 # max parameter amplitude
-maxpar = 0.1
+maxpar = 0.08
 max_flux = 2*pi*5.0
 # max_flux = maxpar
-
-scaling_factor = 1.0
 
 # Initial conditions
 Ident = Matrix{Float64}(I, Ntot, Ntot)   
@@ -128,7 +125,7 @@ useBarrier = true
 if startFromScratch
     # D1 smaller than 3 does not work
     D1 = 30 # Number of B-spline coefficients per frequency, sin/cos and real/imag
-    nCoeff = (2*Ncoupled + Nunc)*Nfreq*D1
+    nCoeff = 2*Nctrl*Nfreq*D1
     pcof0  = zeros(nCoeff)    
     pcof0 = (rand(nCoeff) .- 0.5).*maxpar*0.1
 else
@@ -136,71 +133,62 @@ else
     # use if you want to have initial coefficients read from file
     pcof0 = vec(readdlm(startFile))
     nCoeff = length(pcof0)
-    D1 = div(nCoeff, (2*Ncoupled + Nunc)*Nfreq) # factor '2' is for sin/cos
+    D1 = div(nCoeff, 2*Nctrl*Nfreq) # factor '2' is for sin/cos
 
-    nCoeff = (2*Ncoupled + Nunc)*Nfreq*D1 # just to be safe if the file doesn't contain the right number of elements
+    nCoeff = 2*Nctrl*Nfreq*D1 # just to be safe if the file doesn't contain the right number of elements
 
-#    println("*** Starting from B-spline coefficients in file: ", startFile)
+    if verbose
+        println("*** Starting from B-spline coefficients in file: ", startFile)
+    end
 end
 
 # Estimate time step for simulation
-nsteps = Juqbox.calculate_timestep(T, H0, Hsym_ops, Hanti_ops, Hunc_ops, [maxpar], [max_flux])
-#println("Max est. eigenvalue = ", maxeig, " # time steps: ", nsteps)
+nsteps = Juqbox.calculate_timestep(T, H0, Hsym_ops, Hanti_ops, [maxpar, max_flux])
+if verbose
+    println( "# time steps: ", nsteps)
+end
 
 # setup the simulation parameters
-params = Juqbox.objparams([N], [Nguard], T, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=[fa], Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, Hunc_ops=Hunc_ops, use_sparse=use_sparse)
+params = Juqbox.objparams([N], [Nguard], T, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
+                          Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, use_sparse=use_sparse)
 # params = Juqbox.objparams([N], [Nguard], T, nsteps, U0, vtarget, om, H0, Hunc_ops)
 params.saveConvHist = true
 
-#Tikhonov regularization coefficients
-params.tik0 = 1e-3
-
 # Quiet mode for testing
-params.quiet = true
+params.quiet = !verbose
+
+#Tikhonov regularization coefficients
+params.tik0 = 0.1
+
+params.traceInfidelityThreshold =  1e-5
 
 # Set bounds on coefficients
-minCoeff, maxCoeff = Juqbox.assign_thresholds(params,D1,[maxpar],[max_flux])
+minCoeff, maxCoeff = Juqbox.assign_thresholds(params,D1,[maxpar, max_flux])
 
 
 # For ipopt
-maxIter = 50 # optional argument
+maxIter = 100 # optional argument
 lbfgsMax = 250 # optional argument
 
 if verbose
     println("*** Settings ***")
     println("System Hamiltonian coefficients: (fa, xa) =  ", fa, xa)
     println("Total number of states, Ntot = ", Ntot, " Total number of guard states, Nguard = ", Nguard)
-    if use_bcarrier
-        println("Using B-spline basis functions with carrier wave, # freq = ", Nfreq)
-    else
-        println("Using regular B-spline basis functions")
-    end
+    println("Using B-spline basis functions with carrier wave, # freq = ", Nfreq)
     println("Number of coefficients per spline = ", D1, " Total number of parameters = ", nCoeff)
     println("Max parameter amplitudes: maxpar = ", maxpar)
     println("Tikhonov coefficient: tik0 = ", params.tik0)
 end
 
-# Estimate number of terms in Neumann series for time stepping (Default 3)
-tol = eps(1.0); # machine precision
-Juqbox.estimate_Neumann!(tol, params, [maxpar], [max_flux])
-
 wa = Juqbox.Working_Arrays(params, nCoeff)
 prob = Juqbox.setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff, maxIter, lbfgsMax)
 
 # uncomment to run the gradient checker for the initial pcof
-addOption( prob, "derivative_test", "first-order"); # for testing the gradient
+#addOption( prob, "derivative_test", "first-order"); # for testing the gradient
+
+# experiment with scale factors
 addOption( prob, "nlp_scaling_method", "user-scaling");
 
-# Scale the variables for flux_charge term
-x_scaling = ones(length(pcof0))
-g_scaling = ones(length(pcof0))
-for s in 2*Ncoupled+Nunc:2*Ncoupled+Nunc # flux charge coefficients
-  for f in 1:Nfreq
-    offset = (f-1)*D1 + (s-1)*Nfreq*D1
-    x_scaling[offset+1:offset+D1] .= scaling_factor
-  end
+if verbose
+    println("Initial coefficient vector stored in 'pcof0'")
 end
-obj_scaling = 1.0
-setProblemScaling(prob,obj_scaling,x_scaling,g_scaling)
-
-#println("Initial coefficient vector stored in 'pcof0'")

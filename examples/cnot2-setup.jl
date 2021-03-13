@@ -36,31 +36,11 @@ Base.show(io::IO, f::Float64) = @printf(io, "%20.13e", f)
 
 using Juqbox
 
-function initial_cond(Ntot, N, Ne, Ng)
-    Ident = Matrix{Float64}(I, Ntot, Ntot)
-    U0 = Ident[1:Ntot, 1:N] # Rectangular subset of identity
-    # adjust the initial guess
-    if Ng[1] + Ng[2] > 0
-        Nt = Ne + Ng
-        # build up a basis for the essential states
-        col = 0
-        m = 0
-        for k2 in 1:Nt[2]
-            for k1 in 1:Nt[1]
-                m += 1
-                # is this a guard level?
-                guard = (k1 > Ne[1]) || (k2 > Ne[2])
-                if !guard
-                    col += 1
-                    U0[:,col] = Ident[:,m]
-                end # if ! guard
-            end # for
-        end # for
-    end # if
-    return U0
-end
+eval_lab = false # true
+println("Setup for ", eval_lab ? "lab frame evaluation" : "rotating frame optimization")
 
 Nosc = 2 # number of coupled oscillators
+Nctrl = 2
 
 Ne1 = 2 # essential energy levels per oscillator 
 Ne2 = 2
@@ -77,19 +57,19 @@ Nguard = Ntot - N # total number of guard states
 Nt1 = Ne1 + Ng1
 Nt2 = Ne2 + Ng2
 
-Tmax = 100.0 # Duration of gate
+Tmax = 50.0 # Duration of gate
 
 # frequencies (in GHz, will be multiplied by 2*pi to get angular frequencies in the Hamiltonian matrix)
 fa = 4.10595    # official
 fb = 4.81526   # official
-rot_freq = [fa, fb] # rotational frequencies
+favg = 0.5*(fa+fb)
+#rot_freq = [fa, fb] # rotational frequencies
+rot_freq = [favg, favg] # rotational frequencies
 x1 = 2* 0.1099  # official
 x2 = 2* 0.1126   # official
 x12 = 0.1 # Artificially large to allow coupling. Actual value: 1e-6 
   
-# construct the lowering and raising matricies: amat, bmat, cmat
-# and the system Hamiltonian: H0
-#
+# construct the lowering and raising matricies: amat, bmat
 
 # Note: The ket psi = ji> = e_j kron e_i.
 # We order the elements in the vector psi such that i varies the fastest with i in [1,Nt1] and j in [1,Nt2]
@@ -117,20 +97,33 @@ N1 = Diagonal(kron(I2, num1) )
 N2 = Diagonal(kron(num2, I1) )
 
 # System Hamiltonian
-H0 = -2*pi*( x1/2*(N1*N1-N1) + x2/2*(N2*N2-N2) + x12*(N1*N2) )
-
-Hsym_ops=[Array(amat+adag), Array(bmat+bdag)]
-Hanti_ops=[Array(amat-adag), Array(bmat-bdag)]
+if eval_lab
+    H0 = 2*pi*( fa*N1 + fb*N2 -x1/2*(N1*N1-N1) - x2/2*(N2*N2-N2) - x12*(N1*N2) )
+else
+    H0 = 2*pi*( (fa-rot_freq[1])*N1 + (fb-rot_freq[2])*N2 -x1/2*(N1*N1-N1) - x2/2*(N2*N2-N2) - x12*(N1*N2) )
+end
 H0 = Array(H0)
 
+if eval_lab
+    Hunc_ops=[Array(amat+adag), Array(bmat+bdag)]
+else
+    Hsym_ops=[Array(amat+adag), Array(bmat+bdag)]
+    Hanti_ops=[Array(amat-adag), Array(bmat-bdag)]
+end
+
 # max coefficients, rotating frame
-amax = 0.014 # max amplitude ctrl func for Hamiltonian #1
-bmax = 0.020 # max amplitude ctrl func for Hamiltonian #2
+amax = 0.040 # 0.014 # max amplitude ctrl func for Hamiltonian #1
+bmax = 0.040 # 0.020 # max amplitude ctrl func for Hamiltonian #2
 maxpar = [amax, bmax]
 
 # Estimate time step
-Pmin = 40 # should be 20 or higher
-nsteps = calculate_timestep(Tmax, H0, Hsym_ops, Hanti_ops, maxpar, Pmin)
+if eval_lab
+    Pmin = 100 # should be 20 or higher
+    nsteps = calculate_timestep(Tmax, H0, Hunc_ops, maxpar, Pmin)
+else
+    Pmin = 40 # should be 20 or higher
+    nsteps = calculate_timestep(Tmax, H0, Hsym_ops, Hanti_ops, maxpar, Pmin)
+end
 
 println("Number of time steps = ", nsteps)
 
@@ -141,39 +134,32 @@ use_sparse = true
 
 Nfreq = 2 # number of carrier frequencies
 
-om = zeros(Nosc, Nfreq) # Allocate space for the carrier wave frequencies
+om = zeros(Nctrl, Nfreq) # Allocate space for the carrier wave frequencies
 
 @assert(Nfreq==1 || Nfreq==2 || Nfreq==3)
 if Nfreq == 2
-    om[1:Nosc,2] .= -2.0*pi*x12 # coupling freq for both ctrl funcs (re/im)
+    # ctrl 1
+    om[1,1] = 2*pi*(fa - rot_freq[1])
+    om[1,2] = 2*pi*(fa - rot_freq[1] - x12) # coupling freq for both ctrl funcs (re/im)
+    # ctrl 1
+    om[2,1] = 2*pi*(fb - rot_freq[2])
+    om[2,2] = 2*pi*(fb - rot_freq[2] - x12) # coupling freq for both ctrl funcs (re/im)
 elseif Nfreq == 3
     om[1,2] = -2.0*pi*x1 # 1st ctrl, re
     om[2,2] = -2.0*pi*x2 # 2nd ctrl, re
-    om[1:Nosc,3] .= -2.0*pi*x12 # coupling freq for both ctrl funcs (re/im)
+    om[1:Nctrl,3] .= -2.0*pi*x12 # coupling freq for both ctrl funcs (re/im)
 end
-println("Carrier frequencies 1st ctrl Hamiltonian [GHz]: ", om[1,:]./(2*pi))
-println("Carrier frequencies 2nd ctrl Hamiltonian [GHz]: ", om[2,:]./(2*pi))
+println("Carrier frequencies (lab frame) 1st ctrl Hamiltonian [GHz]: ", rot_freq[1] .+ om[1,:]./(2*pi))
+println("Carrier frequencies (lab frame) 2nd ctrl Hamiltonian [GHz]: ", rot_freq[2] .+ om[2,:]./(2*pi))
 
 # specify target gate
 # target for CNOT gate N=2, Ng = 1 coupled
 utarget = zeros(ComplexF64, Ntot, N)
-@assert(Ng1 == 0 || Ng1 == 1 || Ng1 == 2)
-if Ng1 == 0
-    utarget[1,1] = 1.0
-    utarget[2,2] = 1.0
-    utarget[3,4] = 1.0
-    utarget[4,3] = 1.0
-elseif Ng1 == 1
-    utarget[1,1] = 1.0
-    utarget[2,2] = 1.0
-    utarget[4,4] = 1.0
-    utarget[5,3] = 1.0
-elseif Ng1 == 2
-    utarget[1,1] = 1.0
-    utarget[2,2] = 1.0
-    utarget[5,4] = 1.0
-    utarget[6,3] = 1.0
-end
+
+utarget[1,1] = 1.0
+utarget[2,2] = 1.0
+utarget[3+Ng1,4] = 1.0
+utarget[4+Ng1,3] = 1.0
 
 # rotation matrices
 omega1, omega2 = Juqbox.setup_rotmatrices(Ne, Ng, rot_freq)
@@ -182,23 +168,59 @@ omega1, omega2 = Juqbox.setup_rotmatrices(Ne, Ng, rot_freq)
 rot1 = Diagonal(exp.(im*omega1*Tmax))
 rot2 = Diagonal(exp.(im*omega2*Tmax))
 
-# target in the rotating frame
-vtarget = rot1*rot2*utarget
+if eval_lab
+    vtarget = utarget # target in the lab frame
+else    
+    vtarget = rot1*rot2*utarget # target in the rotating frame
+end
+
+function initial_cond(Ntot, N, Ne, Ng)
+    Ident = Matrix{Float64}(I, Ntot, Ntot)
+    U0 = Ident[1:Ntot, 1:N] # Rectangular subset of identity
+    # adjust the initial guess
+    if Ng[1] + Ng[2] > 0
+        Nt = Ne + Ng
+        # build up a basis for the essential states
+        col = 0
+        m = 0
+        for k2 in 1:Nt[2]
+            for k1 in 1:Nt[1]
+                m += 1
+                # is this a guard level?
+                guard = (k1 > Ne[1]) || (k2 > Ne[2])
+                if !guard
+                    col += 1
+                    U0[:,col] = Ident[:,m]
+                end # if ! guard
+            end # for
+        end # for
+    end # if
+    return U0
+end
 
 U0 = initial_cond(Ntot, N, Ne, Ng)
 
 # assemble problem description for the optimization
-params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
-                          Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, use_sparse=use_sparse)
+if eval_lab
+    params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
+                              Hconst=H0, Hunc_ops=Hunc_ops, use_sparse=use_sparse)
+else
+    params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
+                              Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, use_sparse=use_sparse)
+end
 
 # initial parameter guess
-startFromScratch = true # false
-startFile = "drives/cnot2-pcof-opt-t100.jld2"
+if eval_lab
+    startFromScratch = false
+else
+    startFromScratch = true
+end
+startFile = "drives/cnot2-pcof-opt-t50-avg.jld2"
 
 # dimensions for the parameter vector
 D1 = 10 # number of B-spline coeff per oscillator, freq and sin/cos
 
-nCoeff = 2*Nosc*Nfreq*D1 # Total number of parameters.
+nCoeff = 2*Nctrl*Nfreq*D1 # Total number of parameters.
 
 Random.seed!(2456)
 if startFromScratch
@@ -209,8 +231,8 @@ else
     # use if you want to have initial coefficients read from file
     pcof0 = read_pcof(startFile)
     nCoeff = length(pcof0)
-    D1 = div(nCoeff, 2*Nosc*Nfreq) # factor '2' is for sin/cos
-    nCoeff = 2*Nosc*Nfreq*D1 # just to be safe if the file doesn't contain the right number of elements
+    D1 = div(nCoeff, 2*Nctrl*Nfreq) # factor '2' is for sin/cos
+    nCoeff = 2*Nctrl*Nfreq*D1 # just to be safe if the file doesn't contain the right number of elements
     println("*** Starting from B-spline coefficients in file: ", startFile)
 end
 
@@ -227,7 +249,7 @@ lbfgsMax = 250 # optional argument
 
 println("*** Settings ***")
 # output run information
-println("Frequencies: fa = ", fa, " fb = ", fb)
+println("Frequencies: fa = ", fa, " fb = ", fb, " fa-favg = ", fa-favg, " fb-favg = ", fb-favg )
 println("Coefficients in the Hamiltonian: x1 = ", x1, " x2 = ", x2, " x12 = ", x12)
 println("Essential states in osc = ", [Ne1, Ne2], " Guard states in osc = ", [Ng1, Ng2])
 println("Total number of states, Ntot = ", Ntot, " Total number of guard states, Nguard = ", Nguard)
@@ -250,3 +272,7 @@ prob = Juqbox.setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff, maxIte
 
 println("Initial coefficient vector stored in 'pcof0'")
 
+if eval_lab
+    objf, uhist, trfid = traceobjgrad(pcof0, params, wa, true, false); # evaluate objective function, but not the gradient
+    println("Trace fidelity: ", trfid);
+end

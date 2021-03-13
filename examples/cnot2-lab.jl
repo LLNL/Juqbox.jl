@@ -60,6 +60,7 @@ function initial_cond(Ntot, N, Ne, Ng)
     return U0
 end
 
+println("***This case ONLY evaluates the accuracy of a control pulse in the laboratory frame***")
 Nosc = 2 # number of coupled oscillators
 
 Ne1 = 2 # essential energy levels per oscillator 
@@ -77,7 +78,7 @@ Nguard = Ntot - N # total number of guard states
 Nt1 = Ne1 + Ng1
 Nt2 = Ne2 + Ng2
 
-Tmax = 100.0 # Duration of gate
+Tmax = 50.0 # 100.0 # Duration of gate
 
 # frequencies (in GHz, will be multiplied by 2*pi to get angular frequencies in the Hamiltonian matrix)
 fa = 4.10595    # official
@@ -129,7 +130,7 @@ bmax = 0.020 # max amplitude ctrl func for Hamiltonian #2
 maxpar = [amax, bmax]
 
 # Estimate time step
-Pmin = 100 # should be 20 or higher
+Pmin = 200 # should be 20 or higher
 nsteps = calculate_timestep(Tmax, H0, Hunc_ops, maxpar, Pmin)
 
 println("Number of time steps = ", nsteps)
@@ -193,7 +194,7 @@ params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=vtarget, Cfreq
 
 # initial parameter guess
 startFromScratch = false # true
-startFile = "drives/cnot2-pcof-opt-t100.jld2"
+startFile = "drives/cnot2-pcof-opt-t50.jld2"
 
 # dimensions for the parameter vector
 D1 = 10 # number of B-spline coeff per oscillator, freq and sin/cos
