@@ -40,7 +40,7 @@ Evaluate control functions and export them into a format that is readable by Qis
 - `fileName:: String`: Name of output file containing controls to be handled by Qiskit
 - `node_loc:: String`: Node location, "c" for cell centered, "n" for node-centered, default is cell-centered
 """
-function Juq2Qis(params::objparams, pcof:: Array{Float64, 1}, samplerate:: Float64, q_ind:: Int64, fileName:: String="ctrl.dat", node_loc:: String="c")
+function juq2qis(params::objparams, pcof:: Array{Float64, 1}, samplerate:: Float64, q_ind:: Int64, fileName:: String="ctrl.dat", node_loc:: String="c")
 
     qiskit_dt = 1/samplerate
     @assert(q_ind >=1)

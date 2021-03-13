@@ -21,7 +21,7 @@ export setup_ipopt_problem, Working_Arrays, estimate_Neumann!, setup_rotmatrices
 export run_optimizer, plot_conv_hist, wmatsetup
 export zero_start_end!, assign_thresholds, assign_thresholds_freq, assign_thresholds_ctrl_freq 
 export calculate_timestep, marginalize3
-export save_pcof, read_pcof
+export save_pcof, read_pcof, juq2qis
 
 # Julia versions prior to v"1.3.1" can't use LinearAlgebra's 5 argument mul!, routines
 # included here for backwards compatability
