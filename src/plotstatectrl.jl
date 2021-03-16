@@ -241,7 +241,7 @@ function evalctrl(params::objparams, pcof0:: Array{Float64, 1}, td:: Array{Float
         splinepar = bcparams(params.T, D1, params.Ncoupled, params.Nunc, params.Cfreq, pcof)
     else
         # regular B-splines
-        splinepar = splinepar(params.T, D1, 2*(params.Ncoupled + params.Nunc), pcof)
+        splinepar = splineparams(params.T, D1, 2*(params.Ncoupled + params.Nunc), pcof)
     end
 
     # define inline function to enable vectorization over t
