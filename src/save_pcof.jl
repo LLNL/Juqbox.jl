@@ -73,6 +73,10 @@ function juq2qis(params::objparams, pcof:: Array{Float64, 1}, samplerate:: Float
     end
     D  = zeros(length(td),2)
 
+    # output the B-splines without carrier waves
+    bc_flag = params.use_bcarrier
+    params.use_bcarrier = false
+
     # Controls (in rad/ns)
     if(q_ind <= Nctrl)
     	p,q = Juqbox.evalctrl(params, pcof, td, q_ind) # evalctrl uses a 1-based indexing of q_ind
@@ -83,6 +87,9 @@ function juq2qis(params::objparams, pcof:: Array{Float64, 1}, samplerate:: Float
         plc = plot(td,p,lab="p(t)")
         plot!(td,q,lab="q(t)")
     end
+
+    # reset the bcarrier flag
+    params.use_bcarrier = bc_flag 
 
     # Save signal to delimited file
     if length(fileName)>0
