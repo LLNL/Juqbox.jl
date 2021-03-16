@@ -225,9 +225,9 @@ only `pj` is returned, corresponding to control number `func`.
 - `params:: objparams`: Struct with problem definition
 - `pcof0:: Array{Float64,1})`: Vector of parameter values
 - `td:: Array{Float64,1})`: Time values control is to be evaluated
-- `jHam:: Int64`: Index of the control signal desired
+- `jFunc:: Int64`: Index of the control signal desired
 """
-function evalctrl(params::objparams, pcof0:: Array{Float64, 1}, td:: Array{Float64, 1}, jHam:: Int64) 
+function evalctrl(params::objparams, pcof0:: Array{Float64, 1}, td:: Array{Float64, 1}, jFunc:: Int64) 
     if params.pFidType == 3
         nCoeff = length(pcof0)-1
     else
@@ -251,7 +251,7 @@ function evalctrl(params::objparams, pcof0:: Array{Float64, 1}, td:: Array{Float
     fact = 1.0 # conversion factor to rad/ns
 
     # coupled & uncoupled controls are treated the same way
-    qs = (jHam-1)*2
+    qs = (jFunc-1)*2
     qa = qs+1
         
     pj = fact.*controlplot.(td, qs)
