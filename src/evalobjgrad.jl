@@ -120,7 +120,7 @@ mutable struct objparams
         Nctrl = Ncoupled + Nunc # Number of control Hamiltonians
         
         @assert(Ncoupled==0 || Nunc== 0)
-        @assert(length(Rfreq) == Nctrl)
+        @assert(length(Rfreq) >= Nctrl)
 
         # Track symmetries of uncoupled Hamiltonian terms
         if Nunc > 0
