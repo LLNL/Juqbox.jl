@@ -150,10 +150,6 @@ Nc = Diagonal(kron(num3, kron(I2, I1)) )
 
 H0 = -2*pi*(xa/2*(Na*Na-Na) + xb/2*(Nb*Nb-Nb) + xs/2*(Nc*Nc-Nc) + xab*(Na*Nb) + xas*(Na*Nc) + xbs*(Nb*Nc))
 
-# Weights in the W matrix for discouraging population of guarded states
-wmatScale = 1.0
-wmat = Juqbox.wmatsetup( Ne, Ng )
-
 # max coefficient amplitudes, rotating frame
 amax = 0.05
 bmax = 0.1
