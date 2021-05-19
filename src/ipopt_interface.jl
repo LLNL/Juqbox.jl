@@ -1,25 +1,62 @@
 # setup callback functions for Ipopt
-function eval_f_par(pcof::Vector{Float64}, params:: Juqbox.objparams, wa::Working_Arrays)
-    #@show(pcof)
-    f =Juqbox.traceobjgrad(pcof,params,wa,false,false)
-    # @show(f)
-    return f[1]
+function eval_f_par(pcof::Vector{Float64}, params:: Juqbox.objparams, wa::Working_Arrays,
+                    nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
+    
+    # Loop over specified nodes and compute risk-neutral objective value. Default is usual optimization.
+    exp_v = 0.0
+    nquad = length(nodes)
+    H0_old = copy(params.Hconst)
+    for i = 1:nquad 
+        ep = nodes[i]
+
+        for j = 2:size(params.Hconst,2)
+            params.Hconst[j,j] = H0_old[j,j] + 0.01*ep*(10.0^(j-2))
+        end
+
+        E = Juqbox.traceobjgrad(pcof,params,wa,false,false)
+        exp_v += E[1]*weights[i]
+    end
+    copy!(params.Hconst,H0_old)
+    return exp_v
   end
 
 function eval_g(pcof)
     return 0.0
 end
 
-function eval_grad_f_par(pcof::Vector{Float64}, grad_f::Vector{Float64}, params:: Juqbox.objparams, wa::Working_Arrays)
-    objf, Gtemp, primaryobjf, secondaryobjf, traceinfid = Juqbox.traceobjgrad(pcof,params,wa,false, true)
-        
-    Gtemp = vcat(Gtemp...) 
-    for i in 1:length(Gtemp)
-        grad_f[i] = Gtemp[i]
+function eval_grad_f_par(pcof::Vector{Float64}, grad_f::Vector{Float64}, params:: Juqbox.objparams, wa::Working_Arrays,
+                        nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
+    grad_f .= 0.0
+
+    nquad = length(nodes)
+    H0_old = copy(params.Hconst)
+    exp_inf = 0.0
+    exp_sec = 0.0
+    for i = 1:nquad 
+        ep = nodes[i]
+
+        # Additive noise
+        for j = 2:size(params.Hconst,2)
+            params.Hconst[j,j] = H0_old[j,j] + 0.01*ep*(10.0^(j-2))
+        end
+
+        _, Gtemp, _, secondaryobjf, traceinfid = Juqbox.traceobjgrad(pcof,params,wa,false, true)
+
+        Gtemp = vcat(Gtemp...) 
+        for j in 1:length(Gtemp)
+            grad_f[j] += Gtemp[j]*weights[i]
+        end
+
+        # Accumulate expected value of infidelity and guard level penalty
+        exp_inf += weights[i]*traceinfid
+        exp_sec += weights[i]*secondaryobjf
     end
+    copy!(params.Hconst,H0_old)
+
+    
     # remember the value of the primary obj func (for termination in intermediate_par)
-    params.lastTraceInfidelity = traceinfid
-    params.lastLeakIntegral = secondaryobjf
+    params.lastTraceInfidelity = exp_inf
+    params.lastLeakIntegral = exp_sec
 
     # Save intermediate parameter vectors
     if params.save_pcof_hist
@@ -74,7 +111,9 @@ end
                             lbfgsMax=10, startFromScratch=true, ipTol=1e-5, acceptTol=1e-5, acceptIter=15])
 
 Setup structure containing callback functions and convergence criteria for 
-optimization via IPOPT.
+optimization via IPOPT. Note the last two inputs, `nodes', and 
+`weights', are to be used when performing a simple risk-neutral optimization
+where the fundamental frequency is random.
 
 # Arguments
 - `params:: objparams`: Struct with problem definition
@@ -88,11 +127,18 @@ optimization via IPOPT.
 - `ipTol:: Float64`: Desired convergence tolerance (relative)
 - `acceptTol:: Float64`: Acceptable convergence tolerance (relative)
 - `acceptIter:: Int64`: Number of acceptable iterates before triggering termination
+- `nodes:: Array{Float64, 1}`: User specified quadrature nodes on the interval [-ϵ,ϵ] for some ϵ
+- `weights:: Array{Float64, 1}`: User specified quadrature weights on the interval [-ϵ,ϵ] for some ϵ
 """
-function setup_ipopt_problem(params:: Juqbox.objparams, wa::Working_Arrays, nCoeff:: Int64, minCoeff:: Array{Float64, 1}, maxCoeff:: Array{Float64, 1}, maxIter:: Int64=50, lbfgsMax:: Int64=10, startFromScratch:: Bool=true, ipTol:: Float64=1e-5, acceptTol:: Float64=1e-5, acceptIter:: Int64=15)
+function setup_ipopt_problem(params:: Juqbox.objparams, wa::Working_Arrays, nCoeff:: Int64, minCoeff:: Array{Float64, 1}, maxCoeff:: Array{Float64, 1}, 
+                             maxIter:: Int64=50, lbfgsMax:: Int64=10, 
+                             startFromScratch:: Bool=true, ipTol:: Float64=1e-5, 
+                             acceptTol:: Float64=1e-5, acceptIter:: Int64=15,
+                             nodes::AbstractArray=[0.0], 
+                             weights::AbstractArray=[1.0])
     # callback functions need access to the params object
-    eval_f(pcof) = eval_f_par(pcof, params, wa)
-    eval_grad_f(pcof, grad_f) = eval_grad_f_par(pcof, grad_f, params, wa)
+    eval_f(pcof) = eval_f_par(pcof, params, wa, nodes, weights)
+    eval_grad_f(pcof, grad_f) = eval_grad_f_par(pcof, grad_f, params, wa, nodes, weights)
     intermediate(alg_mod, iter_count, obj_value, inf_pr, inf_du, mu,
                  d_norm, regularization_size, alpha_du, alpha_pr, ls_trials) =
                      intermediate_par(alg_mod, iter_count, obj_value, inf_pr, inf_du, mu,
