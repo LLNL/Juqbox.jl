@@ -76,7 +76,7 @@ ep_max = 2*pi*2e-2
 max_ep_sweep = 2*pi*3e-2
 len = 1001
 ep_vals = range(-max_ep_sweep,stop=max_ep_sweep,length=len)
-freshOptim = false
+freshOptim = true
 
 # Usual optimization
 nquad = 1

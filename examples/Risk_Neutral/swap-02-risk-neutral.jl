@@ -1,232 +1,224 @@
-# using Plots
-using LaTeXStrings
-using Juqbox
-# using PyCall
-# pygui(:qt)
-# pygui(true)
+#==========================================================
+This routine initializes an optimization problem to recover 
+a |0⟩ to |2⟩ swap gate on a single qudit with 3 energy 
+levels (and 1 guard state). The  drift Hamiltonian in the 
+rotating frame is
+        H0 = 2π*diagm([0 0 -2.2538e-1 -7.0425e-1]).
+Here the control Hamiltonian includes the usual symmetric 
+and anti-symmetric terms 
+     H_{sym} = p(t)(a + a^†),    H_{asym} = q(t)(a - a^†),
+where a is the annihilation operator for the qudit.
+The problem parameters for this example are: 
+                ω_a =  2π × 4.09947    Grad/s,
+                ξ_a =  2π × 2.2538e-01 Grad/s.
+We use Bsplines with carrier waves with frequencies
+0, ξ_a Grad/s.
+==========================================================# 
+using LinearAlgebra
 using Plots
+using FFTW
+using DelimitedFiles
+using Printf
+using Ipopt
+using Random
+using JLD2
+using FastGaussQuadrature
 
-# Function to loop over ϵ values and create a plot of the objective function for pertrubed Hamiltonians
-function ep_plot(pcof::Vector{Float64}, params:: Juqbox.objparams, wa::Working_Arrays, ep_vals::AbstractArray)
-    results = zeros(length(ep_vals),4)
+Base.show(io::IO, f::Float64) = @printf(io, "%20.13e", f)
+# pyplot()
 
-    for i =1:length(ep_vals)
-        epsh = ep_vals[i]
-        
-        # Additive noise
-        for j = 2:size(params.Hconst,2)
-            params.Hconst[j,j] += 0.01*epsh*(10.0^(j-2))
-        end
+using Juqbox # quantum control module
 
-        obj, _, _, secondaryobjf, traceinfid = Juqbox.traceobjgrad(pcof,params,wa,false, true)
-        results[i,1] = obj
-        results[i,2] = secondaryobjf
-        results[i,3] = traceinfid
-        results[i,4] = traceinfid+secondaryobjf
-        
-        # Reset
-        for j = 2:size(params.Hconst,2)
-            params.Hconst[j,j] -= 0.01*epsh*(10.0^(j-2))
-        end
-
-    end
-
-    pl1 = Plots.plot(ep_vals,results[:,1],yaxis=:log,xlabel = L"\epsilon",ylabel = "Objective Function")
-    return results,pl1
+# Default values for uniform distribution on [-ϵ/2,ϵ/2]
+if(!@isdefined(ep_max))
+    ep_max = 2*pi*3e-2
 end
 
+# Default number of quadrature nodes to evaluate the 
+# expected value of the objective function via 
+# Gaussian quadrature, i.e.
+#       E[J] = ∑ w[k] J[x[k]]
+# where w,x are the weights and nodes on [-ϵ/2,ϵ/2]
+if(!@isdefined(nquad))
+    nquad = 20
+    nquad = 1
+end
+nodes, weights = gausslegendre(nquad)
 
-function evalctrl_no_carrier(params::objparams, pcof0:: Array{Float64, 1}, jFunc:: Int64, D1::Int64) 
-    
-    # Evaluate the ctrl functions on this grid in time
-    nplot = round(Int64, params.T*32)
-    # is this resolution sufficient for the lab frame ctrl functions so we can get meaningful FFTs?
-    td = collect(range(0, stop = params.T, length = nplot+1))
+# Map nodes to [-ϵ/2,ϵ/2]
+nodes .*= 0.5*ep_max
+weights .*= 0.5
 
-    nfreq = length(params.Cfreq)
-    offset = (jFunc-1)*2*D1
-    nCoeff = 2*D1
-    pcof = copy(pcof0[offset+1:offset+nCoeff])
+N = 3 # Number of essential energy levels
+Nguard = 1 # Number of guard/forbidden energy levels
+Ntot = N + Nguard # Total number of energy levels
 
-    if (params.use_bcarrier)
-        # B-splines with carrier waves (zero out the frequency to plot just the splines)
-        splinepar = Juqbox.bcparams(params.T, D1, params.Ncoupled, params.Nunc, zeros(1,1), pcof)
-    else
-        # regular B-splines
-        splinepar = Juqbox.splineparams(params.T, D1, 2*(params.Ncoupled + params.Nunc), pcof)
-    end
+samplerate = 32 # for output files
 
-    # define inline function to enable vectorization over t
-    controlplot(t, splinefunc) = Juqbox.controlfunc(t, splinepar, splinefunc)
+T = 300.0 # Duration of gate
 
-    fact = 1.0/(2*pi) # conversion factor to GHz
-    fact = 1.0 # conversion factor to rad/ns
-    pj = fact.*controlplot.(td, 0)
-    qj = fact.*controlplot.(td, 1)
-    return pj, qj
-    
+# frequencies (in GHz, will be multiplied by 2*pi to get angular frequencies in the Hamiltonian matrix)
+fa = 4.10336
+xa = 0.2198
+rot_freq = [fa] # Used to calculate the lab frame ctrl function
+
+# setup drift Hamiltonian
+number = Diagonal(collect(0:Ntot-1))
+
+H0 = -0.5*(2*pi)*xa* (number*number - number) # xa is in GHz
+
+utarget = zeros(ComplexF64,Ntot,N)
+
+# 0>  to  |2>  swap gate
+if N >= 3
+    utarget[1,1] = 0 #1/sqrt(2)
+    utarget[2,1] = 0
+    utarget[3,1] = 1 #1/sqrt(2)
+#
+    utarget[1,2] = 0
+    utarget[2,2] = 1
+    utarget[3,2] = 0
+    #
+    utarget[1,3] = 1 #1/sqrt(2)
+    utarget[2,3] = 0
+    utarget[3,3] = 0 #-1/sqrt(2)
+#
 end
 
-# Maximum shift in Hamiltonian (in rad*GHz)
-ep_max = 2*pi*2e-2
-# ep_max = 2*pi*3e-3 #decent?
-# ep_max = 2*pi*5e-3
+if N==4
+    utarget[4,4] = 1
+end
 
-# For plotting purposes 
-max_ep_sweep = 2*pi*3e-2
-len = 1001
-ep_vals = range(-max_ep_sweep,stop=max_ep_sweep,length=len)
-freshOptim = false
+omega1 = Juqbox.setup_rotmatrices([N], [Nguard], [fa])
 
-# Usual optimization
-nquad = 1
-include("swap-02-risk-neutral.jl")
-if(freshOptim)
-    pcof = Juqbox.run_optimizer(prob, pcof0)
-    results,pl1 = ep_plot(pcof, params, wa, ep_vals)
-    data = zeros(size(results,1),4)
-    data[:,1] = ep_vals
-    for j = 1:3
-        data[:,j+1] = results[:,j]
-    end
-    writedlm("usual_control_GLQ2.dat", pcof)
-    writedlm("usual_optim_OF_sweep_GLQ2.dat", data)
+# Compute Ra*utarget
+rot1 = Diagonal(exp.(im*omega1*T))
+
+# target in the lab frame
+vtarget = utarget
+
+startFromScratch = true
+# startFile is used when startFromScratch = false
+startFile="swap02-baseline-pcof-opt.jld2" # "swap02-pert-4em1-pcof-opt.jld2"
+
+usePrior = false #  true
+priorFileName = startFile # Usually makes sense to also use the start file as the prior, but not required
+
+# setup drift Hamiltonian
+number = Diagonal(collect(0:Ntot-1))
+
+# lowering matrix 
+amat = Bidiagonal(zeros(Ntot),sqrt.(collect(1:Ntot-1)),:U) # standard lowering matrix
+adag = Array(transpose(amat));
+Hsym_ops=[Array(amat + adag)]
+Hanti_ops=[Array(amat - adag)]
+H0 = Array(H0)
+
+Ncoupled = length(Hsym_ops) # Number of paired Hamiltonians
+Nfreq= 2 # number of carrier frequencies 3 gives a cleaner sol than 2
+
+# setup carrier frequencies
+use_bcarrier = true
+om = zeros(Ncoupled,Nfreq)
+if use_bcarrier
+    om[1:Ncoupled,2] .= -2.0*pi *xa       # Note negative sign
+    # om[1:Ncoupled,3] .= -2.0*pi* 2.0*xa
+end
+println("Carrier frequencies [GHz]: ", om[1,:]./(2*pi))
+println("H0: ", H0)
+
+# maxctrl = 2*pi*5.2e-3
+maxctrl = 2*pi*1.2e-2
+
+
+#max amplitude (in angular frequency) 2*pi*GHz
+maxamp = zeros(Nfreq)
+if Nfreq >= 5
+    const_fact = 1.0/(Nfreq-2)
+    maxamp[1] = maxctrl*const_fact
+    maxamp[2:Nfreq] .= maxctrl*(1.0-const_fact)/(Nfreq-1) # max B-spline coefficient amplitude, factor 3.0 is ad hoc
+elseif Nfreq >= 4
+    const_fact = 0.4
+    maxamp[1] = maxctrl*const_fact
+    maxamp[2:Nfreq] .= maxctrl*(1.0-const_fact)/(Nfreq-1) # max B-spline coefficient amplitude, factor 3.0 is ad hoc
+elseif Nfreq >= 3
+    const_fact = 0.45
+    maxamp[1] = maxctrl*const_fact
+    maxamp[2:Nfreq] .= maxctrl*(1.0-const_fact)/(Nfreq-1) # max B-spline coefficient amplitude, factor 3.0 is ad hoc
 else
-    pcof = vec(readdlm("usual_control_GLQ2.dat"))
-    results = readdlm("usual_optim_OF_sweep_GLQ2.dat")
+    maxamp .= maxctrl/Nfreq
 end
 
-pcof_old = copy(pcof)
+maxpar = maximum(maxamp)
+nsteps = calculate_timestep(T, H0, Hsym_ops, Hanti_ops, [maxctrl])
+println("# time steps: ", nsteps)
 
+# Initial conditions for basis
+Ident = Matrix{Float64}(I, Ntot, Ntot)   
+U0 = Ident[1:Ntot,1:N]
 
+# params = Juqbox.parameters([N], [Nguard], T, nsteps, U0, vtarget, om, H0, Hsym_ops, Hanti_ops)
+params = Juqbox.objparams([N], [Nguard], T, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
+                          Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, wmatScale=1.0)
 
-# Plot control functions
-scalefactor = 1000/(2*pi)
-unitStr = "MHz"
+if usePrior
+    Juqbox.setup_prior!(params, priorFileName)
+    params.tik0 = 100.0 # increase Tikhonov regularization coefficient
+end
 
-nplot = round(Int64, params.T*32)
-td = collect(range(0, stop = params.T, length = nplot+1))
-p_NF_1,q_NF_1 = evalctrl_no_carrier(params, pcof_old, 1, D1) 
-p_NF_2,q_NF_2 = evalctrl_no_carrier(params, pcof_old, 2, D1) 
+Random.seed!(2456)
 
-pfunc1 = scalefactor .* p_NF_1
-qfunc1 = scalefactor .* q_NF_1
-pmax1 = maximum(abs.(pfunc1))
-qmax1 = maximum(abs.(qfunc1))
-pfunc2 = scalefactor .* p_NF_2
-qfunc2 = scalefactor .* q_NF_2
-pmax2 = maximum(abs.(pfunc2))
-qmax2 = maximum(abs.(qfunc2))
-pmax = maximum([pmax1,pmax2])
-qmax = maximum([qmax1,qmax2])
+# initial parameter guess
+if startFromScratch
+  D1 = 12 # Number of B-spline coefficients per frequency, sin/cos and real/imag
+  nCoeff = 2*Ncoupled*Nfreq*D1 # factor '2' is for sin/cos
+  pcof0 = (rand(nCoeff) .- 0.5).*maxpar*0.1
 
-fnt = Plots.font("Helvetica", 12)
-lfnt = Plots.font("Helvetica", 12)
-Plots.default(titlefont=fnt, guidefont=fnt, tickfont=fnt, legendfont=lfnt, linewidth=1.5, size=(650, 350))
-
-titlestr = "Rotating frame NF ctrl " * " Max-p=" *@sprintf("%.3e", pmax) * " Max-q=" *@sprintf("%.3e", qmax) * " " * unitStr
-# pl_ctrl_NF = Plots.plot(td, pfunc1, lab="", title = titlestr, xlabel="Time [ns]",
-#                                   ylabel=unitStr, legend=:outerright)
-# Plots.plot!(pl_ctrl_NF,td, qfunc1, lab="")
-# Plots.plot!(pl_ctrl_NF,td, pfunc2, lab="")
-# Plots.plot!(pl_ctrl_NF,td, qfunc2, lab="")
-
-
-pl_ctrl_NF = Plots.plot(td, pfunc1, lab=L"p_{1,1}(t)", title = titlestr, xlabel="Time [ns]",
-                                  ylabel=unitStr, legend= :outerright, linewidth=1.5, legendfontsize=14)
-# add in the control function for the anti-symmetric Hamiltonian
-Plots.plot!(pl_ctrl_NF,td, qfunc1, lab=L"q_{1,1}(t)", linewidth=1.5, legendfontsize=14)
-Plots.plot!(pl_ctrl_NF,td, pfunc2, lab=L"p_{1,2}(t)", linewidth=1.5, legendfontsize=14)
-Plots.plot!(pl_ctrl_NF,td, qfunc2, lab=L"q_{1,2}(t)", linewidth=1.5, legendfontsize=14)
-
-
-# save plots of control functions in rotating frame without carrier waves
-Plots.savefig(pl_ctrl_NF,  "robust_comparison_"* @sprintf("%1.1e", ep_max/(2*pi)) * "_"*@sprintf("%3.1f",T)*"_T_"*@sprintf("%3d",maxIter)*"_iters_"*@sprintf("%d",nquad)*"_N_"*@sprintf("%d",D1)*"_D1_NF_ctrl.png")
-
-
-# Risk-neutral optimization
-nquad = 9
-include("swap-02-risk-neutral.jl")
-if(freshOptim)
-    pcof = Juqbox.run_optimizer(prob, pcof0)
-    results2,pl2 = ep_plot(pcof, params, wa, ep_vals)
-    data2 = zeros(size(results2,1),4)
-    data2[:,1] = ep_vals
-    for j = 1:3
-        data2[:,j+1] = results2[:,j]
-    end
-    writedlm("robust_control_GLQ2.dat", pcof)
-    writedlm("robust_optim_OF_sweep_GLQ2.dat", data2)
+  if(nquad == 1)
+    D1 = 12 # Number of B-spline coefficients per frequency, sin/cos and real/imag
+    nCoeff = 2*Ncoupled*Nfreq*D1 # factor '2' is for sin/cos
+    pcof0 = (rand(nCoeff) .- 0.5).*maxpar*0.1
+  end
+  println("*** Starting from random pcof with amplitude ", maxpar*0.1)
 else
-    pcof = vec(readdlm("robust_control_GLQ2.dat"))
-    results2 = readdlm("robust_optim_OF_sweep_GLQ2.dat")
+    # use if you want to have initial coefficients read from file
+    @load startFile pcof
+    pcof0 = pcof
+    println("*** Starting from B-spline coefficients in file: ", startFile)
+    nCoeff = length(pcof0)
+    D1 = div(nCoeff, 2*Ncoupled*Nfreq)  # number of B-spline coeff per control function
 end
 
-# results2,pl2 = ep_plot(pcof, params, wa, ep_vals)
-# data2 = zeros(size(results2,1),4)
-# data2[:,1] = ep_vals
-# for j = 1:3
-#     data2[:,j+1] = results2[:,j]
-# end
-# writedlm("robust_optim_OF_sweep_GLQ2.dat", data2)
-# Plot all results on single plot
-# plc = Plots.plot(ep_vals./(2*pi),results[:,3],yaxis=:log,xlabel = L"\epsilon/2\pi"*"[MHz]",ylabel = "Objective Function", lab="NF Infidelity")
-# Plots.plot!(plc,ep_vals./(2*pi),results2[:,3],yaxis=:log,xlabel = L"\epsilon/2\pi"*"[MHz]",ylabel = "Objective Function", lab="RN Infidelity")
-# Plots.plot!(plc,ep_vals./(2*pi),results[:,2],yaxis=:log,xlabel = L"\epsilon/2\pi"*"[MHz]",ylabel = "Objective Function", lab="NF Guard Level Pop.",linestyle=:dash)
-# Plots.plot!(plc,ep_vals./(2*pi),results2[:,2],yaxis=:log,xlabel = L"\epsilon/2\pi"*"[MHz]",ylabel = "Objective Function", lab="RN Guard Level Pop.",linestyle=:dash,legend= :outerright)
 
 
-# plc2 = Plots.plot(ep_vals./(2*pi),results[:,4],yaxis=:log,xlabel = L"\epsilon",ylabel = "Objective Function", lab="Total NF Objective")
-# Plots.plot!(plc2,ep_vals./(2*pi),results2[:,4],yaxis=:log,xlabel = L"\epsilon",ylabel = "Objective Function", lab="Total RN Objective")
-plc = Plots.plot(scalefactor.*ep_vals,results[:,4],yaxis=:log,xlabel = "Hamiltonian Perturbation [MHz]",ylabel = "Objective Function", lab="NF Infidelity")
-Plots.plot!(plc,scalefactor.*ep_vals,results2[:,4],yaxis=:log,xlabel = "Hamiltonian Perturbation [MHz]",ylabel = "Objective Function", lab="RN Infidelity")
-Plots.plot!(plc,scalefactor.*ep_vals,results[:,3],yaxis=:log,xlabel = "Hamiltonian Perturbation [MHz]",ylabel = "Objective Function", lab="NF Guard Level Pop.",linestyle=:dash)
-Plots.plot!(plc,scalefactor.*ep_vals,results2[:,3],yaxis=:log,xlabel = "Hamiltonian Perturbation [MHz]",ylabel = "Objective Function", lab="RN Guard Level Pop.",linestyle=:dash,legend= :outerright)
+# min and max coefficient values (set first and last two to zero)
+useBarrier = true
+minCoeff, maxCoeff = Juqbox.assign_thresholds_freq(maxamp, Ncoupled, Nfreq, D1)
+zero_start_end!(params, D1, minCoeff, maxCoeff)
 
+println("*** Settings ***")
+println("System Hamiltonian coefficients [GHz]: (fa, xa) =  ", fa, xa)
+println("Total number of states, Ntot = ", Ntot, " Total number of guard states, Nguard = ", Nguard)
+println("Using B-spline basis functions with carrier wave, # freq = ", Nfreq)
+println("Number of coefficients per spline = ", D1, " Total number of parameters = ", nCoeff)
+println("Max parameter amplitudes: maxpar = ", maxpar)
+println("Target rotating frame control amplitude, maxctrl = ", maxctrl, " [rad/ns], ", maxctrl*0.5/pi, " [GHz]")
+# params.tik0 = 0
+println("Tikhonov coefficients: tik0 = ", params.tik0)
 
-plc_short = Plots.plot(scalefactor.*ep_vals,results[:,4],yaxis=:log,xlabel = "Hamiltonian Perturbation [MHz]",ylabel = "Objective Function", lab="NF Infidelity")
-Plots.plot!(plc_short,scalefactor.*ep_vals,results2[:,4],yaxis=:log,xlabel = "Hamiltonian Perturbation [MHz]",ylabel = "Objective Function", lab="RN Infidelity")
-Plots.plot!(plc_short,scalefactor.*ep_vals,results[:,3],yaxis=:log,xlabel = "Hamiltonian Perturbation [MHz]",ylabel = "Objective Function", lab="NF Guard Level Pop.",linestyle=:dash)
-Plots.plot!(plc_short,scalefactor.*ep_vals,results2[:,3],xlims=((-20,20)),yaxis=:log,xlabel = "Hamiltonian Perturbation [MHz]",ylabel = "Objective Function", lab="RN Guard Level Pop.",linestyle=:dash,legend= :outerright)
+# optional arguments to setup_ipopt_problem()
+maxIter = 150
+lbfgsMax = 5
+ipTol = 1e-5 
+acceptTol = 1e-5
+acceptIter = 15
 
+# Estimate number of terms in Neumann series for time stepping (Default 3)
+tol = eps(1.0); # machine precision
+Juqbox.estimate_Neumann!(tol, params, [maxpar])
 
-plc2 = Plots.plot(scalefactor.*ep_vals,results[:,2].+results[:,3],yaxis=:log,xlabel ="Hamiltonian Perturbation [MHz]",ylabel = "Objective Function", lab="Total NF Objective")
-Plots.plot!(plc2,scalefactor.*ep_vals,results2[:,2].+results2[:,3],yaxis=:log,xlabel ="Hamiltonian Perturbation [MHz]",ylabel = "Objective Function", lab="Total RN Objective",legend= :outerright)
+# Allocate all working arrays
+wa = Juqbox.Working_Arrays(params,nCoeff)
+prob = Juqbox.setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff, maxIter, lbfgsMax, startFromScratch, ipTol,acceptTol, acceptIter, nodes, weights) 
 
-plc2_short = Plots.plot(scalefactor.*ep_vals,results[:,2].+results[:,3],yaxis=:log,xlabel ="Hamiltonian Perturbation [MHz]",ylabel = "Objective Function", lab="Total NF Objective")
-Plots.plot!(plc2_short,scalefactor.*ep_vals,results2[:,2].+results2[:,3],xlims=((-20,20)),yaxis=:log,xlabel ="Hamiltonian Perturbation [MHz]",ylabel = "Objective Function", lab="Total RN Objective",legend= :outerright)
-
-
-Plots.savefig(plc,  "robust_comparison_"* @sprintf("%1.1e", ep_max/(2*pi)) * "_"*@sprintf("%3.1f",T)*"_T_"*@sprintf("%3d",maxIter)*"_iters_"*@sprintf("%d",nquad)*"_N_"*@sprintf("%d",D1)*"_D1_separate.png")
-Plots.savefig(plc_short,  "robust_comparison_"* @sprintf("%1.1e", ep_max/(2*pi)) * "_"*@sprintf("%3.1f",T)*"_T_"*@sprintf("%3d",maxIter)*"_iters_"*@sprintf("%d",nquad)*"_N_"*@sprintf("%d",D1)*"_D1_separate_short.png")
-Plots.savefig(plc2,  "robust_comparison_"* @sprintf("%1.1e", ep_max/(2*pi)) * "_"*@sprintf("%3.1f",T)*"_T_"*@sprintf("%3d",maxIter)*"_iters_"*@sprintf("%d",nquad)*"_N_"*@sprintf("%d",D1)*"_D1_total.png")
-Plots.savefig(plc2_short,  "robust_comparison_"* @sprintf("%1.1e", ep_max/(2*pi)) * "_"*@sprintf("%3.1f",T)*"_T_"*@sprintf("%3d",maxIter)*"_iters_"*@sprintf("%d",nquad)*"_N_"*@sprintf("%d",D1)*"_D1_total_short.png")
-
-
-p_RN_1,q_RN_1 = evalctrl_no_carrier(params, pcof, 1, D1) 
-p_RN_2,q_RN_2 = evalctrl_no_carrier(params, pcof, 2, D1) 
-pfunc1 = scalefactor .* p_RN_1
-qfunc1 = scalefactor .* q_RN_1
-pmax1 = maximum(abs.(pfunc2))
-qmax1 = maximum(abs.(qfunc2))
-pfunc2 = scalefactor .* p_RN_2
-qfunc2 = scalefactor .* q_RN_2
-pmax1 = maximum(abs.(pfunc2))
-qmax1 = maximum(abs.(qfunc2))
-pmax = maximum([pmax1,pmax2])
-qmax = maximum([qmax1,qmax2])
-
-titlestr = "Rotating frame RN ctrl " * " Max-p=" *@sprintf("%.3e", pmax) * " Max-q=" *@sprintf("%.3e", qmax) * " " * unitStr
-# pl_ctrl_RN = Plots.plot(td, pfunc1, lab=L"p_1(t)", title = titlestr, xlabel="Time [ns]",
-#                                   ylabel=unitStr, legend= :bottomleft, ylims=((-5,5)))
-pl_ctrl_RN = Plots.plot(td, pfunc1, lab=L"p_{1,1}(t)", title = titlestr, xlabel="Time [ns]",
-                                  ylabel=unitStr, legend= :topleft, linewidth=1.5, legendfontsize=12)
-# add in the control function for the anti-symmetric Hamiltonian
-Plots.plot!(pl_ctrl_RN,td, qfunc1, lab=L"q_{1,1}(t)", linewidth=1.5, legendfontsize=12)
-Plots.plot!(pl_ctrl_RN,td, pfunc2, lab=L"p_{1,2}(t)", linewidth=1.5, legendfontsize=12)
-Plots.plot!(pl_ctrl_RN,td, qfunc2, lab=L"q_{1,2}(t)", linewidth=1.5, legendfontsize=12)
-Plots.savefig(pl_ctrl_RN,  "robust_comparison_"* @sprintf("%1.1e", ep_max/(2*pi)) * "_"*@sprintf("%3.1f",T)*"_T_"*@sprintf("%3d",maxIter)*"_iters_"*@sprintf("%d",nquad)*"_N_"*@sprintf("%d",D1)*"D1_RN_ctrl.png")
-
-# Save coefficients
-save_pcof("robust_comparison_"* @sprintf("%1.1e", ep_max/(2*pi)) * "_"*@sprintf("%3.1f",T)*"_T_"*@sprintf("%3d",maxIter)*"_iters_"*@sprintf("%d",nquad)*"_N_"*@sprintf("%d",D1)*"D1_NF_pcof.jld2",pcof_old)
-save_pcof("robust_comparison_"* @sprintf("%1.1e", ep_max/(2*pi)) * "_"*@sprintf("%3.1f",T)*"_T_"*@sprintf("%3d",maxIter)*"_iters_"*@sprintf("%d",nquad)*"_N_"*@sprintf("%d",D1)*"D1_RN_pcof.jld2",pcof)
+println("Initial coefficient vector stored in 'pcof0'")
