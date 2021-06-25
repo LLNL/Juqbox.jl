@@ -5,18 +5,25 @@ function eval_f_par(pcof::Vector{Float64}, params:: Juqbox.objparams, wa::Workin
     # Loop over specified nodes and compute risk-neutral objective value. Default is usual optimization.
     exp_v = 0.0
     nquad = length(nodes)
-    H0_old = copy(params.Hconst)
+    # H0_old = copy(params.Hconst)
     for i = 1:nquad 
         ep = nodes[i]
 
         for j = 2:size(params.Hconst,2)
-            params.Hconst[j,j] = H0_old[j,j] + 0.01*ep*(10.0^(j-2))
+            # params.Hconst[j,j] += H0_old[j,j] + 0.01*ep*(10.0^(j-2))
+            params.Hconst[j,j] += 0.01*ep*(10.0^(j-2))
         end
 
         E = Juqbox.traceobjgrad(pcof,params,wa,false,false)
         exp_v += E[1]*weights[i]
+
+        # Reset 
+        for j = 2:size(params.Hconst,2)
+            # params.Hconst[j,j] += H0_old[j,j] + 0.01*ep*(10.0^(j-2))
+            params.Hconst[j,j] -= 0.01*ep*(10.0^(j-2))
+        end
     end
-    copy!(params.Hconst,H0_old)
+    # copy!(params.Hconst,H0_old)
     return exp_v
   end
 
@@ -29,7 +36,7 @@ function eval_grad_f_par(pcof::Vector{Float64}, grad_f::Vector{Float64}, params:
     grad_f .= 0.0
 
     nquad = length(nodes)
-    H0_old = copy(params.Hconst)
+    # H0_old = copy(params.Hconst)
     exp_inf = 0.0
     exp_sec = 0.0
     for i = 1:nquad 
@@ -37,7 +44,7 @@ function eval_grad_f_par(pcof::Vector{Float64}, grad_f::Vector{Float64}, params:
 
         # Additive noise
         for j = 2:size(params.Hconst,2)
-            params.Hconst[j,j] = H0_old[j,j] + 0.01*ep*(10.0^(j-2))
+            params.Hconst[j,j] += 0.01*ep*(10.0^(j-2))
         end
 
         _, Gtemp, _, secondaryobjf, traceinfid = Juqbox.traceobjgrad(pcof,params,wa,false, true)
@@ -50,8 +57,13 @@ function eval_grad_f_par(pcof::Vector{Float64}, grad_f::Vector{Float64}, params:
         # Accumulate expected value of infidelity and guard level penalty
         exp_inf += weights[i]*traceinfid
         exp_sec += weights[i]*secondaryobjf
+
+        # Reset
+        for j = 2:size(params.Hconst,2)
+            params.Hconst[j,j] -= 0.01*ep*(10.0^(j-2))
+        end
     end
-    copy!(params.Hconst,H0_old)
+    # copy!(params.Hconst,H0_old)
 
     
     # remember the value of the primary obj func (for termination in intermediate_par)
