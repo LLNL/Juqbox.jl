@@ -724,7 +724,7 @@ if verbose
     
 end #if verbose
 
-# return to calling routine
+# return to calling routine (the order of the return arguments is somewhat inconsistent. At least add a description in the docs)
 if verbose && evaladjoint
     return objfv, totalgrad, usaver+1im*usavei, mfidelityrot, dfdp
 elseif verbose
