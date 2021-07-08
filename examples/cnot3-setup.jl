@@ -18,15 +18,15 @@ includes the usual symmetric and anti-symmetric terms
  H_{sym,3} = p_3(t)(s + s^†), H_{asym,3} = q_3(t)(s - s^†),
 where a,b,s are the annihilation operators for each qubit.
 The problem parameters for this example are,
-            ω_a    =  2π × 4.10595     Grad/s,
-            ξ_a    =  2π × 2.198e-02   Grad/s,
-            ω_b    =  2π × 4.81526     Grad/s,
-            ξ_b    =  2π × 2.252e-01   Grad/s,
-            ω_s    =  2π × 7.8447      Grad/s,
-            ξ_s    =  2π × 2.8299e-05  Grad/s,
-            ξ_{ab} =  2π × 1.0e-06     Grad/s,
-            ξ_{as} =  2π × 2.494e-03   Grad/s,
-            ξ_{bs} =  2π × 2.52445e-03 Grad/s.
+            ω_a / 2π    = 4.10595      GHz,
+            ξ_a / 2π     =  2.198e-02  GHz,
+            ω_b / 2π    =  4.81526     GHz,
+            ξ_b / 2π     =  2.252e-01  GHz,
+            ω_s / 2π    =  7.8447       GHz,
+            ξ_s / 2π     =  2.8299e-05 GHz,
+            ξ_{ab} / 2π  =  1.0e-06     GHz,
+            ξ_{as} / 2π  =  2.494e-03  GHz,
+            ξ_{bs} / 2π  =  2.52445e-03 GHz.
 We use Bsplines with carrier waves and 3 frequencies per 
 oscillator:
     Oscillator A: 0, ξ_a, ξ_b
@@ -156,21 +156,6 @@ bmax = 0.1
 cmax = 0.1
 maxpar = [amax, bmax, cmax] 
 
-# estimate max magnitude of eigenvalue
-K1 =  H0 +
-    amax.*(amat +  amat') + 1im*amax.*(amat -  amat') +
-            bmax.*(bmat + bmat') + 1im*bmax.*(bmat - bmat') +
-            cmax.*(cmat + cmat')  + 1im*cmax.*(cmat - cmat')
-lamb = eigvals(K1)
-maxeig = maximum(abs.(lamb))
-
-# Estimate time step
-Pmin = 40 # should be 20 or higher
-samplerate1 = maxeig*Pmin/(2*pi)
-nsteps = ceil(Int64,Tmax*samplerate1)
-# tmp
-println("Number of time steps = ", nsteps)
-
 # package the lowering and raising matrices together into an one-dimensional array of two-dimensional arrays
 # Here we choose dense or sparse representation
 use_sparse = true
@@ -179,6 +164,12 @@ use_sparse = true
 Hsym_ops=[Array(amat+adag), Array(bmat+bdag), Array(cmat+cdag)]
 Hanti_ops=[Array(amat-adag), Array(bmat-bdag), Array(cmat - cdag)]
 H0 = Array(H0)
+
+# Estimate time step
+Pmin = 40 # should be 20 or higher
+nsteps = calculate_timestep(Tmax, H0, Hsym_ops, Hanti_ops, maxpar, Pmin)
+
+println("Number of time steps = ", nsteps)
 
 samplerate = 32 # for plotting (?)
 kpar = 5 # test this component of the gradient
@@ -315,10 +306,6 @@ if use_sparse
 else
     println("Using a dense representation of the Hamiltonian matrices")
 end
-
-# Estimate number of terms in Neumann series for time stepping (Default 3)
-tol = eps(1.0); # machine precision
-Juqbox.estimate_Neumann!(tol, params, maxpar)
 
 wa = Juqbox.Working_Arrays(params,nCoeff)
 prob = Juqbox.setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff, maxIter, lbfgsMax, startFromScratch)
