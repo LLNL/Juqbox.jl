@@ -25,7 +25,6 @@ using JLD2
 using FastGaussQuadrature
 
 Base.show(io::IO, f::Float64) = @printf(io, "%20.13e", f)
-# pyplot()
 
 using Juqbox # quantum control module
 
@@ -122,14 +121,11 @@ use_bcarrier = true
 om = zeros(Ncoupled,Nfreq)
 if use_bcarrier
     om[1:Ncoupled,2] .= -2.0*pi *xa       # Note negative sign
-    # om[1:Ncoupled,3] .= -2.0*pi* 2.0*xa
 end
 println("Carrier frequencies [GHz]: ", om[1,:]./(2*pi))
 println("H0: ", H0)
 
-# maxctrl = 2*pi*5.2e-3
 maxctrl = 2*pi*1.2e-2
-
 
 #max amplitude (in angular frequency) 2*pi*GHz
 maxamp = zeros(Nfreq)
@@ -188,7 +184,6 @@ else
     nCoeff = length(pcof0)
     D1 = div(nCoeff, 2*Ncoupled*Nfreq)  # number of B-spline coeff per control function
 end
-
 
 
 # min and max coefficient values (set first and last two to zero)

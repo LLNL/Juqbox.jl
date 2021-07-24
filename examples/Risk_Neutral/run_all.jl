@@ -1,9 +1,5 @@
-# using Plots
 using LaTeXStrings
 using Juqbox
-# using PyCall
-# pygui(:qt)
-# pygui(true)
 using Plots
 
 # Function to loop over ϵ values and create a plot of the objective function for pertrubed Hamiltonians
@@ -69,8 +65,6 @@ end
 
 # Maximum shift in Hamiltonian (in rad*GHz)
 ep_max = 2*pi*2e-2
-# ep_max = 2*pi*3e-3 #decent?
-# ep_max = 2*pi*5e-3
 
 # For plotting purposes 
 max_ep_sweep = 2*pi*3e-2
@@ -99,7 +93,6 @@ end
 pcof_old = copy(pcof)
 
 
-
 # Plot control functions
 scalefactor = 1000/(2*pi)
 unitStr = "MHz"
@@ -125,12 +118,6 @@ lfnt = Plots.font("Helvetica", 12)
 Plots.default(titlefont=fnt, guidefont=fnt, tickfont=fnt, legendfont=lfnt, linewidth=1.5, size=(650, 350))
 
 titlestr = "Rotating frame NF ctrl " * " Max-p=" *@sprintf("%.3e", pmax) * " Max-q=" *@sprintf("%.3e", qmax) * " " * unitStr
-# pl_ctrl_NF = Plots.plot(td, pfunc1, lab="", title = titlestr, xlabel="Time [ns]",
-#                                   ylabel=unitStr, legend=:outerright)
-# Plots.plot!(pl_ctrl_NF,td, qfunc1, lab="")
-# Plots.plot!(pl_ctrl_NF,td, pfunc2, lab="")
-# Plots.plot!(pl_ctrl_NF,td, qfunc2, lab="")
-
 
 pl_ctrl_NF = Plots.plot(td, pfunc1, lab=L"p_{1,1}(t)", title = titlestr, xlabel="Time [ns]",
                                   ylabel=unitStr, legend= :outerright, linewidth=1.5, legendfontsize=14)
@@ -142,7 +129,6 @@ Plots.plot!(pl_ctrl_NF,td, qfunc2, lab=L"q_{1,2}(t)", linewidth=1.5, legendfonts
 
 # save plots of control functions in rotating frame without carrier waves
 Plots.savefig(pl_ctrl_NF,  "robust_comparison_"* @sprintf("%1.1e", ep_max/(2*pi)) * "_"*@sprintf("%3.1f",T)*"_T_"*@sprintf("%3d",maxIter)*"_iters_"*@sprintf("%d",nquad)*"_N_"*@sprintf("%d",D1)*"_D1_NF_ctrl.png")
-
 
 # Risk-neutral optimization
 nquad = 9
@@ -162,33 +148,16 @@ else
     results2 = readdlm("robust_optim_OF_sweep_GLQ2.dat")
 end
 
-# results2,pl2 = ep_plot(pcof, params, wa, ep_vals)
-# data2 = zeros(size(results2,1),4)
-# data2[:,1] = ep_vals
-# for j = 1:3
-#     data2[:,j+1] = results2[:,j]
-# end
-# writedlm("robust_optim_OF_sweep_GLQ2.dat", data2)
-# Plot all results on single plot
-# plc = Plots.plot(ep_vals./(2*pi),results[:,3],yaxis=:log,xlabel = L"\epsilon/2\pi"*"[MHz]",ylabel = "Objective Function", lab="NF Infidelity")
-# Plots.plot!(plc,ep_vals./(2*pi),results2[:,3],yaxis=:log,xlabel = L"\epsilon/2\pi"*"[MHz]",ylabel = "Objective Function", lab="RN Infidelity")
-# Plots.plot!(plc,ep_vals./(2*pi),results[:,2],yaxis=:log,xlabel = L"\epsilon/2\pi"*"[MHz]",ylabel = "Objective Function", lab="NF Guard Level Pop.",linestyle=:dash)
-# Plots.plot!(plc,ep_vals./(2*pi),results2[:,2],yaxis=:log,xlabel = L"\epsilon/2\pi"*"[MHz]",ylabel = "Objective Function", lab="RN Guard Level Pop.",linestyle=:dash,legend= :outerright)
-
-
-# plc2 = Plots.plot(ep_vals./(2*pi),results[:,4],yaxis=:log,xlabel = L"\epsilon",ylabel = "Objective Function", lab="Total NF Objective")
-# Plots.plot!(plc2,ep_vals./(2*pi),results2[:,4],yaxis=:log,xlabel = L"\epsilon",ylabel = "Objective Function", lab="Total RN Objective")
+# Plot objective functions for various Hamiltonian perturbations
 plc = Plots.plot(scalefactor.*ep_vals,results[:,4],yaxis=:log,xlabel = "Hamiltonian Perturbation [MHz]",ylabel = "Objective Function", lab="NF Infidelity")
 Plots.plot!(plc,scalefactor.*ep_vals,results2[:,4],yaxis=:log,xlabel = "Hamiltonian Perturbation [MHz]",ylabel = "Objective Function", lab="RN Infidelity")
 Plots.plot!(plc,scalefactor.*ep_vals,results[:,3],yaxis=:log,xlabel = "Hamiltonian Perturbation [MHz]",ylabel = "Objective Function", lab="NF Guard Level Pop.",linestyle=:dash)
 Plots.plot!(plc,scalefactor.*ep_vals,results2[:,3],yaxis=:log,xlabel = "Hamiltonian Perturbation [MHz]",ylabel = "Objective Function", lab="RN Guard Level Pop.",linestyle=:dash,legend= :outerright)
 
-
 plc_short = Plots.plot(scalefactor.*ep_vals,results[:,4],yaxis=:log,xlabel = "Hamiltonian Perturbation [MHz]",ylabel = "Objective Function", lab="NF Infidelity")
 Plots.plot!(plc_short,scalefactor.*ep_vals,results2[:,4],yaxis=:log,xlabel = "Hamiltonian Perturbation [MHz]",ylabel = "Objective Function", lab="RN Infidelity")
 Plots.plot!(plc_short,scalefactor.*ep_vals,results[:,3],yaxis=:log,xlabel = "Hamiltonian Perturbation [MHz]",ylabel = "Objective Function", lab="NF Guard Level Pop.",linestyle=:dash)
 Plots.plot!(plc_short,scalefactor.*ep_vals,results2[:,3],xlims=((-20,20)),yaxis=:log,xlabel = "Hamiltonian Perturbation [MHz]",ylabel = "Objective Function", lab="RN Guard Level Pop.",linestyle=:dash,legend= :outerright)
-
 
 plc2 = Plots.plot(scalefactor.*ep_vals,results[:,2].+results[:,3],yaxis=:log,xlabel ="Hamiltonian Perturbation [MHz]",ylabel = "Objective Function", lab="Total NF Objective")
 Plots.plot!(plc2,scalefactor.*ep_vals,results2[:,2].+results2[:,3],yaxis=:log,xlabel ="Hamiltonian Perturbation [MHz]",ylabel = "Objective Function", lab="Total RN Objective",legend= :outerright)
@@ -196,7 +165,7 @@ Plots.plot!(plc2,scalefactor.*ep_vals,results2[:,2].+results2[:,3],yaxis=:log,xl
 plc2_short = Plots.plot(scalefactor.*ep_vals,results[:,2].+results[:,3],yaxis=:log,xlabel ="Hamiltonian Perturbation [MHz]",ylabel = "Objective Function", lab="Total NF Objective")
 Plots.plot!(plc2_short,scalefactor.*ep_vals,results2[:,2].+results2[:,3],xlims=((-20,20)),yaxis=:log,xlabel ="Hamiltonian Perturbation [MHz]",ylabel = "Objective Function", lab="Total RN Objective",legend= :outerright)
 
-
+# Save plots to file
 Plots.savefig(plc,  "robust_comparison_"* @sprintf("%1.1e", ep_max/(2*pi)) * "_"*@sprintf("%3.1f",T)*"_T_"*@sprintf("%3d",maxIter)*"_iters_"*@sprintf("%d",nquad)*"_N_"*@sprintf("%d",D1)*"_D1_separate.png")
 Plots.savefig(plc_short,  "robust_comparison_"* @sprintf("%1.1e", ep_max/(2*pi)) * "_"*@sprintf("%3.1f",T)*"_T_"*@sprintf("%3d",maxIter)*"_iters_"*@sprintf("%d",nquad)*"_N_"*@sprintf("%d",D1)*"_D1_separate_short.png")
 Plots.savefig(plc2,  "robust_comparison_"* @sprintf("%1.1e", ep_max/(2*pi)) * "_"*@sprintf("%3.1f",T)*"_T_"*@sprintf("%3d",maxIter)*"_iters_"*@sprintf("%d",nquad)*"_N_"*@sprintf("%d",D1)*"_D1_total.png")
@@ -217,8 +186,6 @@ pmax = maximum([pmax1,pmax2])
 qmax = maximum([qmax1,qmax2])
 
 titlestr = "Rotating frame RN ctrl " * " Max-p=" *@sprintf("%.3e", pmax) * " Max-q=" *@sprintf("%.3e", qmax) * " " * unitStr
-# pl_ctrl_RN = Plots.plot(td, pfunc1, lab=L"p_1(t)", title = titlestr, xlabel="Time [ns]",
-#                                   ylabel=unitStr, legend= :bottomleft, ylims=((-5,5)))
 pl_ctrl_RN = Plots.plot(td, pfunc1, lab=L"p_{1,1}(t)", title = titlestr, xlabel="Time [ns]",
                                   ylabel=unitStr, legend= :topleft, linewidth=1.5, legendfontsize=12)
 # add in the control function for the anti-symmetric Hamiltonian

@@ -42,6 +42,9 @@ Examples of the setup procedure can be found in the following scripts in the **J
 - **flux-setup.jl** CNOT gate for single qubit with a flux-tuning control Hamiltonian.
 - **cnot2-setup.jl** CNOT gate for a pair of coupled qubits with guard levels.
 - **cnot3-setup.jl** Cross-resonance CNOT gate for a pair of qubits that are coupled by a cavity resonator. **Note:** This case reads an optimized solution from file."
+- **Risk_Neutral/run_all.jl** SWAP 0-2 gate for a single qudit. This routine performs both a deterministic optimization, and a risk-neutral optimization
+where the system Hamiltonian is perturbed by additive noise which is assumed to be uniform. Full details of the example can be found in Section 6.2 of 
+the manuscript found [here](https://arxiv.org/abs/2106.14310).
 
 ## Contributing to Juqbox.jl
 Juqbox.jl is currently under development. The prefered method of contributing is through a pull request (PR). If you are interested in contributing, please contact Anders Petersson (petersson1@llnl.gov) or Fortino Garcia (fortino.garcia@colorado.edu).
