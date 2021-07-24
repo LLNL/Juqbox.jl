@@ -26,7 +26,7 @@ The next steps are:
 ## 2. Optimization
 Once you have been assigned the `params` and `prob` objects, as well as the initial parameter vector 
 `pcof0`, the optimizer is invoked by
-- `pcof = Juqbox.run_optimizer(prob, pcof0 [, jld2_filename])`
+- `pcof = Juqbox.run_optimizer(prob, pcof0)`
 
 ## 3. Visualizing the results
 General properties of the optimized solution such as trace infidelity and unitary accuracy can be evaluated, 

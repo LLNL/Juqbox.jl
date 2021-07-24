@@ -423,15 +423,15 @@ function plot_conv_hist(params:: Juqbox.objparams, convname:: String="")
 
         if minimum(params.objHist) > 0 && minimum(params.primaryHist) > 0 &&
             (params.Nguard == 0 || minimum(params.secondaryHist) > 0)
-            Plots.plot!(yscale=:log10)
+            Plots.plot!(pconv, yscale=:log10)
         end
-        Plots.plot!(1:nIter, params.objHist, lab=L"{\cal G}") #, markershape=:utriangle, markersize=5)
-        Plots.plot!(1:nIter, params.primaryHist, lab=L"{\cal J}_1", style=:dash)
+        Plots.plot!(pconv, 1:nIter, params.objHist, lab=L"{\cal G}") #, markershape=:utriangle, markersize=5)
+        Plots.plot!(pconv, 1:nIter, params.primaryHist, lab=L"{\cal J}_1", style=:dash)
         if (params.Nguard > 0)
-            Plots.plot!(1:nIter, params.secondaryHist, lab=L"{\cal J}_2")
+            Plots.plot!(pconv, 1:nIter, params.secondaryHist, lab=L"{\cal J}_2")
         end
-        Plots.plot!(1:nIter, params.dualInfidelityHist, lab=L"\|\nabla{\cal G} - z\|_\infty") # dual infeasibility
-        Plots.xlims!((0, nIter+1))
+        Plots.plot!(pconv, 1:nIter, params.dualInfidelityHist, lab=L"\|\nabla{\cal G} - z\|_\infty") # dual infeasibility
+        Plots.xlims!(pconv, (0, nIter+1))
 
         if length(convname)>0
             Plots.savefig(pconv, convname)
