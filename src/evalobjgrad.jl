@@ -681,7 +681,7 @@ if verbose
     
     nlast = 1 + nsteps
     println("Unitary test 1, length of propagated state vectors:")
-    println("Col  |   (1 - |psi|)")
+    println("Col |   (1 - |psi|)")
     Vnrm ::Float64 = 0.0
     for q in 1:N
         Vnrm = usaver[:,q,nlast]' * usaver[:,q,nlast] + usavei[:,q,nlast]' * usavei[:,q,nlast]
