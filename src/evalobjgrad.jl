@@ -726,7 +726,7 @@ end #if verbose
 
 # return to calling routine (the order of the return arguments is somewhat inconsistent. At least add a description in the docs)
 if verbose && evaladjoint
-    return objfv, totalgrad, usaver+1im*usavei, mfidelityrot, dfdp
+    return objfv, totalgrad, usaver+1im*usavei, mfidelityrot, dfdp, wr1 - 1im*wi
 elseif verbose
     println("Returning from traceobjgrad with objfv, unitary history, fidelity")
     return objfv, usaver+1im*usavei, mfidelityrot
