@@ -2,7 +2,7 @@ module Juqbox
 
 using LinearAlgebra
 using Plots
-pyplot()
+#pyplot()
 using Printf
 using Random
 using LaTeXStrings
