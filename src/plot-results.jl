@@ -83,7 +83,8 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
             s1 = s12 %  params.Ne[1]
             statestr = string( s3, s2, s1 )
 
-            local titlestr = raw"Evolution from state $|" * statestr * raw"\rangle$"
+            local titlestr = latexstring("From\\ state\\ |", statestr, "\\rangle")
+#            local titlestr = raw"Evolution from state $|" * statestr * raw"\rangle$"
             h = Plots.plot(title = titlestr)
 
             for row in 1:params.Nt[3]

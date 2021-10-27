@@ -10,7 +10,8 @@ using Ipopt
 using Random
 
 Base.show(io::IO, f::Float64) = @printf(io, "%20.13e", f)
-pyplot()
+gr()
+#pyplot()
 
 using Juqbox
 

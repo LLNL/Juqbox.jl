@@ -20,6 +20,8 @@ example.
 ==========================================================# 
 using LinearAlgebra
 using Plots
+gr()
+#pyplot()
 using FFTW
 using DelimitedFiles
 using Printf
@@ -27,7 +29,6 @@ using Ipopt
 using Random
 
 Base.show(io::IO, f::Float64) = @printf(io, "%20.13e", f)
-pyplot()
 
 using Juqbox
 

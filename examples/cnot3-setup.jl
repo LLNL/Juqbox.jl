@@ -41,7 +41,8 @@ using DelimitedFiles
 using Printf
 using FFTW
 using Plots
-pyplot()
+gr()
+#pyplot()
 using SparseArrays
 using FileIO
 

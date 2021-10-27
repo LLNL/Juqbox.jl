@@ -44,7 +44,9 @@ function plotunitary(us, params, guardlev)
             s1 = s12 %  params.Ne[1]
             statestr = string( s3, s2, s1 )
         end
-        titlestr = raw"Evolution from state $|" * statestr * raw"\rangle$"
+
+        titlestr = latexstring("From\\ state\\ |", statestr, "\\rangle")
+#        titlestr = raw"Evolution from state $|" * statestr * raw"\rangle$"
 #        h = plot(title = titlestr, size=(650, 400), legend= :outerright)
         h = plot(title = titlestr, legend= :outerright)
         for jj in 1:Ntot
@@ -122,7 +124,8 @@ function plotspecified(us, params, guardlev::Array{Bool,1}, specifiedlev::Array{
 #    plotarray = Array{Plots.Plot}(undef, N) #empty array for separate plots
 
     if nForb == 1
-        titlestr = raw"Population of state $|" * string(gLev) * raw"\rangle$"
+        titlestr = L"Population\ of\  | %$gLev \rangle"
+#        titlestr = raw"Population of state $|" * string(gLev) * raw"\rangle$"
     else
         titlestr = "Population of guard levels"
     end
@@ -198,8 +201,9 @@ function plot_forward(us, T)
     t = range(0, stop = T, length = nsteps)
     rg = 1:nsteps # range object  # plot all data points
 
-#    ii = 1;
-    titlestr = raw"Evolution from state $|" * string(ii-1) * raw"\rangle$"
+    #    ii = 1;
+    fromState = ii-1
+    titlestr = L"From\  | %$fromState \rangle"
     plt = plot(xlabel = "Time [ns]", ylabel = "Population", title = titlestr, size=(750, 400), legend=:outerright) # abs^2
     for jj = 1:Ntot
 #        if jj != ii # don't plot the evolution of the initial state
