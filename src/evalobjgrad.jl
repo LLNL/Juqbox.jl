@@ -138,7 +138,7 @@ mutable struct objparams
             isSymm = []
         end
         
-        # Set default Tikhonov parameters to zero
+        # Set default Tikhonov parameter
         tik0 = 0.01
 
         # By default, test the first parameter for gradient correctness

@@ -305,7 +305,7 @@ function identify_guard_levels(params::Juqbox.objparams, custom:: Int64 = 0)
 end #identify_guard_levels
 
 """
-    forbiddenlev = identify_guard_levels(params[, custom = 0])
+    forbiddenlev = identify_forbidden_levels(params[, custom = 0])
 
 Build a Bool array indicating which energy levels are forbidden levels in the state vector. The
 forbidden levels in a state vector are defined as thos corresponding to the highest energy level in
@@ -318,10 +318,11 @@ at least one of its subsystems.
 function identify_forbidden_levels(params:: Juqbox.objparams, custom::Int64 = 0)
     # identify all forbidden levels
     Ntot = params.N+params.Nguard
+    Ng = params.Ng
     forbiddenlev = fill(false, Ntot)
 
     if params.Nosc == 1
-        if custom == 0
+        if custom == 0 && Ng[1]>0
             forbiddenlev[Ntot] = true
         else # Special case for stirap pulses
             forbiddenlev[2] = true
@@ -332,7 +333,7 @@ function identify_forbidden_levels(params:: Juqbox.objparams, custom::Int64 = 0)
         for q2 in 1:params.Nt[2]
             for q1 in 1:params.Nt[1]
                 k += 1
-                if q1 == params.Nt[1] || q2 == params.Nt[2]
+                if (Ng[1]>0 && q1 == params.Nt[1]) || (Ng[2]>0 && q2 == params.Nt[2])
                     forbiddenlev[k] = true
                 end
             end
@@ -343,7 +344,7 @@ function identify_forbidden_levels(params:: Juqbox.objparams, custom::Int64 = 0)
             for q2 in 1:params.Nt[2]
                 for q1 in 1:params.Nt[1]
                     k += 1
-                    if q1 == params.Nt[1] || q2 == params.Nt[2] || q3 == params.Nt[3]
+                    if  (Ng[1]>0 && q1 == params.Nt[1]) || (Ng[2]>0 && q2 == params.Nt[2]) || ( Ng[3]>0  && q3 == params.Nt[3])
                         forbiddenlev[k] = true
                     end
                 end
