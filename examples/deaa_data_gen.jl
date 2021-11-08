@@ -178,7 +178,7 @@ pbjfv, U, mfidelityrot = Juqbox.traceobjgrad(pcof0,params,wa,true,false)
 
 W = U[:,:,end]
 W = W[:]
-ndata = 10
+ndata = 10 # 1e6
 nin = length(pcof0)
 nout = 2*length(W)
 
@@ -189,32 +189,123 @@ function generate_data(nin,nout,ndata,params,wa)
     nouthalf = Int64(nout/2)
     
     for i = 1:ndata
-        pcof0 = maxpar*0.5*(rand(nin).-0.5)
-        objfv, U, mfidelityrot = Juqbox.traceobjgrad(pcof0,params,wa,true,false)
+        pcof0 = maxpar*0.5*(rand(nin).-0.5)*10 #10 is magic number to increase dynamic range
+        objfv, U, mfidelityrot = Juqbox.traceobjgrad(pcof0,params,wa,true,false) #changed verbose to false
+        # U is the result of solving an ODE with initial data (identity matrix)
+        # evolved up to some time T (defined above)
+        # U has 3 dims: (i x j) x time (2D stacked over time)
         W = U[:,:,end]
-        W = W[:]
+        W = W[:] # Stacks everything (flatten)
         input_data[:,i] = pcof0
-        output_data[1:nouthalf,i] = real.(W)
-        output_data[nouthalf+1:nout,i] = imag.(W)
+        output_data[1:nouthalf,i] = real.(W) # split real part of W
+        output_data[nouthalf+1:nout,i] = imag.(W) # split imaginary part of W
     end
     return input_data, output_data
 end
 
-in_data, out_data = generate_data(nin,nout,ndata,params,wa)
+#in_data, out_data = generate_data(nin,nout,50000,params,wa)
 
+#writedlm( "in_data_60_10.csv",  in_data, ',')
+#writedlm( "out_data_48_10.csv",  out_data, ',')
 
 using Flux
-model = Chain(Dense(nin, 5, relu),
-              Dense(5, nout))
 
-loss(x, y) = Flux.Losses.mse(model(x), y)
 
-opt = Descent()
-parameters = Flux.params(model)
-data = [(in_data, out_data)]
+#model = Chain(Dense(nin, 10, relu),
+#              Dense(10,10),Dense(10,10))
+#model = Chain(model, Dense(10, nout))
 
-loss(in_data,out_data)
-for epoch in 1:200
-    Flux.train!(loss, parameters, data, opt)
+
+
+function fit_model!(model)
+    loss(x, y) = Flux.Losses.mse(model(x), y)
+
+    opt = Descent()
+    parameters = Flux.params(model)
+    data = [(in_data, out_data)]
+    
+    loss(in_data,out_data)
+    for epoch in 1:200
+        Flux.train!(loss, parameters, data, opt)
+    end
+
+    return loss(in_data,out_data)
 end
-loss(in_data,out_data)
+
+function fit_model_data!(model, in, out)
+    # Fits model with given in and out data.
+    loss(x, y) = Flux.Losses.mse(model(x), y)
+
+    out_mod = copy(out)
+    opt = Descent()
+    parameters = Flux.params(model)
+    data = [(in, out_mod)]
+    println("START:")
+    println(loss(in,out))
+    for epoch in 1:200
+        Flux.train!(loss, parameters, data, opt)
+    end
+
+    return loss(in,out)
+end
+
+
+#fit_model!(model)
+
+
+
+#=
+### ARCHITECTURE EXPERIMENT
+# Tries to find the best network architecture by testing over many numbers of layers
+# and neurons per layer.
+max_layers = 20
+max_neurons = 50
+
+outs = zeros(max_layers,max_neurons)
+for n_layers = 1:max_layers
+    for n_neurons = 1:max_neurons
+        model = Chain(Dense(nin, n_neurons, relu)) # Initialize input layer with correct dims
+        for i = 1:n_layers # Initialize model with n_layers hidden layers and n_neurons neurons per layer
+            model = Chain(model, Dense(n_neurons, n_neurons))
+        end
+        model = Chain(model, Dense(n_neurons, nout)) # Add output layer with correct dims
+
+        outs[n_layers, n_neurons] = fit_model!(model)
+    end
+end
+writedlm( "grid_search_output.csv",  outs, ',')
+=#
+
+n_in = 60
+n_out = 48
+
+in_data = readdlm("in_data_60_10.csv", ',', Float64, '\n')
+out_data = readdlm("out_data_48_10.csv", ',', Float64, '\n')
+
+outs = zeros(100)
+
+println("***********")
+println("STARTING SAMPLING EXPERIMENT")
+println("***********")
+
+for i = 1:100
+    data_size = i*500
+    model = Chain(Dense(n_in, 100, relu)) 
+    # Initialize input layer with correct dims
+    for j = 1:5 # 40 neurons, 5 layers
+        model = Chain(model, Dense(100, 100))
+    end
+    model = Chain(model, Dense(100, n_out))
+
+    in_new = in_data[:,1:data_size]
+    out_new = out_data[:,1:data_size]
+
+    outs[i] = fit_model_data!(model, in_new, out_new)
+    println(outs[i])
+ #outs = zeros(max_layers,max_neurons)
+ # Add output layer with correct dims
+end
+writedlm( "data_size_search_large_scaling.csv",  outs, ',')
+plot(1:100, outs, xlabel="Dataset size", xticks=0:1000:50000)
+
+
