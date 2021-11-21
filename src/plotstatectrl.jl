@@ -48,10 +48,13 @@ function plotunitary(us, params, guardlev)
         titlestr = latexstring("From\\ state\\ |", statestr, "\\rangle")
 #        titlestr = raw"Evolution from state $|" * statestr * raw"\rangle$"
 #        h = plot(title = titlestr, size=(650, 400), legend= :outerright)
-        h = plot(title = titlestr, legend= :outerright)
+#        h = plot(title = titlestr, legend= :outerright, xlabel = "Time [ns]", ylabel="Population")
+        h = plot(title = titlestr, legend= :false, xlabel = "Time [ns]", ylabel="Population")
+        iCurve = 0
         for jj in 1:Ntot
             # Is jj an essential level?
             if !guardlev[jj]
+                iCurve += 1
                 if params.Nosc == 1
                     labstr = string(jj-1) # "" for no labels
                 elseif params.Nosc == 2
@@ -70,7 +73,12 @@ function plotunitary(us, params, guardlev)
                     s1 = s12 - s2 * params.Nt[1]
                     labstr = string( s3, s2, s1 )
                 end
-                plot!(t[rg], abs.(us[jj,ii,rg]).^2, lab = labstr, xlabel = "Time [ns]", ylabel="Population")
+                #                plot!(t[rg], abs.(us[jj,ii,rg]).^2, lab = labstr)
+                xind = max(1,ceil(Int, (iCurve-0.5)*nsteps/N))
+                ypos = abs.(us[jj,ii,xind]).^2
+                ltexstr = latexstring(labstr)
+                
+                plot!(t[rg], abs.(us[jj,ii,rg]).^2, ann = [(t[xind], ypos, text(ltexstr) )] )
             end
         end
         plotarray[ii] = h
@@ -93,7 +101,7 @@ Plot the evolution of the state vector for specified levels.
 # Arguments
 - `us:: Array{Complex{Float64},3})`: State vector history for each timestep
 - `param:: objparams`: Struct with problem definition
-- `us:: Array{Bool,1})`: Boolean array indicating if a certain level is a guard level
+- `guardlev:: Array{Bool,1})`: Boolean array indicating if a certain level is a guard level
 - `specifiedlev:: Array{Bool,1}`: Boolean array indicating which levels to be plotted
 """
 function plotspecified(us, params, guardlev::Array{Bool,1}, specifiedlev::Array{Bool,1})
@@ -129,7 +137,8 @@ function plotspecified(us, params, guardlev::Array{Bool,1}, specifiedlev::Array{
     else
         titlestr = "Population of guard levels"
     end
-    h = plot(title = titlestr, size=(700, 350), legend= :outerright) # make it big to fit the legend
+    h = plot(title = titlestr, size=(700, 350), legend= :false) # legend doesn't work if there are many curves in the plot
+#    h = plot(title = titlestr, size=(700, 350), legend= :outerright) # make it big to fit the legend
 #    h = plot(title = titlestr, size=(700, 350)) # put legend inside plot
 
     iplot = 0
