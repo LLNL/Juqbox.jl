@@ -19,7 +19,6 @@ We use Bsplines with carrier waves with frequencies
 using LinearAlgebra
 using Plots
 #pyplot()
-#gr()
 using FFTW
 using DelimitedFiles
 using Printf

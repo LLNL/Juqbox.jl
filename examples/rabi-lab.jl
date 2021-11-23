@@ -20,7 +20,6 @@ example.
 ==========================================================# 
 using LinearAlgebra
 using Plots
-gr()
 #pyplot()
 using FFTW
 using DelimitedFiles

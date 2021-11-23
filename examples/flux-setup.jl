@@ -23,7 +23,6 @@ We use Bsplines with carrier waves with carrier frequencies (rotating frame)
 ==========================================================# 
 using LinearAlgebra
 using Plots
-gr()
 #pyplot()
 using FFTW
 using DelimitedFiles

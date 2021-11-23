@@ -78,7 +78,7 @@ function plotunitary(us, params, guardlev)
                 ypos = abs.(us[jj,ii,xind]).^2
                 ltexstr = latexstring(labstr)
                 
-                plot!(t[rg], abs.(us[jj,ii,rg]).^2, ann = [(t[xind], ypos, text(ltexstr) )] )
+                plot!(t[rg], abs.(us[jj,ii,rg]).^2, lab = labstr, ann = [(t[xind], ypos, text(ltexstr) )] )
             end
         end
         plotarray[ii] = h

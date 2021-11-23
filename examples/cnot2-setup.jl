@@ -29,7 +29,6 @@ using DelimitedFiles
 using Printf
 using FFTW
 using Plots
-gr()
 #pyplot()
 using SparseArrays
 
