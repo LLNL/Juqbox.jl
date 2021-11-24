@@ -245,7 +245,7 @@ params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=vtarget, Cfreq
 Random.seed!(2456)
 
 # setup the initial parameter vector, either randomized or from file
-startFromScratch = true # false
+startFromScratch = false # true
 startFile="drives/cnot3-pcof-opt.jld2"
 
 if startFromScratch
