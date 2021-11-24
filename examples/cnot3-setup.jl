@@ -266,7 +266,7 @@ end
 minCoeff, maxCoeff = Juqbox.assign_thresholds(params,D1,maxpar)
 
 # for ipopt
-maxIter = 100 # needs more than 100 iter to converge properly
+maxIter = 0 # use the parameters on file # 100 # needs more than 100 iter to converge properly
 lbfgsMax = 250 # optional argument
 
 # output run information
