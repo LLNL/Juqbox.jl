@@ -15,7 +15,6 @@ makedocs(
     authors = "Anders Petersson, Fortino Garcia, and contributors.",
     pages = [
         "Home" => "index.md",
-        "Installation" => "installation.md",
         "Workflow" => "workflow.md",
         "Examples" => "examples.md",
         "Types" => "types.md",
