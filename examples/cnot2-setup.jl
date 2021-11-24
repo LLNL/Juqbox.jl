@@ -29,7 +29,6 @@ using DelimitedFiles
 using Printf
 using FFTW
 using Plots
-#pyplot()
 using SparseArrays
 
 Base.show(io::IO, f::Float64) = @printf(io, "%20.13e", f)

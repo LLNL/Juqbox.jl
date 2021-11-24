@@ -23,7 +23,6 @@ We use Bsplines with carrier waves with carrier frequencies (rotating frame)
 ==========================================================# 
 using LinearAlgebra
 using Plots
-#pyplot()
 using FFTW
 using DelimitedFiles
 using Printf
@@ -40,9 +39,6 @@ N = 4
 Nguard = 2
 Ntot = N + Nguard
 	
-samplerate = 64 # default number of time steps per unit time (plotting only)
-casename = "flux" # base file name (used in optimize-once.jl)
-
 # Set to false for dense matrix operations
 use_sparse = true
 
@@ -70,7 +66,6 @@ rot1 = Diagonal(exp.(im*omega1*T))
 # target in the rotating frame
 vtarget = rot1*utarget
 
-Nosc  = 1 
 Nfreq = 2 # number of carrier frequencies
 
 Random.seed!(2456)
@@ -151,8 +146,6 @@ end
 # setup the simulation parameters
 params = Juqbox.objparams([N], [Nguard], T, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
                           Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, use_sparse=use_sparse)
-# params = Juqbox.objparams([N], [Nguard], T, nsteps, U0, vtarget, om, H0, Hunc_ops)
-params.saveConvHist = true
 
 # Quiet mode for testing
 params.quiet = !verbose
