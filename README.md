@@ -16,7 +16,7 @@ The numerical methods in Juqbox.jl are documented in these papers:
 
 ## Installation
 
-The following instructions assume that you have already installed Julia (currently version 1.6.3) on your system. Before proceeding, we recommend that you add the following line to the file ~/.julia/config/startup.jl. You may have to first create the config folder under .julia in your home directory. Then add the following lines to the startup.jl file:
+The following instructions assume that you have already installed Julia (currently version 1.6.3) on your system. Before proceeding, we recommend that you add the following lines to the file ~/.julia/config/startup.jl. You may have to first create the config folder under .julia in your home directory. Then add the following lines to the startup.jl file:
 
 - **ENV["JULIA_PROJECT"]="@."**
 - **ENV["PLOTS_DEFAULT_BACKEND"]="PyPlot"**

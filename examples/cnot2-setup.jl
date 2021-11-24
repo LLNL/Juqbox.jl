@@ -39,8 +39,7 @@ using Juqbox
 eval_lab = false # true
 println("Setup for ", eval_lab ? "lab frame evaluation" : "rotating frame optimization")
 
-Nosc = 2 # number of coupled oscillators
-Nctrl = 2
+Nctrl = 2 # Number of control Hamiltonians
 
 Ne1 = 2 # essential energy levels per oscillator 
 Ne2 = 2
@@ -67,7 +66,7 @@ favg = 0.5*(fa+fb)
 rot_freq = [favg, favg] # rotational frequencies
 x1 = 2* 0.1099  # official
 x2 = 2* 0.1126   # official
-x12 = 0.1 # Artificially large to allow coupling. Actual value: 1e-6 
+x12 = 0.1 # Artificially large to allow fast coupling. Actual value: 1e-6 
   
 # construct the lowering and raising matricies: amat, bmat
 
@@ -240,7 +239,6 @@ samplerate = 32 # for plotting
 casename = "cnot2" # for constructing file names
 
 # min and max B-spline coefficient values
-useBarrier = true
 minCoeff, maxCoeff = Juqbox.assign_thresholds(params,D1,maxpar)
 println("Number of min coeff: ", length(minCoeff), "Max Coeff: ", length(maxCoeff))
 

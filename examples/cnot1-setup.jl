@@ -18,7 +18,6 @@ We use Bsplines with carrier waves with frequencies
 ==========================================================# 
 using LinearAlgebra
 using Plots
-#pyplot()
 using FFTW
 using DelimitedFiles
 using Printf
@@ -57,32 +56,17 @@ H0 = Array(H0)
 # Estimate time step
 maxctrl = 0.001*2*pi * 8.5 #  9, 10.5, 12, 15 MHz
 
-# K1 =  H0 + maxctrl.*( amat +  amat') + 1im* maxctrl.*(amat - amat')
-# lamb = eigvals(Array(K1))
-# maxeig = maximum(abs.(lamb)) 
-
-# Pmin = 40
-# samplerate1 = maxeig*Pmin/(2*pi)
-# nsteps = ceil(Int64, T*samplerate1)
-
 nsteps = calculate_timestep(T, H0, Hsym_ops, Hanti_ops, [maxctrl])
 println("# time steps: ", nsteps)
 
-use_bcarrier = true # Use carrier waves in the control pulses?
+Nfreq = 3 # number of carrier frequencies
 
-if use_bcarrier
-    Nfreq = 3 # number of carrier frequencies
-else
-    Nfreq = 1
-end
+Nctrl = length(Hsym_ops) # Here, Nctrl = 1
+om = zeros(Nctrl,Nfreq)
 
-Ncoupled = length(Hsym_ops) # Here, Ncoupled = 1
-om = zeros(Ncoupled,Nfreq)
+om[1:Nctrl,2] .= -2.0*pi *xa       # Note negative sign
+om[1:Nctrl,3] .= -2.0*pi* 2.0*xa
 
-if use_bcarrier
-    om[1:Ncoupled,2] .= -2.0*pi *xa       # Note negative sign
-    om[1:Ncoupled,3] .= -2.0*pi* 2.0*xa
-end
 println("Carrier frequencies [GHz]: ", om[1,:]./(2*pi))
 
 maxamp = zeros(Nfreq)
@@ -123,7 +107,7 @@ params = Juqbox.objparams([N], [Nguard], T, nsteps, Uinit=U0, Utarget=vtarget, C
 
 # D1 smaller than 5 does not work
 D1 = 10 # Number of B-spline coefficients per segment
-nCoeff = 2*Ncoupled*Nfreq*D1 # factor '2' is for sin/cos
+nCoeff = 2*Nctrl*Nfreq*D1 # factor '2' is for sin/cos
 
 # Random.seed!(12456)
 
@@ -139,17 +123,16 @@ else
     pcof0 = vec(readdlm(startFile))
     println("*** Starting from B-spline coefficients in file: ", startFile)
     nCoeff = length(pcof0)
-    D1 = div(nCoeff, 2*Ncoupled*Nfreq)  # number of B-spline coeff per control function
+    D1 = div(nCoeff, 2*Nctrl*Nfreq)  # number of B-spline coeff per control function
 end
 
 # min and max coefficient values
-useBarrier = true
-minCoeff, maxCoeff = Juqbox.assign_thresholds_freq(maxamp, Ncoupled, Nfreq, D1)
+minCoeff, maxCoeff = Juqbox.assign_thresholds_freq(maxamp, Nctrl, Nfreq, D1)
 
 samplerate = 32 # only used for plotting
 casename = "cnot1" # base file name (used in optimize-once.jl)
 
-maxIter = 200 # 0  # optional argument
+maxIter = 150 # 0  # optional argument
 lbfgsMax = 250 # optional argument
 ipTol = 1e-5   # optional argument
 acceptTol = ipTol # 1e-4 # acceptable tolerance 
@@ -158,20 +141,12 @@ acceptIter = 15
 println("*** Settings ***")
 println("System Hamiltonian coefficients [GHz]: (fa, xa) =  ", fa, xa)
 println("Total number of states, Ntot = ", Ntot, " Total number of guard states, Nguard = ", Nguard)
-if use_bcarrier
-  println("Using B-spline basis functions with carrier wave, # freq = ", Nfreq)
-else
-  println("Using regular B-spline basis functions")
-end
+println("Using B-spline basis functions with carrier wave, # freq = ", Nfreq)
 println("Number of coefficients per spline = ", D1, " Total number of parameters = ", nCoeff)
 for q=1:Nfreq
     println("Carrier frequency: ", om[q]/(2*pi), " GHz, max parameter amplitude = ", 1000*maxamp[q]/(2*pi), " MHz")
 end
 println("Tikhonov coefficients: tik0 = ", params.tik0)
-
-# Estimate number of terms in Neumann series for time stepping (Default 3)
-tol = eps(1.0); # machine precision
-Juqbox.estimate_Neumann!(tol, params, [maxpar])
 
 wa = Juqbox.Working_Arrays(params,nCoeff)
 prob = Juqbox.setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff, maxIter, lbfgsMax, startFromScratch)

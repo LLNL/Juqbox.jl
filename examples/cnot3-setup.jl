@@ -41,7 +41,6 @@ using DelimitedFiles
 using Printf
 using FFTW
 using Plots
-#pyplot()
 using SparseArrays
 using FileIO
 
@@ -76,12 +75,6 @@ function initial_cond(Ntot, N, Ne, Ng)
     end # if
     return U0
 end
-
-fnt = Plots.font("Helvetica", 16)
-lfnt = Plots.font("Helvetica", 10)
-Plots.default(titlefont=fnt, guidefont=fnt, tickfont=fnt, legendfont=lfnt)
-
-Nosc = 3
 
 Ne1 = 2 # essential energy levels per oscillator # AP: want Ne1=Ne2=2, but Ne3 = 1
 Ne2 = 2
@@ -171,37 +164,24 @@ nsteps = calculate_timestep(Tmax, H0, Hsym_ops, Hanti_ops, maxpar, Pmin)
 
 println("Number of time steps = ", nsteps)
 
-samplerate = 32 # for plotting (?)
-kpar = 5 # test this component of the gradient
+Nctrl = length(Hsym_ops)
+Nfreq = 3 # 3 # number of carrier frequencies
 
-# type of basis function
-use_bcarrier = true # false
-
-Ncoupled = length(Hsym_ops)
-if use_bcarrier
-  Nfreq = 3 # 3 # number of carrier frequencies
-else # regular B-splines
-  Nfreq=1
-  D1 = 400
-  nCoeff = 2*Ncoupled*D1 # Total number of B-spline coeffs'. Must be divisible by 6
-end
-
-om = zeros(Ncoupled,Nfreq) # In the rotating frame all ctrl Hamiltonians have a zero resonace frequency
+om = zeros(Nctrl,Nfreq) # In the rotating frame all ctrl Hamiltonians have a zero resonace frequency
 
 # initialize the carrier frequencies
-if use_bcarrier 
-  @assert(Nfreq == 1 || Nfreq == 2 || Nfreq == 3)
-  if Nfreq==2
+@assert(Nfreq == 1 || Nfreq == 2 || Nfreq == 3)
+if Nfreq==2
     # freq 2 and 3 for seg 3 and 6 (coupler)
-    om[1:Ncoupled,2] .= -1.0*pi*xas # coupling freq for all (re/im)
-  elseif Nfreq==3
+    om[1:Nctrl,2] .= -1.0*pi*xas # coupling freq for all (re/im)
+elseif Nfreq==3
     # fundamental resonance frequencies for the transmons 
-      om[1:2,2] .= -2.0*pi*xa # carrier freq's for ctrl Hamiltonian 1 & 2
-      om[1:2,3] .= -2.0*pi*xb # carrier freq's for ctrl Hamiltonian 1 & 2
-      om[3,2] = -2.0*pi*xas # carrier freq 2 for ctrl Hamiltonian #3
-      om[3,3] = -2.0*pi*xbs # carrier freq 2 for ctrl Hamiltonian #3
-  end
+    om[1:2,2] .= -2.0*pi*xa # carrier freq's for ctrl Hamiltonian 1 & 2
+    om[1:2,3] .= -2.0*pi*xb # carrier freq's for ctrl Hamiltonian 1 & 2
+    om[3,2] = -2.0*pi*xas # carrier freq 2 for ctrl Hamiltonian #3
+    om[3,3] = -2.0*pi*xbs # carrier freq 2 for ctrl Hamiltonian #3
 end
+
 println("Carrier frequencies 1st ctrl Hamiltonian [GHz]: ", om[1,:]./(2*pi))
 println("Carrier frequencies 2nd ctrl Hamiltonian [GHz]: ", om[2,:]./(2*pi))
 println("Carrier frequencies 3rd ctrl Hamiltonian [GHz]: ", om[3,:]./(2*pi))
@@ -265,30 +245,28 @@ params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=vtarget, Cfreq
 Random.seed!(2456)
 
 # setup the initial parameter vector, either randomized or from file
-startFromScratch = false # true
+startFromScratch = true # false
 startFile="drives/cnot3-pcof-opt.jld2"
 
 if startFromScratch
     D1 = 15 # 20 # number of B-spline coeff per oscillator, freq, p/q
-    nCoeff = 2*Ncoupled*Nfreq*D1 # Total number of parameters.
+    nCoeff = 2*Nctrl*Nfreq*D1 # Total number of parameters.
     pcof0 = amax*0.01 * rand(nCoeff)
     println("*** Starting from random pcof with amplitude ", amax*0.01)
 else
     #  read initial coefficients from file
     pcof0 = read_pcof(startFile);
     nCoeff = length(pcof0)
-    D1 = div(nCoeff, 2*Ncoupled*Nfreq)  # number of B-spline coeff per control function
-    nCoeff = 2*Nosc*Nfreq*D1 # just to be safe if the file doesn't contain the right number of elements
+    D1 = div(nCoeff, 2*Nctrl*Nfreq)  # number of B-spline coeff per control function
+    nCoeff = 2*Nctrl*Nfreq*D1 # just to be safe if the file doesn't contain the right number of elements
     println("*** Starting from B-spline coefficients in file: ", startFile)
 end
 
 # min and max B-spline coefficient values
-useBarrier = true
-# minCoeff, maxCoeff = Juqbox.assign_thresholds(maxpar, Ncoupled, Nfreq, D1)
 minCoeff, maxCoeff = Juqbox.assign_thresholds(params,D1,maxpar)
 
 # for ipopt
-maxIter = 0 #100 # 0 # 250 #50 # optional argument
+maxIter = 150 # 0 # 250 #50 # optional argument
 lbfgsMax = 250 # optional argument
 
 # output run information
