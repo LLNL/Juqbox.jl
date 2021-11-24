@@ -335,11 +335,11 @@ function identify_forbidden_levels(params:: Juqbox.objparams, custom::Int64 = 0)
     forbiddenlev = fill(false, Ntot)
 
     if params.Nosc == 1
-        if custom == 0 && Ng[1]>0
-            forbiddenlev[Ntot] = true
-        else # Special case for stirap pulses
+        if custom != 0 & Ntot >= 4 # Special case for stirap pulses
             forbiddenlev[2] = true
             forbiddenlev[4] = true
+        elseif  Ng[1]>0 
+            forbiddenlev[Ntot] = true
         end
     elseif params.Nosc == 2
         k=0

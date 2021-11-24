@@ -16,16 +16,17 @@ The numerical methods in Juqbox.jl are documented in these papers:
 
 ## Installation
 
-The following instructions assume that you have already installed Julia (currently version 1.5.3) on your system. Before proceeding, we recommend that you add the following line to your `.bash_profile` (or corresponding) file:
+The following instructions assume that you have already installed Julia (currently version 1.6.3) on your system. Before proceeding, we recommend that you add the following line to the file ~/.julia/config/startup.jl. You may have to first create the config folder under .julia in your home directory. Then add the following lines to the startup.jl file:
 
-**export JULIA_PROJECT="@."**
+**ENV["JULIA_PROJECT"]="@."**
+**ENV["PLOTS_DEFAULT_BACKEND"]="PyPlot"**
 
-This environment variable tells Julia to look for `Project.toml` files in your current or parent directory.
+These are environment variables. The first one tells Julia to look for `Project.toml` files in your current or parent directory. The second one specifies the backend for plotting. Most of the examples in this document uses the PyPlot backend, which assumes that you have installed that package. If you have trouble installing it, you can instead use the "GR" backend.
 
 Start julia and type `]` to enter the package manager. Then do:
-- (@v1.5) pkg> add  https://github.com/LLNL/Juqbox.jl.git
-- (@v1.5) pkg> precompile
-- (@v1.5) pkg> test Juqbox
+- (@v1.6) pkg> add  https://github.com/LLNL/Juqbox.jl.git
+- (@v1.6) pkg> precompile
+- (@v1.6) pkg> test Juqbox
 - ... all tests should pass ...
 
 To exit the package manager you type `<DEL>`, and to exit julia you type `exit()`.
@@ -41,7 +42,7 @@ Examples of the setup procedure can be found in the following scripts in the **J
 - **cnot1-setup.jl** CNOT gate for a single qudit with 4 essential and 2 guard levels. 
 - **flux-setup.jl** CNOT gate for single qubit with a flux-tuning control Hamiltonian.
 - **cnot2-setup.jl** CNOT gate for a pair of coupled qubits with guard levels.
-- **cnot3-setup.jl** Cross-resonance CNOT gate for a pair of qubits that are coupled by a cavity resonator. **Note:** This case reads an optimized solution from file."
+- **cnot3-setup.jl** Cross-resonance CNOT gate for a pair of qubits that are coupled by a cavity resonator. **Note:** This case reads an optimized solution from file.
 - **Risk_Neutral/run_all.jl** SWAP 0-2 gate for a single qudit. This routine performs both a deterministic optimization, and a risk-neutral optimization
 where the system Hamiltonian is perturbed by additive noise which is assumed to be uniform. Full details of the example can be found in Section 6.2 of 
 the manuscript found [here](https://arxiv.org/abs/2106.14310).

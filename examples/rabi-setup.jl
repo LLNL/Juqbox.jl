@@ -20,7 +20,6 @@ example.
 ==========================================================# 
 using LinearAlgebra
 using Plots
-#pyplot()
 using FFTW
 using DelimitedFiles
 using Printf
@@ -77,18 +76,14 @@ vtarget = rot1*utarget
 # target in lab frame
 #vtarget = utarget
 
-# setup ansatz for control functions
-use_bcarrier = true # new Bcarrier allows a constant control function
-
 Nctrl = 1
-Nosc = Nctrl 
 Nfreq = 1 # number of carrier frequencies
 
 Random.seed!(2456)
 # initial parameter guess
 
 # setup carrier frequencies
-om = zeros(Nosc,Nfreq)
+om = zeros(Nctrl,Nfreq)
 # Note: same frequencies for each p(t) (x-drive) and q(t) (y-drive)
 println("Carrier frequencies [GHz]: ", om[:,:]./(2*pi))
 
@@ -133,9 +128,6 @@ U0 = Ident[1:Ntot,1:N]
 params = Juqbox.objparams([N], [Nguard], T, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
                           Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops)
 
-params.saveConvHist = true
-params.use_bcarrier = true 
-
 # setup the initial parameter vector, either randomized or from file
 startFromScratch = true # true
 startFile = "rabi-pcof-opt-alpha-0.5.dat"
@@ -143,7 +135,7 @@ startFile = "rabi-pcof-opt-alpha-0.5.dat"
 if startFromScratch
     # D1 smaller than 3 does not work
     D1 = 3 # Number of B-spline coefficients per frequency, sin/cos and real/imag
-    nCoeff = 2*Nosc*Nfreq*D1 # factor '2' is for sin/cos
+    nCoeff = 2*Nctrl*Nfreq*D1 # factor '2' is for sin/cos
     pcof0  = zeros(nCoeff)
 
     if Nfreq == 1 # analytical solution
@@ -159,15 +151,13 @@ else
     # use if you want to have initial coefficients read from file
     pcof0 = vec(readdlm(startFile))
     nCoeff = length(pcof0)
-    D1 = div(nCoeff, 2*Nosc*Nfreq) # factor '2' is for sin/cos
-    nCoeff = 2*Nosc*Nfreq*D1 # just to be safe if the file doesn't contain the right number of elements
+    D1 = div(nCoeff, 2*Nctrl*Nfreq) # factor '2' is for sin/cos
+    nCoeff = 2*Nctrl*Nfreq*D1 # just to be safe if the file doesn't contain the right number of elements
     println("*** Starting from B-spline coefficients in file: ", startFile)
 end
 
 # min and max coefficient values
-useBarrier = true
-minCoeff = -maxpar*ones(nCoeff);
-maxCoeff = maxpar*ones(nCoeff);
+minCoeff, maxCoeff = Juqbox.assign_thresholds(params, D1, [maxpar])
 
 # For ipopt
 maxIter = 150 # optional argument
@@ -176,18 +166,10 @@ lbfgsMax = 250 # optional argument
 println("*** Settings ***")
 println("System Hamiltonian coefficients: (fa, xa) =  ", fa, xa)
 println("Total number of states, Ntot = ", Ntot, " Total number of guard states, Nguard = ", Nguard)
-if use_bcarrier
-  println("Using B-spline basis functions with carrier wave, # freq = ", Nfreq)
-else
-  println("Using regular B-spline basis functions")
-end
+println("Using B-spline basis functions with carrier wave, # freq = ", Nfreq)
 println("Number of coefficients per spline = ", D1, " Total number of parameters = ", nCoeff)
 println("Max parameter amplitudes: maxpar = ", maxpar)
 println("Tikhonov coefficients: tik0 = ", params.tik0)
-
-# Estimate number of terms in Neumann series for time stepping (Default 3)
-tol = eps(1.0); # machine precision
-Juqbox.estimate_Neumann!(tol, params, [maxpar])
 
 # Allocate all working arrays
 wa = Juqbox.Working_Arrays(params, nCoeff)
