@@ -825,7 +825,7 @@ function wmatsetup(Ne::Array{Int64,1}, Ng::Array{Int64,1})
             # normalize by the number of entries with w=1
             coeff = 10.0/nForb # was 1/nForb
         elseif Ndim == 3
-            fact = 0.1 # 1e-3 # for more emphasis on the "forbidden" states. Old value: 0.1
+            fact = 1e-3 #  0.1 # for more emphasis on the "forbidden" states. Old value: 0.1
             nForb = 0 # number of states with the highest index in at least one dimension
             q = 0
             for i3 = 1:Nt[3]
@@ -841,13 +841,16 @@ function wmatsetup(Ne::Array{Int64,1}, Ng::Array{Int64,1})
                         else
                             # determine and assign the largest penalty
                             if i1 > Ne[1]   #only included if at a guard level
-                                temp1 = (Nt[1] - Ne[1]) * fact^(Nt[1]-i1)
+#                                temp1 = (Nt[1] - Ne[1]) * fact^(Nt[1]-i1)
+                                temp1 = fact^(Nt[1]-i1)
                             end
                             if i2 > Ne[2]   #only included if at a guard level
-                                temp2 = (Nt[2] - Ne[2]) *fact^(Nt[2]-i2)
+#                                temp2 = (Nt[2] - Ne[2]) *fact^(Nt[2]-i2)
+                                temp2 = fact^(Nt[2]-i2)
                             end
                             if i3 > Ne[3]   #only included if at a guard level
-                                temp3 = (Nt[3] - Ne[3]) *fact^(Nt[3]-i3)
+#                                temp3 = (Nt[3] - Ne[3]) *fact^(Nt[3]-i3)
+                                temp3 = fact^(Nt[3]-i3)
                             end
 
                             forbFact=1.0
@@ -858,9 +861,9 @@ function wmatsetup(Ne::Array{Int64,1}, Ng::Array{Int64,1})
                             # if i2 == Nt[2] && i1<=Ne[1] && i3<=Ne3
                             #   forbFact=100
                             # end
-                            # if i3 == Nt[3] && i1<=Ne[1] && i2<=Ne[2]
-                            #   forbFact=100
-                            # end
+                            if i3 == Nt[3] && i1<=Ne[1] && i2<=Ne[2]
+                               forbFact=100
+                            end
 
                             w[q] = forbFact*max(temp1, temp2, temp3)
 
