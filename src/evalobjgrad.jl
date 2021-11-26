@@ -861,9 +861,9 @@ function wmatsetup(Ne::Array{Int64,1}, Ng::Array{Int64,1})
                             # if i2 == Nt[2] && i1<=Ne[1] && i3<=Ne3
                             #   forbFact=100
                             # end
-                            if i3 == Nt[3] && i1<=Ne[1] && i2<=Ne[2]
-                               forbFact=100
-                            end
+                            # if i3 == Nt[3] && i1<=Ne[1] && i2<=Ne[2]
+                            #    forbFact=100
+                            # end
 
                             w[q] = forbFact*max(temp1, temp2, temp3)
 
