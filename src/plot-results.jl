@@ -30,8 +30,8 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
     println("B-carrier basis: ", params.use_bcarrier)
     println("Number of time steps: ", params.nsteps)
 
-    # evaluate fidelity
-    objv, grad, unitaryhistory, fidelity = Juqbox.traceobjgrad(pcof, params, wa, true, true);
+    # evaluate fidelity and unitaryhistory
+    objv, unitaryhistory, fidelity = Juqbox.traceobjgrad(pcof, params, wa, true, false);
 
     # save convergence history
     convname = ""
@@ -100,6 +100,8 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
         end
     end
 
+    # final unitary
+    pluf = plot_final_unitary(unitaryhistory(:,:,end), params)
 
     # Evaluate the ctrl functions on this grid in time
     nplot = round(Int64, params.T*samplerate)
@@ -238,7 +240,7 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
     # ufinal = unitaryhistory[:,:,end]
 
     # Return an array of plot objects
-    return [pl1, pl2, pl3, pl4, pl5, pl6, plcof, pconv]
+    return [pl1, pl2, pl3, pl4, pl5, pl6, plcof, pconv, pluf]
 
 end
 

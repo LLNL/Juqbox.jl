@@ -457,3 +457,163 @@ function plot_conv_hist(params:: Juqbox.objparams, convname:: String="")
     return pconv
 end #plot_conv_hist
 
+"""
+    plt =  plot_final_unitary(final_unitary, params)
+
+Plot the essential levels of the solution operator at a fixed time and return a plot handle
+ 
+# Arguments
+- `final_unitary:: Array{ComplexF64,2}`: Ntot by Ness array holding the final state for each initial condition
+- `params:: objparams`: Struct with problem definition
+"""
+function plot_final_unitary(final_unitary::Array{ComplexF64,3}, params::objparams)
+    Ness = params.N
+    Ntot = Ness + params.Nguard
+    println("plot_final_unitary: Ntot = ", Ntot, " Ness = ", Ness)
+    
+    Ufinal = zeros(ComplexF64, Ness, Ness)
+
+    guardlev = identify_guard_levels(params)
+
+    row = 0
+    for q=1:Ntot
+        if !guardlev[q]
+            row += 1
+            Ufinal[row,:] = unitaryhistory[q,:,end]
+        end
+    end # for
+
+    tstr0 = "Final unitary, infid = " * @sprintf("%.3e", 1-fid)
+    pl_uf = plot(heatmap(abs.(Ufinal), c= :coolwarm), yflip=true, title=tstr0, aspect_ratio=:equal, clim=(0.0, 1.0))
+
+    return pl_uf
+end
+
+"""
+    plt =  plot_energy(unitaryhistory, params)
+
+Plot the evolution of the expected energy for each initial condition.
+ 
+# Arguments
+- `unitaryhistory:: Array{ComplexF64,3}`: Array holding the time evolution of the state for each initial condition
+- `params:: objparams`: Struct with problem definition
+"""
+function plot_energy(unitaryhistory::Array{ComplexF64,3}, params::objparams)
+    Nosc =  params.Nosc
+    Ness =  params.N
+    Nsteps = params.nsteps
+
+    # evaluate the expected energy level in each system
+    energy = zeros(Float64, Nosc, Ness, Nsteps)
+
+    for e=1:Nosc
+        
+        elev1 = zeros(Ntot)
+        q = 0
+        if Nosc == 1
+            for q1=1:params.Nt[1]
+                qe = q1
+                elev1[q+1] = qe - 1
+                q += 1
+            end
+        elseif Nosc == 2
+            for q2=1:params.Nt[2]
+                for q1=1:params.Nt[1]
+                    qind = [q1,q2]
+                    qe = qind[e]
+                    elev1[q+1] = qe - 1
+                    q += 1
+                end
+            end
+        elseif Nosc == 3
+            for q3=1:params.Nt[3]
+                for q2=1:params.Nt[2]
+                    for q1=1:params.Nt[1]
+                        qind = [q1,q2,q3]
+                        qe = qind[e]
+                        elev1[q+1] = qe - 1
+                        q += 1
+                    end
+                end
+            end
+        end # Nosc == 3
+
+        # println("e = ", e, " elev = ", elev1)
+
+        sv2 = zeros(Ntot)
+
+        for s=1:Nsteps
+            for c = 1:Ness
+                sv2 = (abs.(unitaryhistory[:,c,s])).^2
+                energy[e,c,s] = elev1' * sv2
+            end
+        end
+
+        # test initial pop
+        # s = 1
+        # for c = 1:Ness
+        #     sv2 = (abs.(unitaryhistory[:,c,s])).^2
+        #     en = elev1' * sv2
+        #     println("sys = ", e, " c = ", c, " init energy = ", en, " energy[e,c,1] = ", energy[e,c,1])
+        # end
+        
+    end # for e
+
+
+    t = range(0, stop = params.T, length = nsteps)
+    if nsteps < 10000
+        stride = 1
+    elseif nsteps < 20000
+        stride = 2
+    else 
+        stride = 4 # only plot every 4th data point
+    end
+    rg = 1:stride:nsteps # range object
+
+  # one figure for the response of each basis vector
+    plotarray = Array{Plots.Plot}(undef, Ness) #empty array for separate plots
+
+    for ii in 1:Ness # N = Ne[1] * Ne[2], ordered as
+        if params.Nosc == 1
+            statestr = string(ii-1)
+        elseif params.Nosc == 2
+            # Example: Ne[2] = 3, Ne[1]=4 
+            #   0,   1,  2,   3,   4,  5,   6,   7,   8,  9,  10, 11  (ii-1)
+            # 00, 01, 02, 03, 10, 11, 12, 13, 20, 21, 22, 23
+            statestr = string( div((ii-1), params.Ne[1]), mod(ii-1, params.Ne[1]))
+        elseif params.Nosc == 3
+            # Example: Ne[3] = 2, Ne[2] = 3, Ne[1]=4 
+            #     0,    1,     2,    3,    4,     5,     6,    7,     8,    9,   10,   11,   12,   13,   14,  15,   16,   17,   18,  19,   20,   21,   22,   23  (ii-1)
+            # 000, 001, 002, 003, 010, 011, 012, 013, 020, 021, 022, 023,  100, 101, 102, 103, 110, 111, 112, 113, 120, 121, 122, 123
+            s3 = div((ii-1), params.Ne[1]*params.Ne[2])
+            s12 = (ii-1) % (params.Ne[1]*params.Ne[2])
+            s2 = div(s12, params.Ne[1])
+            s1 = s12 %  params.Ne[1]
+            statestr = string( s3, s2, s1 )
+        end
+
+        titlestr = latexstring("From\\ state\\ |", statestr, "\\rangle")
+        h = plot(title = titlestr, legend= (0.3,0.3), fg_legend = :transparent, xlabel = "Time [ns]", ylabel="Expected energy")
+
+        for e = 1:Nosc
+            # make plot label
+            labstr = "sys-" * string(e)
+            plot!(t[rg], energy[e,ii,rg], lab = labstr)
+        end
+
+        # save the subplot
+        plotarray[ii] = h
+    end # for ii
+    
+    # organize the subplots
+    if Ness <= 2
+        plt = plot(plotarray..., layout = (Ness,1))
+    else
+        vsize = 300*round(Int64,sqrt(Ness))
+        hsize = 4*vsize/3
+        plt = plot(plotarray..., layout = Ness, size=(hsize, vsize) )
+    end
+    
+    return plt
+end
+
