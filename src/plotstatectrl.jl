@@ -466,7 +466,7 @@ Plot the essential levels of the solution operator at a fixed time and return a 
 - `final_unitary:: Array{ComplexF64,2}`: Ntot by Ness array holding the final state for each initial condition
 - `params:: objparams`: Struct with problem definition
 """
-function plot_final_unitary(final_unitary::Array{ComplexF64,3}, params::objparams)
+function plot_final_unitary(final_unitary::Array{ComplexF64,2}, params::objparams)
     Ness = params.N
     Ntot = Ness + params.Nguard
     println("plot_final_unitary: Ntot = ", Ntot, " Ness = ", Ness)
@@ -479,7 +479,7 @@ function plot_final_unitary(final_unitary::Array{ComplexF64,3}, params::objparam
     for q=1:Ntot
         if !guardlev[q]
             row += 1
-            Ufinal[row,:] = unitaryhistory[q,:,end]
+            Ufinal[row,:] = final_unitary[q,:]
         end
     end # for
 
