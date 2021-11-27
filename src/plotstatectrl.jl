@@ -501,6 +501,7 @@ Plot the evolution of the expected energy for each initial condition.
 function plot_energy(unitaryhistory::Array{ComplexF64,3}, params::objparams)
     Nosc =  params.Nosc
     Ness =  params.N
+    Ntot = Ness + params.Nguard
     Nsteps = params.nsteps
 
     # evaluate the expected energy level in each system
