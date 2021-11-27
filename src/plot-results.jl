@@ -101,7 +101,7 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
     end
 
     # final unitary
-    pluf = plot_final_unitary(unitaryhistory[:,:,end], params)
+    pluf = plot_final_unitary(unitaryhistory[:,:,end], params, fidelity)
 
     # Evaluate the ctrl functions on this grid in time
     nplot = round(Int64, params.T*samplerate)
