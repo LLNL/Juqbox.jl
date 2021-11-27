@@ -100,8 +100,10 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
         end
     end
 
-    # final unitary
+    # final unitary plotted in matrix form
     pluf = plot_final_unitary(unitaryhistory[:,:,end], params, fidelity)
+
+    plen = plot_energy(unitaryhistory, params)
 
     # Evaluate the ctrl functions on this grid in time
     nplot = round(Int64, params.T*samplerate)
@@ -240,7 +242,7 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
     # ufinal = unitaryhistory[:,:,end]
 
     # Return an array of plot objects
-    return [pl1, pl2, pl3, pl4, pl5, pl6, plcof, pconv, pluf]
+    return [pl1, pl2, pl3, pl4, pl5, pl6, plcof, pconv, pluf, plen]
 
 end
 
