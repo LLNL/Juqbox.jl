@@ -49,33 +49,6 @@ using Juqbox
 
 Base.show(io::IO, f::Float64) = @printf(io, "%20.13e", f)
 
-# function initial_cond(Ntot, N, Ne, Ng)
-#     Ident = Matrix{Float64}(I, Ntot, Ntot)
-#     U0 = Ident[1:Ntot,1:N] # initial guess
-#     #adjust initial guess
-#     if Ng[1]+Ng[2]+Ng[3] > 0
-#         Nt = Ne + Ng
-
-#         col = 0
-#         m = 0
-#         for k3 in 1:Nt[3]
-#             for k2 in 1:Nt[2]
-#                 for k1 in 1:Nt[1]
-#                     m += 1
-#                     # is this a guard level?
-#                     guard = (k1 > Ne[1]) || (k2 > Ne[2]) || (k3 > Ne[3])
-#                     if !guard
-#                         col = col+1
-#                         U0[:,col] = Ident[:,m]
-#                     end # if ! guard
-#                 end #for
-#             end # for
-#         end # for
-        
-#     end # if
-#     return U0
-# end
-
 Ne1 = 2 # essential energy levels per oscillator # AP: want Ne1=Ne2=2, but Ne3 = 1
 Ne2 = 2
 Ne3 = 1
@@ -166,15 +139,17 @@ nsteps = calculate_timestep(Tmax, H0, Hsym_ops, Hanti_ops, maxpar, Pmin)
 println("Number of time steps = ", nsteps)
 
 Nctrl = length(Hsym_ops)
-Nfreq = 3 # 3 # number of carrier frequencies
+
+Nfreq = 2 # 3 # number of carrier frequencies
 
 om = zeros(Nctrl,Nfreq) # In the rotating frame all ctrl Hamiltonians have a zero resonace frequency
 
 # initialize the carrier frequencies
 @assert(Nfreq == 1 || Nfreq == 2 || Nfreq == 3)
 if Nfreq==2
-    # freq 2 and 3 for seg 3 and 6 (coupler)
-    om[1:Nctrl,2] .= -1.0*pi*xas # coupling freq for all (re/im)
+    om[1,2] = -2.0*pi*xa # carrier freq for ctrl Hamiltonian 1
+    om[2,2] = -2.0*pi*xb # carrier freq for ctrl Hamiltonian 2
+    om[3,2] = -2.0*pi*sqrt(xas*xbs) # carrier freq for ctrl Hamiltonian #3
 elseif Nfreq==3
     # fundamental resonance frequencies for the transmons 
     om[1:2,2] .= -2.0*pi*xa # carrier freq's for ctrl Hamiltonian 1 & 2
