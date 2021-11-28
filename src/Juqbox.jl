@@ -15,8 +15,8 @@ using DelimitedFiles
 export splineparams, bspline2, gradbspline2
 export bcparams, bcarrier2, gradbcarrier2!
 
-export objparams, traceobjgrad, identify_guard_levels, identify_forbidden_levels
-export plotunitary, plotspecified, evalctrl, plot_results
+export objparams, traceobjgrad, identify_guard_levels, identify_forbidden_levels, initial_cond
+export plotunitary, plotspecified, evalctrl, plot_results, plot_energy, plot_final_unitary
 export setup_ipopt_problem, Working_Arrays, estimate_Neumann!, setup_rotmatrices
 export run_optimizer, plot_conv_hist, wmatsetup
 export zero_start_end!, assign_thresholds, assign_thresholds_freq, assign_thresholds_ctrl_freq 
