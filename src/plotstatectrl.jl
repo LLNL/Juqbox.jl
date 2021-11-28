@@ -561,15 +561,15 @@ function plot_energy(unitaryhistory::Array{ComplexF64,3}, params::objparams)
     end # for e
 
 
-    t = range(0, stop = params.T, length = nsteps)
-    if nsteps < 10000
+    t = range(0, stop = params.T, length = Nsteps)
+    if Nsteps < 10000
         stride = 1
-    elseif nsteps < 20000
+    elseif Nsteps < 20000
         stride = 2
     else 
         stride = 4 # only plot every 4th data point
     end
-    rg = 1:stride:nsteps # range object
+    rg = 1:stride:Nsteps # range object
 
   # one figure for the response of each basis vector
     plotarray = Array{Plots.Plot}(undef, Ness) #empty array for separate plots
