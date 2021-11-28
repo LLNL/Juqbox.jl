@@ -35,29 +35,29 @@ Base.show(io::IO, f::Float64) = @printf(io, "%20.13e", f)
 
 using Juqbox
 
-function initial_cond(Ntot, N, Ne, Ng)
-    Ident = Matrix{Float64}(I, Ntot, Ntot)
-    U0 = Ident[1:Ntot, 1:N] # Rectangular subset of identity
-    # adjust the initial guess
-    if Ng[1] + Ng[2] > 0
-        Nt = Ne + Ng
-        # build up a basis for the essential states
-        col = 0
-        m = 0
-        for k2 in 1:Nt[2]
-            for k1 in 1:Nt[1]
-                m += 1
-                # is this a guard level?
-                guard = (k1 > Ne[1]) || (k2 > Ne[2])
-                if !guard
-                    col += 1
-                    U0[:,col] = Ident[:,m]
-                end # if ! guard
-            end # for
-        end # for
-    end # if
-    return U0
-end
+# function my_initial_cond(Ntot, N, Ne, Ng)
+#     Ident = Matrix{Float64}(I, Ntot, Ntot)
+#     U0 = Ident[1:Ntot, 1:N] # Rectangular subset of identity
+#     # adjust the initial guess
+#     if Ng[1] + Ng[2] > 0
+#         Nt = Ne + Ng
+#         # build up a basis for the essential states
+#         col = 0
+#         m = 0
+#         for k2 in 1:Nt[2]
+#             for k1 in 1:Nt[1]
+#                 m += 1
+#                 # is this a guard level?
+#                 guard = (k1 > Ne[1]) || (k2 > Ne[2])
+#                 if !guard
+#                     col += 1
+#                     U0[:,col] = Ident[:,m]
+#                 end # if ! guard
+#             end # for
+#         end # for
+#     end # if
+#     return U0
+# end
 
 Ne1 = 2 # essential energy levels per oscillator 
 Ne2 = 2
@@ -145,48 +145,46 @@ Hsym_ops=[Array(amat+adag), Array(bmat+bdag)]
 Hanti_ops=[Array(amat-adag), Array(bmat-bdag)]
 H0 = Array(H0)
 
-use_bcarrier = true # Use carrier waves in the control pulses?
-
-if use_bcarrier
-    Nfreq = 2 # number of carrier frequencies
-else
-    Nfreq = 1
-end
+Nfreq = 2 # number of carrier frequencies
 
 Ncoupled = length(Hsym_ops)
 om = zeros(Ncoupled, Nfreq) # Allocate space for the carrier wave frequencies
 
-if use_bcarrier
-    @assert(Nfreq==1 || Nfreq==2 || Nfreq==3)
-    if Nfreq == 2
-        om[1:Ncoupled,2] .= -2.0*pi*x12 # coupling freq for both ctrl funcs (re/im)
-    elseif Nfreq == 3
-        om[1,2] = -2.0*pi*x1 # 1st ctrl, re
-        om[2,2] = -2.0*pi*x2 # 2nd ctrl, re
-        om[1:Ncoupled,3] .= -2.0*pi*x12 # coupling freq for both ctrl funcs (re/im)
-    end
+@assert(Nfreq==1 || Nfreq==2 || Nfreq==3)
+if Nfreq == 2
+    om[1:Ncoupled,2] .= -2.0*pi*x12 # coupling freq for both ctrl funcs (re/im)
+elseif Nfreq == 3
+    om[1,2] = -2.0*pi*x1 # 1st ctrl, re
+    om[2,2] = -2.0*pi*x2 # 2nd ctrl, re
+    om[1:Ncoupled,3] .= -2.0*pi*x12 # coupling freq for both ctrl funcs (re/im)
 end
+
 println("Carrier frequencies 1st ctrl Hamiltonian [GHz]: ", om[1,:]./(2*pi))
 println("Carrier frequencies 2nd ctrl Hamiltonian [GHz]: ", om[2,:]./(2*pi))
 
-# specify target gate
-# target for CNOT gate N=2, Ng = 1 coupled
-utarget = zeros(ComplexF64, Ntot, N)
-@assert(Ng1 == 0 )
-if Ng1 == 0
-    utarget[1,1] = 1.0
-    utarget[2,3] = 1.0
-    utarget[3,2] = 1.0
-    utarget[4,4] = 1.0
-end
+#U0 = my_initial_cond(Ntot, N, Ne, Ng)
+U0 = initial_cond(Ne, Ng)
+
+# SWAP target for the essential levels
+gate_swap =  zeros(ComplexF64, N, N)
+gate_swap[1,1] = 1.0
+gate_swap[2,3] = 1.0
+gate_swap[3,2] = 1.0
+gate_swap[4,4] = 1.0
+
+utarget = U0 * gate_swap
 
 # rotation matrices
 omega1, omega2 = Juqbox.setup_rotmatrices(Ne, Ng, rot_freq)
 
-U0 = initial_cond(Ntot, N, Ne, Ng)
+# Compute Ra*Rb*utarget
+rot1 = Diagonal(exp.(im*omega1*Tmax))
+rot2 = Diagonal(exp.(im*omega2*Tmax))
+
+vtarget = rot1*rot2*utarget # target in the rotating frame
 
 # assemble problem description for the optimization
-params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=utarget, Cfreq=om, Rfreq=rot_freq,
+params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
                           Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, use_sparse=use_sparse)
 
 # initial parameter guess

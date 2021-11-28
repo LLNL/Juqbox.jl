@@ -42,8 +42,8 @@ Nctrl = 2 # Number of control Hamiltonians
 
 Ne1 = 2 # essential energy levels per oscillator 
 Ne2 = 2
-Ng1 = 1 # 0 # Osc-1, number of guard states
-Ng2 = 1 # 0 # Osc-2, number of guard states
+Ng1 = 2 # 0 # Osc-1, number of guard states
+Ng2 = 2 # 0 # Osc-2, number of guard states
 
 Ne = [Ne1, Ne2]
 Ng = [Ng1, Ng2]
@@ -218,7 +218,7 @@ casename = "cnot2" # for constructing file names
 minCoeff, maxCoeff = Juqbox.assign_thresholds(params,D1,maxpar)
 println("Number of min coeff: ", length(minCoeff), "Max Coeff: ", length(maxCoeff))
 
-maxIter = 150 # 0 #250 #50 # optional argument
+maxIter = 50 # 0 #250 #50 # optional argument
 lbfgsMax = 250 # optional argument
 
 println("*** Settings ***")
