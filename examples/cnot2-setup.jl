@@ -61,8 +61,8 @@ Tmax = 50.0 # Duration of gate
 fa = 4.10595    # official
 fb = 4.81526   # official
 favg = 0.5*(fa+fb)
-#rot_freq = [fa, fb] # rotational frequencies
-rot_freq = [favg, favg] # rotational frequencies
+rot_freq = [fa, fb] # rotational frequencies
+#rot_freq = [favg, favg] # rotational frequencies
 x1 = 2* 0.1099  # official
 x2 = 2* 0.1126   # official
 x12 = 0.1 # Artificially large to allow fast coupling. Actual value: 1e-6 
@@ -150,14 +150,17 @@ end
 println("Carrier frequencies (lab frame) 1st ctrl Hamiltonian [GHz]: ", rot_freq[1] .+ om[1,:]./(2*pi))
 println("Carrier frequencies (lab frame) 2nd ctrl Hamiltonian [GHz]: ", rot_freq[2] .+ om[2,:]./(2*pi))
 
-# specify target gate
-# target for CNOT gate N=2, Ng = 1 coupled
-utarget = zeros(ComplexF64, Ntot, N)
+# CNOT target for the essential levels
+gate_cnot =  zeros(ComplexF64, N, N)
+gate_cnot[1,1] = 1.0
+gate_cnot[2,2] = 1.0
+gate_cnot[3,4] = 1.0
+gate_cnot[4,3] = 1.0
 
-utarget[1,1] = 1.0
-utarget[2,2] = 1.0
-utarget[3+Ng1,4] = 1.0
-utarget[4+Ng1,3] = 1.0
+# Initial basis with guard levels
+U0 = initial_cond(Ne, Ng)
+
+utarget = U0 * gate_cnot
 
 # rotation matrices
 omega1, omega2 = Juqbox.setup_rotmatrices(Ne, Ng, rot_freq)
@@ -171,32 +174,6 @@ if eval_lab
 else    
     vtarget = rot1*rot2*utarget # target in the rotating frame
 end
-
-function initial_cond(Ntot, N, Ne, Ng)
-    Ident = Matrix{Float64}(I, Ntot, Ntot)
-    U0 = Ident[1:Ntot, 1:N] # Rectangular subset of identity
-    # adjust the initial guess
-    if Ng[1] + Ng[2] > 0
-        Nt = Ne + Ng
-        # build up a basis for the essential states
-        col = 0
-        m = 0
-        for k2 in 1:Nt[2]
-            for k1 in 1:Nt[1]
-                m += 1
-                # is this a guard level?
-                guard = (k1 > Ne[1]) || (k2 > Ne[2])
-                if !guard
-                    col += 1
-                    U0[:,col] = Ident[:,m]
-                end # if ! guard
-            end # for
-        end # for
-    end # if
-    return U0
-end
-
-U0 = initial_cond(Ntot, N, Ne, Ng)
 
 # assemble problem description for the optimization
 if eval_lab

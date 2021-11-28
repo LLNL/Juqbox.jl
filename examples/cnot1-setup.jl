@@ -82,12 +82,20 @@ end
 
 maxpar = maximum(maxamp)
 
-Ident = Matrix{Float64}(I, Ntot, Ntot)   
+# Initial basis with guard levels
+U0 = initial_cond([N], [Nguard])
 
-# CNOT trarget
-utarget = Ident[1:Ntot,1:N]
-utarget[:,3] = Ident[:,4]
-utarget[:,4] = Ident[:,3]
+# CNOT target
+gate_cnot =  zeros(ComplexF64, N, N)
+gate_cnot[1,1] = 1.0
+gate_cnot[2,2] = 1.0
+gate_cnot[3,4] = 1.0
+gate_cnot[4,3] = 1.0
+
+# Initial basis with guard levels
+U0 = initial_cond([N], [Nguard])
+
+utarget = U0 * gate_cnot
 
 omega1 = Juqbox.setup_rotmatrices([N], [Nguard], [fa])
 
@@ -96,9 +104,6 @@ rot1 = Diagonal(exp.(im*omega1*T))
 
 # target in the rotating frame
 vtarget = rot1*utarget
-
-# Initial conditions
-U0 = Ident[1:Ntot,1:N]
 
 params = Juqbox.objparams([N], [Nguard], T, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
                           Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops)
@@ -132,7 +137,7 @@ minCoeff, maxCoeff = Juqbox.assign_thresholds_freq(maxamp, Nctrl, Nfreq, D1)
 samplerate = 32 # only used for plotting
 casename = "cnot1" # base file name (used in optimize-once.jl)
 
-maxIter = 150 # 0  # optional argument
+maxIter = 75 # 0  # optional argument
 lbfgsMax = 250 # optional argument
 ipTol = 1e-5   # optional argument
 acceptTol = ipTol # 1e-4 # acceptable tolerance 

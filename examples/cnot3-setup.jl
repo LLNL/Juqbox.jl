@@ -49,39 +49,40 @@ using Juqbox
 
 Base.show(io::IO, f::Float64) = @printf(io, "%20.13e", f)
 
-function initial_cond(Ntot, N, Ne, Ng)
-    Ident = Matrix{Float64}(I, Ntot, Ntot)
-    U0 = Ident[1:Ntot,1:N] # initial guess
-    #adjust initial guess
-    if Ng[1]+Ng[2]+Ng[3] > 0
-        Nt = Ne + Ng
+# function initial_cond(Ntot, N, Ne, Ng)
+#     Ident = Matrix{Float64}(I, Ntot, Ntot)
+#     U0 = Ident[1:Ntot,1:N] # initial guess
+#     #adjust initial guess
+#     if Ng[1]+Ng[2]+Ng[3] > 0
+#         Nt = Ne + Ng
 
-        col = 0
-        m = 0
-        for k3 in 1:Nt[3]
-            for k2 in 1:Nt[2]
-                for k1 in 1:Nt[1]
-                    m += 1
-                    # is this a guard level?
-                    guard = (k1 > Ne[1]) || (k2 > Ne[2]) || (k3 > Ne[3])
-                    if !guard
-                        col = col+1
-                        U0[:,col] = Ident[:,m]
-                    end # if ! guard
-                end #for
-            end # for
-        end # for
+#         col = 0
+#         m = 0
+#         for k3 in 1:Nt[3]
+#             for k2 in 1:Nt[2]
+#                 for k1 in 1:Nt[1]
+#                     m += 1
+#                     # is this a guard level?
+#                     guard = (k1 > Ne[1]) || (k2 > Ne[2]) || (k3 > Ne[3])
+#                     if !guard
+#                         col = col+1
+#                         U0[:,col] = Ident[:,m]
+#                     end # if ! guard
+#                 end #for
+#             end # for
+#         end # for
         
-    end # if
-    return U0
-end
+#     end # if
+#     return U0
+# end
 
 Ne1 = 2 # essential energy levels per oscillator # AP: want Ne1=Ne2=2, but Ne3 = 1
 Ne2 = 2
 Ne3 = 1
+
 Ng1 = 2 # Osc-1, number of guard states
 Ng2 = 2 # Osc-2, number of guard states
-Ng3 = 5 # Osc-3, number of guard states
+Ng3 = 3 # 5 # Osc-3, number of guard states
 
 Ne = [Ne1, Ne2, Ne3]
 Ng = [Ng1, Ng2, Ng3]
@@ -188,42 +189,25 @@ println("Carrier frequencies 3rd ctrl Hamiltonian [GHz]: ", om[3,:]./(2*pi))
 
 casename = "cnot-storage"
 
-# specify target gate
-#target for CNOT (2 essential states, 1 g, 1 g, 7 guard states)
-
-# The 2-osc CNOT gate is a 9x4 matrix and the identity for the 3rd oscillator with
-# 7 guards is an 9x2 identity matrix
-
-N2tot = Nt[1] * Nt[2]
-N2 = Ne[1]*Ne[2]
-
-utarget = zeros(ComplexF64, N2tot*Nt[3], N2*Ne[3])
 # target for CNOT gate between oscillators 1 and 2
-G2 = zeros(ComplexF64, N2tot, N2)
-@assert(Ng[1] == 2 || Ng[1] == 1 || Ng[1] == 0)
-@assert(Ne[1] == 2 && Ne[2] == 2)
-if Ne[1]==2 && Ne[2] == 2
-  if Ng[1] == 0
-    G2[1,1] = 1.0
-    G2[2,2] = 1.0
-    G2[3,4] = 1.0
-    G2[4,3] = 1.0
-  elseif Ng[1] == 1
-    G2[1,1] = 1.0
-    G2[2,2] = 1.0
-    G2[4,4] = 1.0
-    G2[5,3] = 1.0
-  elseif Ng[1] == 2
-    G2[1,1] = 1.0
-    G2[2,2] = 1.0
-    G2[5,4] = 1.0
-    G2[6,3] = 1.0
-  end
+gate_cnot = zeros(ComplexF64, 4, 4)
+gate_cnot[1,1] = 1.0
+gate_cnot[2,2] = 1.0
+gate_cnot[3,4] = 1.0
+gate_cnot[4,3] = 1.0
+
+if Ne[3] == 1
+    Utarg = gate_cnot
+else
+    Ident3 = Array{Float64, 2}(I, Ne[3], Ne[3])
+    Utarg = kron(Ident3, gate_cnot)
 end
 
-Ident = Matrix{Float64}(I, Ntot, Ntot)
-I3 = Matrix{Float64}(I, Nt[3], Ne[3]);
-utarget = kron(I3, G2) # The CNOT is between oscillator 1 and 2. Identity for the 3rd oscillator
+# Initial basis with guard levels
+U0 = initial_cond(Ne, Ng)
+# U0 has size Ntot x Ness. Each of the Ness columns has one non-zero element, which is 1.
+
+utarget = U0 * Utarg
 
 # rotation matrices
 omega1, omega2, omega3 = Juqbox.setup_rotmatrices(Ne, Ng, rot_freq)
@@ -236,8 +220,6 @@ rot3 = Diagonal(exp.(im*omega3*Tmax))
 # target in the rotating frame
 vtarget = rot1*rot2*rot3*utarget
 
-U0 = initial_cond(Ntot, N, Ne, Ng)
-
 # NOTE: maxpar is now a vector with 3 elements: amax, bmax, cmax
 params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
                           Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, use_sparse=use_sparse)
@@ -245,7 +227,7 @@ params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=vtarget, Cfreq
 Random.seed!(2456)
 
 # setup the initial parameter vector, either randomized or from file
-startFromScratch = false # true
+startFromScratch = true # false
 startFile="drives/cnot3-pcof-opt.jld2"
 
 if startFromScratch
@@ -266,7 +248,7 @@ end
 minCoeff, maxCoeff = Juqbox.assign_thresholds(params,D1,maxpar)
 
 # for ipopt
-maxIter = 0 # use the parameters on file # 100 # needs more than 100 iter to converge properly
+maxIter = 150 # 0 # use the parameters on file # 100 # needs more than 100 iter to converge properly
 lbfgsMax = 250 # optional argument
 
 # output run information
