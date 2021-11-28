@@ -483,7 +483,7 @@ function plot_final_unitary(final_unitary::Array{ComplexF64,2}, params::objparam
         end
     end # for
 
-    tstr0 = "Final unitary, infid = " * @sprintf("%.3e", 1-fid)
+    tstr0 = "Final unitary, fidelity = " * @sprintf("%.5f", fid)
     pl_uf = plot(heatmap(abs.(Ufinal), c= :coolwarm), yflip=true, title=tstr0, aspect_ratio=:equal, clim=(0.0, 1.0))
 
     return pl_uf
