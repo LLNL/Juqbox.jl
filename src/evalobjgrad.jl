@@ -823,7 +823,7 @@ function wmatsetup(Ne::Array{Int64,1}, Ng::Array{Int64,1})
             end # for i2
 
             # normalize by the number of entries with w=1
-            coeff = 10.0/nForb # was 1/nForb
+            coeff = 1.0/nForb # was 1/nForb
         elseif Ndim == 3
             fact = 1e-3 #  0.1 # for more emphasis on the "forbidden" states. Old value: 0.1
             nForb = 0 # number of states with the highest index in at least one dimension
@@ -2056,3 +2056,62 @@ function grad_alloc(Nparams::Int64)
     return gr, gi, gradobjfadj, tr_adj
 end
 
+# setup the initial conditions
+"""
+    u_init = initial_cond(Ne, Ng)
+
+Setup a basis of canonical unit vectors that span the essential Hilbert space, setting all guard levels to zero
+ 
+# Arguments
+- `Ne:: Array{Int64}`: Array holding the number of essential levels in each system
+- `Ng:: Array{Int64}`: Array holding the number of guard levels in each system
+"""
+function initial_cond(Ne, Ng)
+    Nt = Ne + Ng
+    Ntot = prod(Nt)
+    N = prod(Ne)
+    Ident = Matrix{Float64}(I, Ntot, Ntot)
+    U0 = Ident[1:Ntot,1:N] # initial guess
+
+    #adjust initial guess if there are ghost points
+    if length(Nt) == 3
+        if Ng[1]+Ng[2]+Ng[3] > 0
+            col = 0
+            m = 0
+            for k3 in 1:Nt[3]
+                for k2 in 1:Nt[2]
+                    for k1 in 1:Nt[1]
+                        m += 1
+                        # is this a guard level?
+                        guard = (k1 > Ne[1]) || (k2 > Ne[2]) || (k3 > Ne[3])
+                        if !guard
+                            col = col+1
+                            U0[:,col] = Ident[:,m]
+                        end # if ! guard
+                    end #for
+                end # for
+            end # for            
+        end # if  
+    elseif length(Nt) == 2
+        if Ng[1] + Ng[2] > 0
+            Nt = Ne + Ng
+            # build up a basis for the essential states
+            col = 0
+            m = 0
+            for k2 in 1:Nt[2]
+                for k1 in 1:Nt[1]
+                    m += 1
+                    # is this a guard level?
+                    guard = (k1 > Ne[1]) || (k2 > Ne[2])
+                    if !guard
+                        col += 1
+                        U0[:,col] = Ident[:,m]
+                    end # if ! guard
+                end # for
+            end # for
+        end # if
+    elseif length(Nt) > 3
+        println("ERROR: initial_cond(): length(Nt) = ", length(Nt), " is not implemented")
+    end
+    return U0
+end
