@@ -134,7 +134,7 @@ where the fundamental frequency is random.
 - `nCoeff:: Int64`: Number of parameters in optimization
 - `minCoeff:: Array{Float64, 1}`: Minimum allowable value for each parameter
 - `maxCoeff:: Array{Float64, 1}`: Maximum allowable value for each parameter
-- `maxIter:: Int64`: Maximum number of iterations to be taken by optimizer
+- `maxIter:: Int64`: Maximum number of iterations to be taken by optimizer (keyword arg)
 - `lbfgsMax:: Int64`: Maximum number of past iterates for Hessian approximation by L-BFGS (keyword arg)
 - `startFromScratch:: Bool`: Specify whether the optimization is starting from file or not (keyword arg)
 - `ipTol:: Float64`: Desired convergence tolerance (relative) (keyword arg)

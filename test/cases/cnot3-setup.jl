@@ -460,7 +460,7 @@ tol = eps(1.0); # machine precision
 Juqbox.estimate_Neumann!(tol, params, maxpar)
 
 wa = Juqbox.Working_Arrays(params, nCoeff)
-prob = Juqbox.setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff, maxIter, lbfgsMax)
+prob = Juqbox.setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff, maxIter=maxIter, lbfgsMax=lbfgsMax)
 
 # uncomment to run the gradient checker for the initial pcof
 #addOption( prob, "derivative_test", "first-order"); # for testing the gradient
