@@ -465,6 +465,7 @@ Plot the essential levels of the solution operator at a fixed time and return a 
 # Arguments
 - `final_unitary:: Array{ComplexF64,2}`: Ntot by Ness array holding the final state for each initial condition
 - `params:: objparams`: Struct with problem definition
+- `fid:: Float64`: Gate fidelity (for plot title)
 """
 function plot_final_unitary(final_unitary::Array{ComplexF64,2}, params::objparams, fid::Float64)
     Ness = params.N
