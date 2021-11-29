@@ -119,8 +119,9 @@ function intermediate_par(
 end
 
 """
-    prob = setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff [, maxIter=50, 
-                            lbfgsMax=10, startFromScratch=true, ipTol=1e-5, acceptTol=1e-5, acceptIter=15])
+    prob = setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff; maxIter=50, 
+                            lbfgsMax=10, startFromScratch=true, ipTol=1e-5, acceptTol=1e-5, acceptIter=15,
+                            nodes=[0.0], weights=[1.0])
 
 Setup structure containing callback functions and convergence criteria for 
 optimization via IPOPT. Note the last two inputs, `nodes', and 
@@ -134,15 +135,15 @@ where the fundamental frequency is random.
 - `minCoeff:: Array{Float64, 1}`: Minimum allowable value for each parameter
 - `maxCoeff:: Array{Float64, 1}`: Maximum allowable value for each parameter
 - `maxIter:: Int64`: Maximum number of iterations to be taken by optimizer
-- `lbfgsMax:: Int64`: Maximum number of past iterates for Hessian approximation by L-BFGS
-- `startFromScratch:: Bool`: Specify whether the optimization is starting from file or not
-- `ipTol:: Float64`: Desired convergence tolerance (relative)
-- `acceptTol:: Float64`: Acceptable convergence tolerance (relative)
-- `acceptIter:: Int64`: Number of acceptable iterates before triggering termination
-- `nodes:: Array{Float64, 1}`: User specified quadrature nodes on the interval [-ϵ,ϵ] for some ϵ
-- `weights:: Array{Float64, 1}`: User specified quadrature weights on the interval [-ϵ,ϵ] for some ϵ
+- `lbfgsMax:: Int64`: Maximum number of past iterates for Hessian approximation by L-BFGS (keyword arg)
+- `startFromScratch:: Bool`: Specify whether the optimization is starting from file or not (keyword arg)
+- `ipTol:: Float64`: Desired convergence tolerance (relative) (keyword arg)
+- `acceptTol:: Float64`: Acceptable convergence tolerance (relative) (keyword arg)
+- `acceptIter:: Int64`: Number of acceptable iterates before triggering termination (keyword arg)
+- `nodes:: Array{Float64, 1}`: Risk-neutral opt: User specified quadrature nodes on the interval [-ϵ,ϵ] for some ϵ (keyword arg)
+- `weights:: Array{Float64, 1}`: Risk-neutral opt: User specified quadrature weights on the interval [-ϵ,ϵ] for some ϵ (keyword arg)
 """
-function setup_ipopt_problem(params:: Juqbox.objparams, wa::Working_Arrays, nCoeff:: Int64, minCoeff:: Array{Float64, 1}, maxCoeff:: Array{Float64, 1}, 
+function setup_ipopt_problem(params:: Juqbox.objparams, wa::Working_Arrays, nCoeff:: Int64, minCoeff:: Array{Float64, 1}, maxCoeff:: Array{Float64, 1};
                              maxIter:: Int64=50, lbfgsMax:: Int64=10, 
                              startFromScratch:: Bool=true, ipTol:: Float64=1e-5, 
                              acceptTol:: Float64=1e-5, acceptIter:: Int64=15,
