@@ -154,6 +154,6 @@ end
 println("Tikhonov coefficients: tik0 = ", params.tik0)
 
 wa = Juqbox.Working_Arrays(params,nCoeff)
-prob = Juqbox.setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff, maxIter, lbfgsMax, startFromScratch)
+prob = Juqbox.setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff, maxIter=maxIter, lbfgsMax=lbfgsMax, startFromScratch=startFromScratch)
 
 println("Initial coefficient vector stored in 'pcof0'")
