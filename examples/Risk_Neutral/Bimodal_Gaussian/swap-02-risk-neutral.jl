@@ -175,8 +175,8 @@ nsteps = calculate_timestep(T, H0, Hsym_ops, Hanti_ops, [maxctrl])
 println("# time steps: ", nsteps)
 
 # Initial conditions for basis
-Ident = Matrix{Float64}(UniformScaling(1), Ntot, Ntot)   
-U0 = Ident[1:Ntot,1:N]
+U0 = initial_cond([N], [Nguard])
+
 
 # params = Juqbox.parameters([N], [Nguard], T, nsteps, U0, vtarget, om, H0, Hsym_ops, Hanti_ops)
 params = Juqbox.objparams([N], [Nguard], T, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
@@ -239,6 +239,6 @@ Juqbox.estimate_Neumann!(tol, params, [maxpar])
 
 # Allocate all working arrays
 wa = Juqbox.Working_Arrays(params,nCoeff)
-prob = Juqbox.setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff, maxIter, lbfgsMax, startFromScratch, ipTol,acceptTol, acceptIter, nodes, weights) 
+prob = Juqbox.setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff, maxIter=maxIter, lbfgsMax=lbfgsMax, startFromScratch=startFromScratch, ipTol=ipTol,acceptTol=acceptTol, acceptIter=acceptIter, nodes=nodes, weights=weights)
 
 println("Initial coefficient vector stored in 'pcof0'")
