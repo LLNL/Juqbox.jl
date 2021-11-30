@@ -86,7 +86,10 @@ function plotunitary(us, params, guardlev)
     if N <= 2
         plt = plot(plotarray..., layout = (N,1))
     else
-        plt = plot(plotarray..., layout = N, size=(650, 400))
+        vsize = 300*round(Int64,sqrt(N))
+        hsize = 4*vsize/3
+        plt = plot(plotarray..., layout = N, size=(hsize, vsize) )
+#        plt = plot(plotarray..., layout = N, size=(650, 400))
     end
     
     return plt
@@ -510,8 +513,9 @@ function plot_energy(unitaryhistory::Array{ComplexF64,3}, params::objparams)
     Ntot = Ness + params.Nguard
     Nsteps = params.nsteps
 
-    # evaluate the expected energy level in each system
-    energy = zeros(Float64, Nosc, Ness, Nsteps)
+    # evaluate the expected energy level in each system + std variation
+    energy_exp = zeros(Float64, Nosc, Ness, Nsteps)
+    energy_std = zeros(Float64, Nosc, Ness, Nsteps)
 
     for e=1:Nosc
         
@@ -548,11 +552,15 @@ function plot_energy(unitaryhistory::Array{ComplexF64,3}, params::objparams)
         # println("e = ", e, " elev = ", elev1)
 
         sv2 = zeros(Ntot)
+        elev1_sq = zeros(Ntot)
 
         for s=1:Nsteps
             for c = 1:Ness
                 sv2 = (abs.(unitaryhistory[:,c,s])).^2
-                energy[e,c,s] = elev1' * sv2
+                e_exp = elev1' * sv2 # expectation
+                elev1_sq = (elev1 .- e_exp).^2 # square the coefficients for computing the variance
+                energy_exp[e,c,s] = e_exp
+                energy_std[e,c,s] = sqrt(elev1_sq' * sv2)
             end
         end
 
@@ -561,7 +569,7 @@ function plot_energy(unitaryhistory::Array{ComplexF64,3}, params::objparams)
         # for c = 1:Ness
         #     sv2 = (abs.(unitaryhistory[:,c,s])).^2
         #     en = elev1' * sv2
-        #     println("sys = ", e, " c = ", c, " init energy = ", en, " energy[e,c,1] = ", energy[e,c,1])
+        #     println("sys = ", e, " c = ", c, " init energy = ", en, " energy_exp[e,c,1] = ", energy_exp[e,c,1])
         # end
         
     end # for e
@@ -605,7 +613,8 @@ function plot_energy(unitaryhistory::Array{ComplexF64,3}, params::objparams)
         for e = 1:Nosc
             # make plot label
             labstr = "sys-" * string(e)
-            plot!(t[rg], energy[e,ii,rg], lab = labstr)
+            plot!(t[rg], energy_exp[e,ii,rg], ribbon= energy_std[e,ii,rg]) , label = false) # band around energy_exp of width +/- energy_std
+            plot!(t[rg], energy_exp[e,ii,rg], label = labstr)
         end
 
         # save the subplot
