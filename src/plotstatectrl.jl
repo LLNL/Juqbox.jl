@@ -613,7 +613,7 @@ function plot_energy(unitaryhistory::Array{ComplexF64,3}, params::objparams)
         for e = 1:Nosc
             # make plot label
             labstr = "sys-" * string(e)
-            plot!(t[rg], energy_exp[e,ii,rg], ribbon= energy_std[e,ii,rg]) , label = false) # band around energy_exp of width +/- energy_std
+            plot!(t[rg], energy_exp[e,ii,rg], ribbon= energy_std[e,ii,rg] , label = false) # band around energy_exp of width +/- energy_std
             plot!(t[rg], energy_exp[e,ii,rg], label = labstr)
         end
 
