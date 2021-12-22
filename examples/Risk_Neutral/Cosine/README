@@ -1,0 +1,9 @@
+The file cos_opt.jl is a template file that is called by run_all.jl.
+To run the full deterministic and risk-neutral optimization simply
+type
+
+include("run_all.jl")
+
+in the Julia REPL. Note that this procedure takes roughly an
+hour to run completely. Further details can be found in the 
+run_all.jl file.

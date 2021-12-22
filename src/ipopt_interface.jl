@@ -1,26 +1,37 @@
 # setup callback functions for Ipopt
 function eval_f_par(pcof::Vector{Float64}, params:: Juqbox.objparams, wa::Working_Arrays,
-                    nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
+                    nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0],
+                    dispersion_values::Array{Float64,1}=[0.0])
     
     # Loop over specified nodes and compute risk-neutral objective value. Default is usual optimization.
     exp_v = 0.0
     nquad = length(nodes)
-    # H0_old = copy(params.Hconst)
+    uncertain_dim = length(dispersion_values)
     for i = 1:nquad 
         ep = nodes[i]
 
-        for j = 2:size(params.Hconst,2)
-            # params.Hconst[j,j] += H0_old[j,j] + 0.01*ep*(10.0^(j-2))
-            params.Hconst[j,j] += 0.01*ep*(10.0^(j-2))
+        # for j = 2:size(params.Hconst,2)
+        #     # params.Hconst[j,j] += H0_old[j,j] + 0.01*ep*(10.0^(j-2))
+        #     params.Hconst[j,j] += 0.01*ep*(10.0^(j-2))
+        # end
+
+        # adjust Hamiltonian
+        for j = 2:1+uncertain_dim
+            params.Hconst[j,j] += dispersion_values[j-1]*cos(ep)
         end
 
         E = Juqbox.traceobjgrad(pcof,params,wa,false,false)
         exp_v += E[1]*weights[i]
 
+        # # Reset 
+        # for j = 2:size(params.Hconst,2)
+        #     # params.Hconst[j,j] += H0_old[j,j] + 0.01*ep*(10.0^(j-2))
+        #     params.Hconst[j,j] -= 0.01*ep*(10.0^(j-2))
+        # end
+
         # Reset 
-        for j = 2:size(params.Hconst,2)
-            # params.Hconst[j,j] += H0_old[j,j] + 0.01*ep*(10.0^(j-2))
-            params.Hconst[j,j] -= 0.01*ep*(10.0^(j-2))
+        for j = 2:1+uncertain_dim
+            params.Hconst[j,j] -= dispersion_values[j-1]*cos(ep)
         end
     end
     # copy!(params.Hconst,H0_old)
@@ -32,19 +43,24 @@ function eval_g(pcof)
 end
 
 function eval_grad_f_par(pcof::Vector{Float64}, grad_f::Vector{Float64}, params:: Juqbox.objparams, wa::Working_Arrays,
-                        nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
+                        nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0],
+                        dispersion_values::Array{Float64,1}=[0.0])
     grad_f .= 0.0
 
     nquad = length(nodes)
-    # H0_old = copy(params.Hconst)
     exp_inf = 0.0
     exp_sec = 0.0
+    uncertain_dim = length(dispersion_values)
     for i = 1:nquad 
         ep = nodes[i]
 
         # Additive noise
-        for j = 2:size(params.Hconst,2)
-            params.Hconst[j,j] += 0.01*ep*(10.0^(j-2))
+        # for j = 2:size(params.Hconst,2)
+        #     params.Hconst[j,j] += 0.01*ep*(10.0^(j-2))
+        # end
+
+        for j = 2:1+uncertain_dim
+            params.Hconst[j,j] += dispersion_values[j-1]*cos(ep)
         end
 
         _, Gtemp, _, secondaryobjf, traceinfid = Juqbox.traceobjgrad(pcof,params,wa,false, true)
@@ -59,9 +75,13 @@ function eval_grad_f_par(pcof::Vector{Float64}, grad_f::Vector{Float64}, params:
         exp_sec += weights[i]*secondaryobjf
 
         # Reset
-        for j = 2:size(params.Hconst,2)
-            params.Hconst[j,j] -= 0.01*ep*(10.0^(j-2))
+        # for j = 2:size(params.Hconst,2)
+        #     params.Hconst[j,j] -= 0.01*ep*(10.0^(j-2))
+        # end
+        for j = 2:1+uncertain_dim
+            params.Hconst[j,j] -= dispersion_values[j-1]*cos(ep)
         end
+
     end
     # copy!(params.Hconst,H0_old)
 
@@ -148,10 +168,12 @@ function setup_ipopt_problem(params:: Juqbox.objparams, wa::Working_Arrays, nCoe
                              startFromScratch:: Bool=true, ipTol:: Float64=1e-5, 
                              acceptTol:: Float64=1e-5, acceptIter:: Int64=15,
                              nodes::AbstractArray=[0.0], 
-                             weights::AbstractArray=[1.0])
+                             weights::AbstractArray=[1.0],
+                             dispersion_values::Array{Float64,1}=[0.0])
+
     # callback functions need access to the params object
-    eval_f(pcof) = eval_f_par(pcof, params, wa, nodes, weights)
-    eval_grad_f(pcof, grad_f) = eval_grad_f_par(pcof, grad_f, params, wa, nodes, weights)
+    eval_f(pcof) = eval_f_par(pcof, params, wa, nodes, weights, dispersion_values)
+    eval_grad_f(pcof, grad_f) = eval_grad_f_par(pcof, grad_f, params, wa, nodes, weights, dispersion_values)
     intermediate(alg_mod, iter_count, obj_value, inf_pr, inf_du, mu,
                  d_norm, regularization_size, alpha_du, alpha_pr, ls_trials) =
                      intermediate_par(alg_mod, iter_count, obj_value, inf_pr, inf_du, mu,
