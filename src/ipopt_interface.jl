@@ -92,15 +92,40 @@ function eval_jac_g(
     end
 end
 
+function eval_jac_g(
+    x::Vector{Float64},         # Current solution
+    rows::Vector{Int32},        # Sparsity structure - row indices
+    cols::Vector{Int32},        # Sparsity structure - column indices
+    values::Union{Nothing,Vector{Float64}})    # The values of the Hessian
+    return nothing
+end
+
+function eval_h(
+    x::Vector{Float64},
+    rows::Vector{Int32},
+    cols::Vector{Int32},
+    obj_factor::Float64,
+    lambda::Vector{Float64},
+    values::Union{Nothing,Vector{Float64}})
+
+    if mode == :Structure
+        # rows[...] = ...
+        # ...
+        # cols[...] = ...
+    else
+        # values[...] = ...
+    end
+end
+
 function intermediate_par(
-    alg_mod::Int,
-    iter_count::Int,
+    alg_mod::Union{Int32,Int64},
+    iter_count::Union{Int32,Int64},
     obj_value::Float64,
     inf_pr::Float64, inf_du::Float64,
     mu::Float64, d_norm::Float64,
     regularization_size::Float64,
     alpha_du::Float64, alpha_pr::Float64,
-    ls_trials::Int,
+    ls_trials::Union{Int32,Int64},
     params:: Juqbox.objparams)
   # ...
     if params.saveConvHist 
@@ -164,31 +189,64 @@ function setup_ipopt_problem(params:: Juqbox.objparams, wa::Working_Arrays, nCoe
     dum1 = zeros(0);
     # tmp
     #    println("setup_ipopt_problem: nCoeff = ", nCoeff, " length(minCoeff) = ", length(minCoeff))
-    prob = createProblem( nCoeff, minCoeff, maxCoeff, mNLconstraints, dum0, dum1, nEleJac, nEleHess, eval_f, eval_g, eval_grad_f, eval_jac_g);
-    addOption( prob, "hessian_approximation", "limited-memory");
-    addOption( prob, "limited_memory_max_history", lbfgsMax);
-    addOption( prob, "max_iter", maxIter);
-    addOption( prob, "tol", ipTol);
-    addOption( prob, "acceptable_tol", acceptTol);
-    addOption( prob, "acceptable_iter", acceptIter);
-    if !startFromScratch # enable warm start of Ipopt
-        addOption( prob, "warm_start_init_point", "yes")
-        #        addOption( prob, "mu_init", 1e-6) # not sure how to set this parameter
-        #        addOption( prob, "nlp_scaling_method", "none") # what about scaling?
-        #
-        # the following settings prevent the initial parameters to be pushed away from their bounds
-        addOption( prob, "warm_start_bound_push", 1e-16)
-        addOption( prob, "warm_start_bound_frac", 1e-16)
-        addOption( prob, "warm_start_slack_bound_frac", 1e-16)
-        addOption( prob, "warm_start_slack_bound_push", 1e-16)
+    if @isdefined createProblem
+        prob = createProblem( nCoeff, minCoeff, maxCoeff, mNLconstraints, dum0, dum1, nEleJac, nEleHess, eval_f, eval_g, eval_grad_f, eval_jac_g);
+    else
+        prob = CreateIpoptProblem( nCoeff, minCoeff, maxCoeff, mNLconstraints, dum0, dum1, nEleJac, nEleHess, eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h);
+    end
 
-        if !params.quiet
-            println("Ipopt: Enabling warm start option")
+    if @isdefined addOption
+        addOption( prob, "hessian_approximation", "limited-memory");
+        addOption( prob, "limited_memory_max_history", lbfgsMax);
+        addOption( prob, "max_iter", maxIter);
+        addOption( prob, "tol", ipTol);
+        addOption( prob, "acceptable_tol", acceptTol);
+        addOption( prob, "acceptable_iter", acceptIter);
+        if !startFromScratch # enable warm start of Ipopt
+            addOption( prob, "warm_start_init_point", "yes")
+            # addOption( prob, "mu_init", 1e-6) # not sure how to set this parameter
+            # addOption( prob, "nlp_scaling_method", "none") # what about scaling?
+            #
+            # the following settings prevent the initial parameters to be pushed away from their bounds
+            addOption( prob, "warm_start_bound_push", 1e-16)
+            addOption( prob, "warm_start_bound_frac", 1e-16)
+            addOption( prob, "warm_start_slack_bound_frac", 1e-16)
+            addOption( prob, "warm_start_slack_bound_push", 1e-16)
+
+            if !params.quiet
+                println("Ipopt: Enabling warm start option")
+            end
         end
+    else
+        AddIpoptStrOption( prob, "hessian_approximation", "limited-memory");
+        AddIpoptIntOption( prob, "limited_memory_max_history", lbfgsMax);
+        AddIpoptIntOption( prob, "max_iter", maxIter);
+        AddIpoptNumOption( prob, "tol", ipTol);
+        AddIpoptNumOption( prob, "acceptable_tol", acceptTol);
+        AddIpoptIntOption( prob, "acceptable_iter", acceptIter);
+        if !startFromScratch # enable warm start of Ipopt
+            AddIpoptStrOption( prob, "warm_start_init_point", "yes")
+            # AddIpoptNumOption( prob, "mu_init", 1e-6) # not sure how to set this parameter
+            # AddIpoptStrOption( prob, "nlp_scaling_method", "none") # what about scaling?
+            #
+            # the following settings prevent the initial parameters to be pushed away from their bounds
+            AddIpoptNumOption( prob, "warm_start_bound_push", 1e-16)
+            AddIpoptNumOption( prob, "warm_start_bound_frac", 1e-16)
+            AddIpoptNumOption( prob, "warm_start_slack_bound_frac", 1e-16)
+            AddIpoptNumOption( prob, "warm_start_slack_bound_push", 1e-16)
+
+            if !params.quiet
+                println("Ipopt: Enabling warm start option")
+            end
+        end        
     end
 
     # intermediate callback function
-    setIntermediateCallback(prob, intermediate)
+    if @isdefined setIntermediateCallback
+        setIntermediateCallback(prob, intermediate)
+    else 
+        SetIntermediateCallback(prob,intermediate)
+    end
 
 # output some of the settings
     if !params.quiet
@@ -220,7 +278,11 @@ function run_optimizer(prob:: IpoptProblem, pcof0:: Array{Float64, 1}, baseName:
 
     # Ipopt solver
     println("*** Starting the optimization ***")
-    @time solveProblem(prob);
+    if @isdefined solveProblem
+        @time solveProblem(prob);
+    else 
+        @time IpoptSolve(prob);
+    end
     pcof = prob.x;
 
     #save the b-spline coeffs on a JLD2 file

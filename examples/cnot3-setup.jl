@@ -245,8 +245,14 @@ end
 wa = Juqbox.Working_Arrays(params,nCoeff)
 prob = Juqbox.setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff, maxIter=maxIter, lbfgsMax=lbfgsMax, startFromScratch=startFromScratch)
 
-# uncomment to run the gradient checker for the initial pcof
-#addOption( prob, "derivative_test", "first-order"); # for testing the gradient
+#uncomment to run the gradient checker for the initial pcof
+#=
+if @isdefined addOption
+    addOption( prob, "derivative_test", "first-order"); # for testing the gradient
+else
+    AddIpoptStrOption( prob, "derivative_test", "first-order")
+end
+=#
 
 # tmp: test call traceJuqbox()
 #objv, objgrad, u_hist, infidelity = Juqbox.traceobjgrad(pcof0, params, true, true);
