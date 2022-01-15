@@ -187,6 +187,11 @@ wa = Juqbox.Working_Arrays(params, nCoeff)
 prob = Juqbox.setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff, maxIter=maxIter, lbfgsMax=lbfgsMax)
 
 # uncomment to run the gradient checker for the initial pcof
-# addOption( prob, "derivative_test", "first-order"); # for testing the gradient
+# if @isdefined addOption
+#     addOption( prob, "derivative_test", "first-order"); # for testing the gradient
+# else
+#     AddIpoptStrOption( prob, "derivative_test", "first-order")
+# end
+
 
 #println("Initial coefficient vector stored in 'pcof0'")

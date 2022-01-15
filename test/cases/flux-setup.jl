@@ -187,7 +187,12 @@ prob = Juqbox.setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff, maxIte
 #addOption( prob, "derivative_test", "first-order"); # for testing the gradient
 
 # experiment with scale factors
-addOption( prob, "nlp_scaling_method", "user-scaling");
+if @isdefined addOption
+    addOption( prob, "nlp_scaling_method", "user-scaling"); # for testing the gradient
+else
+    AddIpoptStrOption( prob, "nlp_scaling_method", "user-scaling")
+end
+
 
 if verbose
     println("Initial coefficient vector stored in 'pcof0'")
