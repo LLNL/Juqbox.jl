@@ -18,7 +18,7 @@ using LinearAlgebra
 #using Plots
 #pyplot()
 #using FFTW
-#using DelimitedFiles
+using DelimitedFiles
 using Printf
 #using Ipopt
 using Random
@@ -74,10 +74,8 @@ rot1 = Diagonal(exp.(im*omega1*T))
 # target in the rotating frame
 vtarget = rot1*utarget
 
-startFromScratch = true # false
-startFile="pcof-60-t100.dat"
-
-bsname = "pcof-60-t100-new.dat"
+startFromScratch = false # false
+startFile = "cases/swap02.dat"
 use_bcarrier = true
 
 # frequencies (in GHz, will be multiplied by 2*pi to get angular frequencies in the Hamiltonian matrix)

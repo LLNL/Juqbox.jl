@@ -26,7 +26,7 @@ using LinearAlgebra
 #pyplot()
 #using Base.Threads
 #using FFTW
-#using DelimitedFiles
+using DelimitedFiles
 using Printf
 #using Ipopt
 using Random
@@ -350,8 +350,8 @@ params.quiet = true
 # end
 
 # initial parameter guess
-startFromScratch = true # false
-startFile = "cnot2-pcof-opt.dat"
+startFromScratch = false # false
+startFile = "cases/cnot2.dat"
 
 # dimensions for the parameter vector
 D1 = 10 # number of B-spline coeff per oscillator, freq and sin/cos

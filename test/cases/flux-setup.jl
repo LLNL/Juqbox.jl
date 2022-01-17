@@ -25,7 +25,7 @@ using LinearAlgebra
 #using Plots
 #pyplot()
 #using FFTW
-#using DelimitedFiles
+using DelimitedFiles
 using Printf
 using Ipopt
 using Random
@@ -118,8 +118,8 @@ Ident = Matrix{Float64}(I, Ntot, Ntot)
 U0 = Ident[1:Ntot,1:N]
 
 # setup the initial parameter vector, either randomized or from file
-startFromScratch = true # true
-startFile = "flux-pcof-opt-alpha-0.5.dat"
+startFromScratch = false # true
+startFile = "cases/flux.dat"
 useBarrier = true
 
 if startFromScratch

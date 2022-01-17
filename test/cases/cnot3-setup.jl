@@ -37,7 +37,7 @@ using LinearAlgebra
 #using Ipopt
 #using Base.Threads
 using Random
-#using DelimitedFiles
+using DelimitedFiles
 using Printf
 #using FFTW
 #using Plots
@@ -411,8 +411,8 @@ params.quiet = true
 Random.seed!(2456)
 
 # setup the initial parameter vector, either randomized or from file
-startFromScratch = true # false
-startFile="cnot-storage-pcof-opt.dat"
+startFromScratch = false # false
+startFile = "cases/cnot3.dat"
 
 if startFromScratch
     D1 = 15 # 20 # number of B-spline coeff per oscillator, freq, p/q
