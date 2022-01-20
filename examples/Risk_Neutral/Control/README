@@ -1,0 +1,14 @@
+The file x-risk-neutral.jl is a template file that is called by run_all.jl.
+To run the full deterministic and risk-neutral optimization simply
+type
+
+include("run_all.jl")
+
+in the Julia REPL. To modify the control term that is 
+scaled by error, the eval_f_par and eval_grad_f_par 
+routines within src/ipopt_interface.jl should be updated to 
+the desired noise model. An update of the ep_plot routine in 
+run_all.jl should also match that of the updates to ipopt_interface.jl
+for the purposes of plotting changes in the objective functions for 
+both deterministic and risk-neutral optimal controls with respect
+to the uncertainty.

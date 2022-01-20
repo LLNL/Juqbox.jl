@@ -9,19 +9,18 @@ function eval_f_par(pcof::Vector{Float64}, params:: Juqbox.objparams, wa::Workin
     for i = 1:nquad 
         ep = nodes[i]
 
-        for j = 2:size(params.Hconst,2)
-            # params.Hconst[j,j] += H0_old[j,j] + 0.01*ep*(10.0^(j-2))
-            params.Hconst[j,j] += 0.01*ep*(10.0^(j-2))
+        for j = 1:length(params.Hsym_ops)
+            params.Hsym_ops[j] .*= ep
         end
 
         E = Juqbox.traceobjgrad(pcof,params,wa,false,false)
         exp_v += E[1]*weights[i]
 
         # Reset 
-        for j = 2:size(params.Hconst,2)
-            # params.Hconst[j,j] += H0_old[j,j] + 0.01*ep*(10.0^(j-2))
-            params.Hconst[j,j] -= 0.01*ep*(10.0^(j-2))
+        for j = 1:length(params.Hsym_ops)
+            params.Hsym_ops[j] ./= ep
         end
+
     end
     # copy!(params.Hconst,H0_old)
     return exp_v
@@ -42,9 +41,9 @@ function eval_grad_f_par(pcof::Vector{Float64}, grad_f::Vector{Float64}, params:
     for i = 1:nquad 
         ep = nodes[i]
 
-        # Additive noise
-        for j = 2:size(params.Hconst,2)
-            params.Hconst[j,j] += 0.01*ep*(10.0^(j-2))
+        # Multiplicative noise
+        for j = 1:length(params.Hsym_ops)
+            params.Hsym_ops[j] .*= ep
         end
 
         _, Gtemp, _, secondaryobjf, traceinfid = Juqbox.traceobjgrad(pcof,params,wa,false, true)
@@ -59,9 +58,10 @@ function eval_grad_f_par(pcof::Vector{Float64}, grad_f::Vector{Float64}, params:
         exp_sec += weights[i]*secondaryobjf
 
         # Reset
-        for j = 2:size(params.Hconst,2)
-            params.Hconst[j,j] -= 0.01*ep*(10.0^(j-2))
+        for j = 1:length(params.Hsym_ops)
+            params.Hsym_ops[j] ./= ep
         end
+
     end
     # copy!(params.Hconst,H0_old)
 
