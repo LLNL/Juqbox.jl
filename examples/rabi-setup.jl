@@ -173,7 +173,7 @@ println("Tikhonov coefficients: tik0 = ", params.tik0)
 
 # Allocate all working arrays
 wa = Juqbox.Working_Arrays(params, nCoeff)
-prob = Juqbox.setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff, maxIter, lbfgsMax=lbfgsMax, startFromScratch=startFromScratch)
+prob = Juqbox.setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff, maxIter=maxIter, lbfgsMax=lbfgsMax, startFromScratch=startFromScratch)
 
 #uncomment to run the gradient checker for the initial pcof
 #=
