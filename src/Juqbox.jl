@@ -38,6 +38,8 @@ BsplineParams = Union{splineparams, bcparams}
 # union type for different matrix representations
 MyRealMatrix = Union{Array{Float64,2}, SparseMatrixCSC{Float64, Int64}}
 
+WeightMatrix = Union{Array{Float64,2}, Diagonal{Float64, Vector{Float64}}}
+
 include("evalobjgrad.jl")
 
 include("plotstatectrl.jl")

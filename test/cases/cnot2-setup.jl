@@ -185,7 +185,7 @@ function orig_wmatsetup(Ne::Array{Int64,1}, Ng::Array{Int64,1})
 
         # println("wmatsetup: Number of forbidden states = ", nForb, " scaling coeff = ", coeff)
     end # if sum(Ng) > 0
-    wmat = coeff * Diagonal(w) # turn vector into diagonal matrix
+    wmat = coeff .* Diagonal(w) # turn vector into diagonal matrix
     return wmat
 end
 
@@ -338,7 +338,7 @@ params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=vtarget, Cfreq
                           Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, use_sparse=use_sparse)
 
 # overwrite default wmat with the old style
-params.wmat =  orig_wmatsetup(Ne, Ng)
+params.wmat_real =  orig_wmatsetup(Ne, Ng)
 
 # Quiet mode for testing
 params.quiet = true

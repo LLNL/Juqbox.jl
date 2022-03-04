@@ -70,6 +70,12 @@ mutable struct objparams
     Ident ::MyRealMatrix
     wmat  ::Diagonal{Float64,Array{Float64,1}} # Weights for discouraging guard level population 
 
+    # Matrix of forbidden states for leakage penalty 
+    forb_states  ::Array{ComplexF64,2}
+    forb_weights ::Vector{Float64}
+    wmat_real    ::WeightMatrix
+    wmat_imag    ::WeightMatrix
+
     # Type of fidelity
     pFidType    ::Int64
     globalPhase ::Float64
@@ -106,7 +112,9 @@ mutable struct objparams
                        Hsym_ops:: Array{Array{Float64,2},1} = Array{Float64,2}[], # keyword args with default values
                        Hanti_ops:: Array{Array{Float64,2},1} = Array{Float64,2}[],
                        Hunc_ops:: Array{Array{Float64,2},1} = Array{Float64,2}[],
-                       wmatScale::Float64 = 1.0, use_sparse::Bool = false)
+                       forb_states:: Array{ComplexF64,2} = Array{ComplexF64}(undef,0,2),
+                       forb_weights:: Vector{Float64} = Float64[],
+                       wmatScale::Float64 = 1.0, use_sparse::Bool = false, use_custom_forbidden::Bool = false)
         pFidType = 2
         Nosc   = length(Ne)
         N      = prod(Ne)
@@ -149,6 +157,33 @@ mutable struct objparams
 
         # Weights in the W matrix for discouraging population of guarded states
         wmat = wmatScale.*Juqbox.wmatsetup(Ne, Ng)
+
+        # Build weighting matrices if there are user-specified forbidden states
+        if use_custom_forbidden
+
+            if size(forb_states,1) != Ntot
+                throw(ArgumentError("Forbidden states array is an incorrect size. Make sure guard 
+                    levels are accounted for!\n"))
+            end
+            wmat_real = zeros(Ntot,Ntot)
+            wmat_imag = zeros(Ntot,Ntot)
+            for k = 1:size(forb_states,2)
+                weight_loc = forb_weights[k]
+                for j = 1:size(forb_states,1)
+                    f_loc = conj(forb_states[j,k])
+                    @fastmath @inbounds @simd for i = 1:size(forb_states,1)
+                        val = f_loc*forb_states[i,k]
+                        wmat_real[i,j] += weight_loc*real(val)
+                        wmat_imag[i,j] += weight_loc*imag(val)
+                    end
+                end
+            end
+        else 
+            forb_states = zeros(1,1)
+            wmat_real = copy(wmat)
+            wmat_imag = Diagonal(zeros(Ntot))
+            forb_weights = zeros(1)
+        end
 
         # By default save convergence history
         saveConvHist = true
@@ -222,7 +257,7 @@ mutable struct objparams
             Hanti_ops1 = Hanti_ops
             Hunc_ops1 = Hunc_ops
         end
-        new(Nosc, N, Nguard, Ne, Ng, Ne+Ng, T, nsteps, Uinit, Utarget, use_bcarrier, Nfreq, Cfreq, kpar, tik0, Hconst, Hsym_ops1, Hanti_ops1, Hunc_ops1, Ncoupled, Nunc, isSymm, Ident, wmat, pFidType, 0.0, saveConvHist, zeros(0), zeros(0), zeros(0), zeros(0), nNeumann, traceInfidelityThreshold, 0.0, 0.0, usingPriorCoeffs, priorCoeffs, quiet, Rfreq, false, [])
+        new(Nosc, N, Nguard, Ne, Ng, Ne+Ng, T, nsteps, Uinit, Utarget, use_bcarrier, Nfreq, Cfreq, kpar, tik0, Hconst, Hsym_ops1, Hanti_ops1, Hunc_ops1, Ncoupled, Nunc, isSymm, Ident, wmat, forb_states,forb_weights,wmat_real,wmat_imag, pFidType, 0.0, saveConvHist, zeros(0), zeros(0), zeros(0), zeros(0), nNeumann, traceInfidelityThreshold, 0.0, 0.0, usingPriorCoeffs, priorCoeffs, quiet, Rfreq, false, [])
     end
 
 end # mutable struct objparams
@@ -266,6 +301,7 @@ mutable struct Working_Arrays
     gi1         ::Array{Float64,2}
     hr0         ::Array{Float64,2}
     hi0         ::Array{Float64,2}
+    hi1         ::Array{Float64,2}
     hr1         ::Array{Float64,2}
     vr          ::Array{Float64,2}
     vi          ::Array{Float64,2}
@@ -282,13 +318,13 @@ mutable struct Working_Arrays
         N = params.N
         Ntot = N + params.Nguard
         K0,S0,K05,S05,K1,S1,vtargetr,vtargeti = KS_alloc(params)
-        lambdar,lambdar0,lambdai,lambdai0,lambdar05,κ₁,κ₂,ℓ₁,ℓ₂,rhs,gr0,gi0,gr1,gi1,hr0,hi0,hr1,vr,vi,vi05,vr0,vfinalr,vfinali = time_step_alloc(Ntot,N)
+        lambdar,lambdar0,lambdai,lambdai0,lambdar05,κ₁,κ₂,ℓ₁,ℓ₂,rhs,gr0,gi0,gr1,gi1,hr0,hi0,hi1,hr1,vr,vi,vi05,vr0,vfinalr,vfinali = time_step_alloc(Ntot,N)
         if params.pFidType == 3
             gr, gi, gradobjfadj, tr_adj = grad_alloc(nCoeff-1)
         else
             gr, gi, gradobjfadj, tr_adj = grad_alloc(nCoeff)
         end            
-        new(K0,S0,K05,S05,K1,S1,vtargetr,vtargeti,lambdar,lambdar0,lambdai,lambdai0,lambdar05,κ₁,κ₂,ℓ₁,ℓ₂,rhs,gr0,gi0,gr1,gi1,hr0,hi0,hr1,vr,vi,vi05,vr0,vfinalr,vfinali,gr, gi, gradobjfadj, tr_adj)
+        new(K0,S0,K05,S05,K1,S1,vtargetr,vtargeti,lambdar,lambdar0,lambdai,lambdai0,lambdar05,κ₁,κ₂,ℓ₁,ℓ₂,rhs,gr0,gi0,gr1,gi1,hr0,hi0,hi1,hr1,vr,vi,vi05,vr0,vfinalr,vfinali,gr, gi, gradobjfadj, tr_adj)
     end
     
 end
@@ -357,6 +393,7 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, wa::Working_A
     gi1 = wa.gi1
     hr0 = wa.hr0
     hi0 = wa.hi0
+    hi1 = wa.hi1
     hr1 = wa.hr1
     vr = wa.vr
     vi = wa.vi
@@ -408,8 +445,11 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, wa::Working_A
     Ident = params.Ident
 
     # coefficients for penalty style #2 (wmat is a Diagonal matrix)
-    wmat = params.wmat
+    # wmat = params.wmat
     
+    wmat_real = params.wmat_real
+    wmat_imag = params.wmat_imag
+
     # Here we can choose what kind of control function expansion we want to use
     if (params.use_bcarrier)
         # FMG FIX
@@ -447,6 +487,7 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, wa::Working_A
     gi1  .= 0.0
     hr0  .= 0.0
     hi0  .= 0.0
+    hi1  .= 0.0
     hr1  .= 0.0
     gr   .= 0.0
     gi   .= 0.0
@@ -476,13 +517,11 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, wa::Working_A
     # Forward time stepping loop
     for step in 1:nsteps
 
-        forbidden0 = tinv*penalf2aTrap(vr, wmat)
+        forbidden0 = tinv*penalf2aTrap(vr, wmat_real)
         # Störmer-Verlet
         for q in 1:stages
-            if evaladjoint && verbose
-                t0  = t
-                copy!(vr0,vr)
-            end
+            copy!(vr0,vr)
+            t0  = t
             
             # Update K and S matrices
             # general case
@@ -494,8 +533,9 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, wa::Working_A
             # for the midpoint rule in the numerical integration of the imaginary part of the signal.
             @inbounds t = step!(t, nNeumann, vr, vi, vi05, dt*gamma[q], K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs)
 
-            forbidden = tinv*penalf2a(vr, vi05, wmat)  
-            objfv = objfv + gamma[q]*dt*0.5*(forbidden0 + forbidden)
+            forbidden = tinv*penalf2a(vr, vi05, wmat_real)  
+            forbidden_imag1 = tinv*penalf2imag(vr0, vi05, wmat_imag)
+            objfv = objfv + gamma[q]*dt*0.5*(forbidden0 + forbidden - 2.0*forbidden_imag1)
 
             # Keep prior value for next step (FG: will this work for multiple stages?)
             forbidden0 = forbidden
@@ -507,13 +547,19 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, wa::Working_A
                             params.isSymm, vr0, vi05, vr, t-dt, dt, splinepar, kpar, gr0, gr1, gi0, gi1, gr, gi)
 
                 copy!(wr1,wr)
+
                 @inbounds step_fwdGrad!(t0, nNeumann, wr1, wi, wi05, dt*gamma[q],
                                                   gr0, gi0, gr1, gi1, K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs) 
-                forbalpha0 = tinv*penalf2grad(vr0, vi05, wr, wi05, wmat)
-                forbalpha1 = tinv*penalf2grad(vr, vi05, wr1, wi05, wmat)
+                
+                # Real part of forbidden state weighting
+                forbalpha0 = tinv*penalf2grad(vr0, vi05, wr, wi05, wmat_real)
+                forbalpha1 = tinv*penalf2grad(vr, vi05, wr1, wi05, wmat_real)
+
+                # Imaginary part of forbidden state weighting
+                forbalpha2 = tinv*penalf2grad(wi05, vi05, vr0, wr, wmat_imag)                
 
                 copy!(wr,wr1)
-                objf_alpha1 = objf_alpha1 + gamma[q]*dt*0.5*2.0*(forbalpha0 + forbalpha1)
+                objf_alpha1 = objf_alpha1 + gamma[q]*dt*0.5*2.0*(forbalpha0 + forbalpha1 + forbalpha2)
 
             end  # evaladjoint && verbose
         end # Stromer-Verlet
@@ -597,7 +643,7 @@ if evaladjoint
     for step in nsteps-1:-1:0
 
         # Forcing for the real part of the adjoint variables in first PRK "stage"
-        penalf2adj!(vr,wmat,tinv,hr0)
+        mul!(hr0, wmat_real, vr, tinv, 0.0)
 
         #loop over stages
         for q in 1:stages
@@ -612,16 +658,22 @@ if evaladjoint
             KS!(K05, S05, t + 0.5*dt*gamma[q], params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq) 
             KS!(K1, S1, t + dt*gamma[q], params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq) 
 
+
             # Integrate state variables backwards in time one step
             @inbounds t = step!(t, nNeumann, vr, vi, vi05, dt*gamma[q], K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs)
 
-            # Forcing for adjoint equations
-            penalf2adj!(vi05, wmat,tinv, hi0)
-            penalf2adj!(vr, wmat,tinv, hr1)
+            # Forcing for adjoint equations (real part of forbidden state penalty)
+            mul!(hi0,wmat_real,vi05,tinv,0.0)
+            mul!(hr1,wmat_real,vr,tinv,0.0)
+
+            # Forcing for adjoint equations (imaginary part of forbidden state penalty)
+            mul!(hr1,wmat_imag,vi05,tinv,1.0)
+            copy!(hi1,hi0)
+            mul!(hi1,wmat_imag,vr,-tinv,1.0)
 
             # evolve lambdar, lambdai
             temp = t0
-            @inbounds temp = step!(temp, nNeumann, lambdar, lambdai, lambdar05, dt*gamma[q], hr0, hi0, hr1, K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs)
+            @inbounds temp = step!(temp, nNeumann, lambdar, lambdai, lambdar05, dt*gamma[q], hr0, hi0, hr1, hi1, K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs)
 
             # Accumulate gradient
             adjoint_grad_calc!(params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, vr0, vi05, vr, lambdar0, lambdar05, lambdai, lambdai0, t0, dt,splinepar, gr, gi, tr_adj) 
@@ -630,7 +682,6 @@ if evaladjoint
             # save for next stage
             copy!(lambdai0,lambdai)
             copy!(lambdar0,lambdar)
-            copy!(hr0,hr1)
 
         end #for stages
     end # for step (backward time stepping loop)
@@ -1245,6 +1296,22 @@ end
     return f
 end
 
+# Version assuming weight matrix is not necessarily diagonal
+@inline function penalf2a(vr::Array{Float64,N}, vi::Array{Float64,N},  wmat::Array{Float64,N}) where N
+    # f = tr( vr' * wmat * vr + vi' * wmat * vi);
+    f = 0.0
+    for i = 1:size(wmat,2)
+        for j = 1:size(vr,2)
+            vr_loc = vr[i,j]
+            vi_loc = vi[i,j]
+            @fastmath @inbounds @simd for k=1:size(vr,1)
+                f+= vr_loc*wmat[i,k]*vr[k,j] + 2.0*vi_loc*wmat[i,k]*vi[k,j]
+            end
+        end
+    end
+    return f
+end
+
 # FG : This is to collect only the trap rule portion of the objective function
 @inline function penalf2aTrap(vr::Array{Float64,N}, wmat::Diagonal{Float64,Array{Float64,1}}) where N
     # f = tr( vr' * wmat * vr); #'
@@ -1256,6 +1323,44 @@ end
     end
     return f
 end
+
+# Trap rule portion of the objective function, assumping weight matrix is not necessarily diagonal
+@inline function penalf2aTrap(vr::Array{Float64,N}, wmat::Array{Float64,N}) where N
+    # f = tr( vr' * wmat * vr); #'
+    f = 0.0
+    for i = 1:size(wmat,2)
+        for j = 1:size(vr,2)
+            v_loc = vr[i,j]
+            @fastmath @inbounds @simd for k=1:size(vr,1)
+                f+= v_loc*wmat[i,k]*vr[k,j] 
+            end
+        end
+    end
+    return f
+end
+
+# Compute weighting term due to imaginary component of forbidden state
+@inline function penalf2imag(vr::Array{Float64,N}, vi::Array{Float64,N},  wmat::Array{Float64,2}) where N
+    adjoint_trace_operator!(vi,wmat,vr)
+end
+
+# Compute imaginary weighting matrix component, do nothing if using usual weighting
+@inline function penalf2imag(vr::Array{Float64,N}, vi::Array{Float64,N},  wmat::Diagonal{Float64,Array{Float64,1}}) where N
+    return 0.0
+end
+
+# # Collect only the trap rule portion of the objective function. Here we use the input array of 
+# # forbidden states
+# @inline function penalf2aTrap(vr::Array{Float64,N}, forb_states::Array{Float64,2}) where N
+#     # f = tr( vr' * wmat * vr); #'
+#     f = 0.0
+#     for j = 1:size(vr,2)
+#         @fastmath @inbounds @simd for i=1:size(vr,1)
+#             f+= wmat[i,i]*vr[i,j]^2 
+#         end
+#     end
+#     return f
+# end
 
 function penalf2adj(vr::Array{Float64,N}, wmat::Diagonal{Float64,Array{Float64,1}}) where N
     f = wmat * vr;
@@ -1272,6 +1377,7 @@ end
 end
 
 
+
 @inline function penalf2grad(vr::Array{Float64,N}, vi::Array{Float64,N}, wr::Array{Float64,N}, wi::Array{Float64,N},  wmat::Diagonal{Float64,Array{Float64,1}}) where N
     # f = tr( wr' * wmat * vr ) + tr( wi' * wmat * vi);
     f = 0.0
@@ -1283,6 +1389,21 @@ end
     return f
 end
 
+# Accumulate penalty term without assuming weighting matrix is diagonal
+@inline function penalf2grad(vr::Array{Float64,N}, vi::Array{Float64,N}, wr::Array{Float64,N}, wi::Array{Float64,N},  wmat::Array{Float64,N}) where N
+    # f = tr( wr' * wmat * vr ) + tr( wi' * wmat * vi);
+    f = 0.0
+    for i = 1:size(wmat,2)
+        for j = 1:size(vr,2)
+            wr_loc = wr[i,j]
+            wi_loc = wi[i,j]
+            @fastmath @inbounds @simd for k=1:size(vr,1)
+                f+= wr_loc*wmat[i,k]*vr[k,j] + wi_loc*wmat[i,k]*vi[k,j] 
+            end
+        end
+    end    
+    return f
+end
 
 @inline function tikhonov_pen(pcof::Array{Float64,1}, params ::objparams)
     Npar = size(pcof,1)
@@ -2037,6 +2158,7 @@ function time_step_alloc(Ntot::Int64,N::Int64)
     gi1       = zeros(Float64,Ntot,N)
     hr0       = zeros(Float64,Ntot,N)
     hi0       = zeros(Float64,Ntot,N)
+    hi1       = zeros(Float64,Ntot,N)
     hr1       = zeros(Float64,Ntot,N)
     vr        = zeros(Float64,Ntot,N)
     vi        = zeros(Float64,Ntot,N)
@@ -2045,7 +2167,7 @@ function time_step_alloc(Ntot::Int64,N::Int64)
     vfinalr   = zeros(Float64,Ntot,N) 
     vfinali   = zeros(Float64,Ntot,N)
     return lambdar,lambdar0,lambdai,lambdai0,lambdar05,κ₁,κ₂,ℓ₁,
-           ℓ₂,rhs,gr0,gi0,gr1,gi1,hr0,hi0,hr1,vr,vi,vi05,vr0,vfinalr,vfinali
+           ℓ₂,rhs,gr0,gi0,gr1,gi1,hr0,hi0,hi1,hr1,vr,vi,vi05,vr0,vfinalr,vfinali
 end
 
 function grad_alloc(Nparams::Int64)

@@ -251,10 +251,10 @@ end
 end
 
 
-# FMG: This routine has been modified. This is for the adjoint solve which contains
-# forcing. We note that h is negative in this case.
+# This is for the adjoint solve which contains forcing. We note that h is negative in this case.
 @inline function step!(t::Float64, nNeumann::Int64, μ::Array{Float64,N}, ν::Array{Float64,N}, X::Array{Float64,N}, h::Float64,
-  					uforce0::Array{Float64,N}, vforce05::Array{Float64,N}, uforce1::Array{Float64,N},
+  					uforce0::Array{Float64,N}, vforce0::Array{Float64,N}, uforce1::Array{Float64,N},
+  					vforce1::Array{Float64,N},
   					K0::Array{Float64,N},S0::Array{Float64,N},K05::Array{Float64,N},S05::Array{Float64,N},
  					K1::Array{Float64,N},S1::Array{Float64,N},In::Array{Float64,N},
  					κ₁::Array{Float64,N}, κ₂::Array{Float64,N},ℓ₁::Array{Float64,N}, ℓ₂::Array{Float64,N},
@@ -274,17 +274,17 @@ end
 	# X   .= (μ .+ 0.5*h.*κ₂)
 	copy!(X,μ)
 
-	# ℓ₂  .= K0*X .+ S05*ν .+ vforce05
+	# ℓ₂  .= K0*X .+ S05*ν .+ vforce0
 	LinearAlgebra.mul!(ℓ₂,K0,X)
 	mul!(ℓ₂,S05,ν,1.0,1.0)
-	LinearAlgebra.axpy!(1.0, vforce05, ℓ₂)
+	LinearAlgebra.axpy!(1.0, vforce0, ℓ₂)
 
 
-	# rhs .= S05*(ν .+ 0.5*h*ℓ₂) .+ K1*X .+ vforce05
+	# rhs .= S05*(ν .+ 0.5*h*ℓ₂) .+ K1*X .+ vforce1
 	LinearAlgebra.mul!(rhs,S05,ν)
 	mul!(rhs,S05,ℓ₂,0.5*h,1.0)
 	mul!(rhs,K1,X,1.0,1.0)
-	LinearAlgebra.axpy!(1.0, vforce05, rhs)
+	LinearAlgebra.axpy!(1.0, vforce1, rhs)
 
 	# Neumann Series to invert linear system
 	neumann!(nNeumann,h,S05,rhs,κ₂,ℓ₁)
@@ -304,7 +304,8 @@ end
 
 # sparse version of step function above
 @inline function step!(t::Float64, nNeumann::Int64, μ::Array{Float64,N}, ν::Array{Float64,N}, X::Array{Float64,N}, h::Float64,
-  					uforce0::Array{Float64,N}, vforce05::Array{Float64,N}, uforce1::Array{Float64,N},
+  					uforce0::Array{Float64,N}, vforce0::Array{Float64,N}, uforce1::Array{Float64,N},
+  					vforce1::Array{Float64,N},
   					K0::SparseMatrixCSC{Float64,Int64},S0::SparseMatrixCSC{Float64,Int64},K05::SparseMatrixCSC{Float64,Int64},S05::SparseMatrixCSC{Float64,Int64},
  					K1::SparseMatrixCSC{Float64,Int64},S1::SparseMatrixCSC{Float64,Int64},In::SparseMatrixCSC{Float64,Int64},
 					κ₁::Array{Float64,N}, κ₂::Array{Float64,N},ℓ₁::Array{Float64,N}, ℓ₂::Array{Float64,N},
@@ -324,17 +325,17 @@ end
 	# X   .= (μ .+ 0.5*h.*κ₂)
 	copy!(X,μ)
 
-	# ℓ₂  .= K0*X .+ S05*ν .+ vforce05
+	# ℓ₂  .= K0*X .+ S05*ν .+ vforce0
 	LinearAlgebra.mul!(ℓ₂,K0,X)
 	mul!(ℓ₂,S05,ν,1.0,1.0)
-	LinearAlgebra.axpy!(1.0, vforce05, ℓ₂)
+	LinearAlgebra.axpy!(1.0, vforce0, ℓ₂)
 
 
-	# rhs .= S05*(ν .+ 0.5*h*ℓ₂) .+ K1*X .+ vforce05
+	# rhs .= S05*(ν .+ 0.5*h*ℓ₂) .+ K1*X .+ vforce1
 	LinearAlgebra.mul!(rhs,S05,ν)
 	mul!(rhs,S05,ℓ₂,0.5*h,1.0)
 	mul!(rhs,K1,X,1.0,1.0)
-	LinearAlgebra.axpy!(1.0, vforce05, rhs)
+	LinearAlgebra.axpy!(1.0, vforce1, rhs)
 
 	# Neumann Series to invert linear system
 	neumann!(nNeumann,h,S05,rhs,κ₂,ℓ₁)
