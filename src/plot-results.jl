@@ -14,7 +14,7 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
     # Set default font sizes
     fnt = Plots.font("Helvetica", 12)
     lfnt = Plots.font("Helvetica", 10)
-    # temporarily removing the default font assignment due to a problem with the legendfont color (?)
+    # temporarily removing the default font assignment due to a problem/bug with the legendfont color (?)
     # Plots.default(titlefont=fnt, guidefont=fnt, tickfont=fnt, legendfont=lfnt, linewidth=1, size=(650, 350))
 
     nCoeff = length(pcof)
