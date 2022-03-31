@@ -14,9 +14,13 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
     # Set default font sizes
     fnt = Plots.font("Helvetica", 12)
     lfnt = Plots.font("Helvetica", 10)
-    # temporarily removing the default font assignment due to a problem/bug with the legendfont color (?)
-    # Plots.default(titlefont=fnt, guidefont=fnt, tickfont=fnt, legendfont=lfnt, linewidth=1, size=(650, 350))
 
+    if haskey(Plots._arg_desc,:legend_font_family)
+        Plots.default(legend_title_font_family=fnt, guidefontfamily=fnt, tickfontfamily=fnt, legend_font_family=lfnt, linewidth=1, size=(650, 350))
+    else 
+        Plots.default(titlefont=fnt, guidefont=fnt, tickfont=fnt, legendfont=lfnt, linewidth=1, size=(650, 350))
+    end
+    
     nCoeff = length(pcof)
     # Is there a better approach that avoids re-allocating the working_arrays object?
     wa = Juqbox.Working_Arrays(params, nCoeff)
