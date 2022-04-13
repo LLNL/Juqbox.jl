@@ -25,10 +25,11 @@ using Ipopt
 using Random
 
 Base.show(io::IO, f::Float64) = @printf(io, "%20.13e", f)
-Random.seed!(1234)
 
 include("../src/Juqbox.jl")
 using .Juqbox # quantum control module
+
+Random.seed!(1234)
 
 Nosc = 1 # Number of coupled sub-systems = oscillators
 N = 4 # Number of essential energy levels
@@ -108,8 +109,7 @@ rot1 = Diagonal(exp.(im*omega1*T))
 vtarget = rot1*utarget
 
 params = Juqbox.objparams([N], [Nguard], T, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
-                          Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops)
-
+                          Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, objFuncType=3,leak_ubound=4.e-5)
 # initial parameter guess
 
 # D1 smaller than 5 does not work
@@ -119,7 +119,8 @@ nCoeff = 2*Nctrl*Nfreq*D1 # factor '2' is for sin/cos
 # Random.seed!(12456)
 
 startFromScratch = true # false
-startFile="cnot-pcof-opt.dat"
+#startFile="cnot-pcof-opt.dat"
+startFile="leak.jld2"
 
 # initial parameter guess
 if startFromScratch
@@ -127,7 +128,11 @@ if startFromScratch
     println("*** Starting from random pcof with amplitude ", maxpar*0.01)
 else
     # use if you want to read the initial coefficients from file
-    pcof0 = vec(readdlm(startFile))
+    if occursin(".jld2",startFile)
+        pcof0 = vec(Juqbox.read_pcof(startFile))
+    else
+        pcof0 = vec(readdlm(startFile))
+    end
     println("*** Starting from B-spline coefficients in file: ", startFile)
     nCoeff = length(pcof0)
     D1 = div(nCoeff, 2*Nctrl*Nfreq)  # number of B-spline coeff per control function
@@ -156,6 +161,9 @@ end
 println("Tikhonov coefficients: tik0 = ", params.tik0)
 
 wa = Juqbox.Working_Arrays(params,nCoeff)
-prob = Juqbox.setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff, maxIter=maxIter, lbfgsMax=lbfgsMax, startFromScratch=startFromScratch)
+prob = Juqbox.setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff, maxIter=maxIter, lbfgsMax=lbfgsMax, startFromScratch=startFromScratch
+                                 # ,jacob_approx="finite-difference-values")
+                                  ,jacob_approx="exact")
 
 println("Initial coefficient vector stored in 'pcof0'")
+#pcof = Juqbox.run_optimizer(prob, pcof0)
