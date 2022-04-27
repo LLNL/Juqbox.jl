@@ -5,7 +5,8 @@ using Random
 
 Base.show(io::IO, f::Float64) = @printf(io, "%20.13e", f)
 
-import Juqbox
+# include("../src/Juqbox.jl")
+import Juqbox # quantum control module
 
 include("evalGrad.jl")
 include("test-stormer-verlet.jl")

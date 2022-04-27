@@ -2,4 +2,5 @@ docs/build
 *.jl~
 *.md~
 .gitignore~
-
+*.DS_Store*
+*.julia/

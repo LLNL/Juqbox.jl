@@ -80,6 +80,20 @@ mutable struct objparams
     pFidType    ::Int64
     globalPhase ::Float64
 
+    # Optimization problem formulation
+    objFuncType ::Int64   # 1 = objective function include infidelity and leakage
+                          # 2 = objective function only includes infidelity... no leakage in obj function or constraint
+                          # 3 = objective function only includes infidelity; leakage treated as inequality constraint                            
+    leak_lbound ::Float64 # The lower bound on the leakage inequality constraint (typically -1e19)
+    leak_ubound ::Float64 # The upper bound on the leakage inequality constraint
+
+    #Store information from last computation
+    last_leak       ::Float64
+    last_infidelity ::Float64
+    last_pcof       ::Array{Float64,1}
+    last_leak_grad  ::Array{Float64,1}
+    last_infidelity_grad::Array{Float64,1}
+
     # Convergence history variables
     saveConvHist  ::Bool;
     objHist       ::Array{Float64,1}
@@ -114,6 +128,7 @@ mutable struct objparams
                        Hunc_ops:: Array{Array{Float64,2},1} = Array{Float64,2}[],
                        forb_states:: Array{ComplexF64,2} = Array{ComplexF64}(undef,0,2),
                        forb_weights:: Vector{Float64} = Float64[],
+                       objFuncType:: Int64 = 1, leak_lbound:: Float64=-1.0e19, leak_ubound:: Float64=1.0e-3,
                        wmatScale::Float64 = 1.0, use_sparse::Bool = false, use_custom_forbidden::Bool = false)
         pFidType = 2
         Nosc   = length(Ne)
@@ -257,7 +272,19 @@ mutable struct objparams
             Hanti_ops1 = Hanti_ops
             Hunc_ops1 = Hunc_ops
         end
-        new(Nosc, N, Nguard, Ne, Ng, Ne+Ng, T, nsteps, Uinit, Utarget, use_bcarrier, Nfreq, Cfreq, kpar, tik0, Hconst, Hsym_ops1, Hanti_ops1, Hunc_ops1, Ncoupled, Nunc, isSymm, Ident, wmat, forb_states,forb_weights,wmat_real,wmat_imag, pFidType, 0.0, saveConvHist, zeros(0), zeros(0), zeros(0), zeros(0), nNeumann, traceInfidelityThreshold, 0.0, 0.0, usingPriorCoeffs, priorCoeffs, quiet, Rfreq, false, [])
+        
+        new(
+             Nosc, N, Nguard, Ne, Ng, Ne+Ng, T, nsteps, Uinit, Utarget, 
+             use_bcarrier, Nfreq, Cfreq, kpar, tik0, Hconst, Hsym_ops1, 
+             Hanti_ops1, Hunc_ops1, Ncoupled, Nunc, isSymm, Ident, wmat, 
+             forb_states,forb_weights,wmat_real,wmat_imag, pFidType, 0.0,
+             objFuncType,leak_lbound,leak_ubound,
+             0.0,0.0,zeros(0),zeros(0),zeros(0),saveConvHist,
+             zeros(0), zeros(0), zeros(0), zeros(0), 
+             nNeumann, traceInfidelityThreshold, 0.0, 0.0, usingPriorCoeffs,
+             priorCoeffs, quiet, Rfreq, false, []
+            )
+
     end
 
 end # mutable struct objparams
@@ -405,6 +432,14 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, wa::Working_A
     gi = wa.gi
     gradobjfadj = wa.gradobjfadj 
     tr_adj = wa.tr_adj
+
+
+    #Setup flag for obj/constraint func/grad calculations
+    grad_operations = [1.0] #This computes the total gradient and only one pass of the forloop below
+    if params.objFuncType != 1  
+        grad_operations = [1.0, 0.0] #This computes total grad then the leak grad (two passes below)
+    end
+
 
     # primary fidelity type
     pFidType = params.pFidType  
@@ -604,9 +639,6 @@ end
 vfinalr = copy(vr)
 vfinali = copy(-vi)
 
-tikhonovpenalty = tikhonov_pen(pcof, params)
-
-objfv = objfv .+ tikhonovpenalty
 
 traceInfidelity = 1.0 - tracefidabs2(vfinalr, vfinali, vtargetr, vtargeti)
 
@@ -622,9 +654,13 @@ if evaladjoint
         gradSize = Nsig*D1
     end
 
+
     # initialize array for storing the adjoint gradient so it can be returned to the calling function/program
     totalgrad = zeros(gradSize, 1);
+    leakgrad = zeros(gradSize, 1);
+    infidelgrad = zeros(gradSize, 1);
     gradobjfadj[:] .= 0.0
+
     
     t = T
     dt = -dt
@@ -635,80 +671,106 @@ if evaladjoint
         scomplex0 = exp(1im*params.globalPhase) - scomplex0
     end
 
-    # Set initial condition for adjoint variables
-    init_adjoint!(pFidType, params.globalPhase, N, scomplex0, lambdar, lambdar0, lambdar05,lambdai, lambdai0,
-                  vtargetr, vtargeti)
-
-    #Backward time stepping loop
-    for step in nsteps-1:-1:0
-
-        # Forcing for the real part of the adjoint variables in first PRK "stage"
-        mul!(hr0, wmat_real, vr, tinv, 0.0)
-
-        #loop over stages
-        for q in 1:stages
-            t0 = t
-            copy!(vr0,vr)
-            
-            # update K and S
-            # Since t is negative we have that K0 is K^{n+1}, K05 = K^{n-1/2}, 
-            # K1 = K^{n} and similarly for S.
-            # general case
-            KS!(K0, S0, t, params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq) 
-            KS!(K05, S05, t + 0.5*dt*gamma[q], params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq) 
-            KS!(K1, S1, t + dt*gamma[q], params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq) 
+        
+    for objflag in grad_operations # either [1.0] or [1.0,0.0]
+        #1.0 means compute total grad
+        #0.0 means compute the leakage grad
+        #Then fidelity is computed as total - leakage ... if objFuncType=1, then fidelity grad stores the total and leak grad==0.0
 
 
-            # Integrate state variables backwards in time one step
-            @inbounds t = step!(t, nNeumann, vr, vi, vi05, dt*gamma[q], K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs)
-
-            # Forcing for adjoint equations (real part of forbidden state penalty)
-            mul!(hi0,wmat_real,vi05,tinv,0.0)
-            mul!(hr1,wmat_real,vr,tinv,0.0)
-
-            # Forcing for adjoint equations (imaginary part of forbidden state penalty)
-            mul!(hr1,wmat_imag,vi05,tinv,1.0)
-            copy!(hi1,hi0)
-            mul!(hi1,wmat_imag,vr,-tinv,1.0)
-
-            # evolve lambdar, lambdai
-            temp = t0
-            @inbounds temp = step!(temp, nNeumann, lambdar, lambdai, lambdar05, dt*gamma[q], hr0, hi0, hr1, hi1, K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs)
-
-            # Accumulate gradient
-            adjoint_grad_calc!(params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, vr0, vi05, vr, lambdar0, lambdar05, lambdai, lambdai0, t0, dt,splinepar, gr, gi, tr_adj) 
-            axpy!(gamma[q]*dt,tr_adj,gradobjfadj)
-            
-            # save for next stage
-            copy!(lambdai0,lambdai)
-            copy!(lambdar0,lambdar)
-
-        end #for stages
-    end # for step (backward time stepping loop)
-
-    # Add in Tikhonov regularization gradient term
-    tikhonov_grad!(pcof, params, gr)  
-    axpy!(1.0,gr,gradobjfadj)
-
-    if pFidType == 3
-        # gradient wrt the global phase
-        rotTarg = exp(1im*params.globalPhase)*(vtargetr + im*vtargeti)
-        # grad wrt the global phase
-        primObjGradPhase = - tracefidreal(vfinalr, vfinali, real(im.*rotTarg), imag(im.*rotTarg))
-        # all components of the gradient
-        totalgrad = zeros(Psize+1) # allocate array to return the gradient
-        totalgrad[1:Psize] = gradobjfadj[:]
-        totalgrad[Psize+1] = primObjGradPhase
-        # totalgrad = zeros(Psize) # allocate array to return the gradient
-        # totalgrad[:] = gradobjfadj[:]
-    else
-        totalgrad = zeros(Psize) # allocate array to return the gradient
-        totalgrad[:] = gradobjfadj[:]
-    end
+        #Reset t
+        t = T
+        gradobjfadj[:] .= 0.0
+        totalgrad[:] .= 0.0
     
+        copy!(vr,vfinalr)
+        copy!(vi,-vfinali)
+        
+        #If objflag = 0, compute leak only, objflag=1, compute total
+        scomplex0 *= (objflag + 0.0im)
+
+        # Set initial condition for adjoint variables
+        init_adjoint!(pFidType, params.globalPhase, N, scomplex0, lambdar, lambdar0, lambdar05,lambdai, lambdai0,
+                        vtargetr, vtargeti)
+
+        #Backward time stepping loop
+        for step in nsteps-1:-1:0
+
+            # Forcing for the real part of the adjoint variables in first PRK "stage"
+            mul!(hr0, wmat_real, vr, tinv, 0.0)
+
+            #loop over stages
+            for q in 1:stages
+                t0 = t
+                copy!(vr0,vr)
+                
+                # update K and S
+                # Since t is negative we have that K0 is K^{n+1}, K05 = K^{n-1/2}, 
+                # K1 = K^{n} and similarly for S.
+                # general case
+                KS!(K0, S0, t, params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq) 
+                KS!(K05, S05, t + 0.5*dt*gamma[q], params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq) 
+                KS!(K1, S1, t + dt*gamma[q], params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq) 
+
+
+                # Integrate state variables backwards in time one step
+                @inbounds t = step!(t, nNeumann, vr, vi, vi05, dt*gamma[q], K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs)
+
+                # Forcing for adjoint equations (real part of forbidden state penalty)
+                mul!(hi0,wmat_real,vi05,tinv,0.0)
+                mul!(hr1,wmat_real,vr,tinv,0.0)
+
+                # Forcing for adjoint equations (imaginary part of forbidden state penalty)
+                mul!(hr1,wmat_imag,vi05,tinv,1.0)
+                copy!(hi1,hi0)
+                mul!(hi1,wmat_imag,vr,-tinv,1.0)
+
+                # evolve lambdar, lambdai
+                temp = t0
+                @inbounds temp = step!(temp, nNeumann, lambdar, lambdai, lambdar05, dt*gamma[q], hr0, hi0, hr1, hi1, K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs)
+
+                # Accumulate gradient
+                adjoint_grad_calc!(params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, vr0, vi05, vr, lambdar0, lambdar05, lambdai, lambdai0, t0, dt,splinepar, gr, gi, tr_adj) 
+                axpy!(gamma[q]*dt,tr_adj,gradobjfadj)
+                
+                # save for next stage
+                copy!(lambdai0,lambdai)
+                copy!(lambdar0,lambdar)
+
+            end #for stages
+        end # for step (backward time stepping loop)
+
+        if pFidType == 3
+            # gradient wrt the global phase
+            rotTarg = exp(1im*params.globalPhase)*(vtargetr + im*vtargeti)
+            # grad wrt the global phase
+            primObjGradPhase = - tracefidreal(vfinalr, vfinali, real(im.*rotTarg), imag(im.*rotTarg))
+            # all components of the gradient
+            totalgrad = zeros(Psize+1) # allocate array to return the gradient
+            totalgrad[1:Psize] = gradobjfadj[:]
+            totalgrad[Psize+1] = primObjGradPhase
+            # totalgrad = zeros(Psize) # allocate array to return the gradient
+            # totalgrad[:] = gradobjfadj[:]
+        else
+            totalgrad = zeros(Psize) # allocate array to return the gradient
+            totalgrad[:] = gradobjfadj[:]
+        end
+
+
+        #objflag ∈ [1.0,0.0]
+        if objflag == 1.0 #First pass we compute the total (leak + infidelity)... if objFuncType == 1, then infidelgrad stores the total grad
+            infidelgrad .= totalgrad
+        elseif objflag == 0.0 #Second pass we only compute the leak, so get fidelity grad by subtracting this leak from previous total
+            leakgrad .= totalgrad
+            infidelgrad .-= leakgrad
+        end
+   end
+   
 end # if evaladjoint
 
 if verbose
+    tikhonovpenalty = tikhonov_pen(pcof, params)
+
     println("Total objective func: ", objfv)
     println("Primary objective func: ", primaryobjf, " Guard state penalty: ", secondaryobjf, " Tikhonov penalty: ", tikhonovpenalty)
     if evaladjoint
@@ -775,6 +837,9 @@ if verbose
     
 end #if verbose
 
+
+
+
 # return to calling routine (the order of the return arguments is somewhat inconsistent. At least add a description in the docs)
 if verbose && evaladjoint
     return objfv, totalgrad, usaver+1im*usavei, mfidelityrot, dfdp, wr1 - 1im*wi
@@ -782,9 +847,9 @@ elseif verbose
     println("Returning from traceobjgrad with objfv, unitary history, fidelity")
     return objfv, usaver+1im*usavei, mfidelityrot
 elseif evaladjoint
-    return objfv, totalgrad, primaryobjf, secondaryobjf, traceInfidelity
+    return objfv, totalgrad, primaryobjf, secondaryobjf, traceInfidelity, infidelgrad, leakgrad
 else
-    return objfv
+    return objfv, primaryobjf, secondaryobjf
 end #if
 end
 
