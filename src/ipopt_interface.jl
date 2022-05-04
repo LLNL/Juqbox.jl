@@ -69,14 +69,17 @@ end
 
 
 # setup callback functions for Ipopt
-function eval_f_par(pcof::Vector{Float64},x_new:: Bool, params:: Juqbox.objparams, wa::Working_Arrays,
-                    nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
+
+# function eval_f_par(pcof::Vector{Float64},x_new:: Bool, params:: Juqbox.objparams, wa::Working_Arrays,
+#                     nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
+function eval_f_par(pcof::Vector{Float64}, params:: Juqbox.objparams, wa::Working_Arrays,
+    nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
 
 
     #Return last stored
-    if x_new 
-    # pnorm =norm(pcof .- params.last_pcof) 
-    # if pnorm < 1.0e-15        
+    # if x_new 
+    pnorm =norm(pcof .- params.last_pcof)     
+    if pnorm > 1.0e-15
         compute_adjoint = true
         eval_f_g_grad!(pcof,params,wa,nodes,weights,compute_adjoint)        
     end
@@ -94,13 +97,15 @@ function eval_f_par(pcof::Vector{Float64},x_new:: Bool, params:: Juqbox.objparam
   end
 
 
-function eval_g_par(pcof::Vector{Float64},x_new:: Bool,g::Vector{Float64},params:: Juqbox.objparams, wa::Working_Arrays,
-                    nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
-                
+# function eval_g_par(pcof::Vector{Float64},x_new:: Bool,g::Vector{Float64},params:: Juqbox.objparams, wa::Working_Arrays,
+#                     nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
+function eval_g_par(pcof::Vector{Float64},g::Vector{Float64},params:: Juqbox.objparams, wa::Working_Arrays,
+    nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
+
     #Return last stored
-    if x_new
-    # pnorm =norm(pcof .- params.last_pcof) 
-    # if pnorm < 1.0e-15
+    # if x_new
+    pnorm =norm(pcof .- params.last_pcof) 
+    if pnorm > 1.0e-15
         compute_adjoint = true
         eval_f_g_grad!(pcof,params,wa,nodes,weights,compute_adjoint)
     end
@@ -112,18 +117,18 @@ end
 
 
 
-function eval_grad_f_par(pcof::Vector{Float64},x_new:: Bool, grad_f::Vector{Float64}, params:: Juqbox.objparams, wa::Working_Arrays,
-                        nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
+# function eval_grad_f_par(pcof::Vector{Float64},x_new:: Bool, grad_f::Vector{Float64}, params:: Juqbox.objparams, wa::Working_Arrays,
+#                         nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
+function eval_grad_f_par(pcof::Vector{Float64}, grad_f::Vector{Float64}, params:: Juqbox.objparams, wa::Working_Arrays,
+    nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
     
-
     #Return last stored
-    if x_new 
-    # pnorm =norm(pcof .- params.last_pcof) 
-    # if pnorm < 1.0e-15
+    # if x_new 
+    pnorm =norm(pcof .- params.last_pcof) 
+    if pnorm > 1.0e-15
         compute_adjoint = true
         eval_f_g_grad!(pcof,params,wa,nodes,weights,compute_adjoint)
     end
-
 
     if params.objFuncType == 1
         grad_f .= params.last_infidelity_grad + params.last_leak_grad
@@ -144,8 +149,11 @@ function eval_grad_f_par(pcof::Vector{Float64},x_new:: Bool, grad_f::Vector{Floa
 end
 
 
-function eval_jac_g_par(pcof::Vector{Float64},x_new:: Bool, rows::Vector{Int32}, cols::Vector{Int32}, jac_g::Union{Nothing,Vector{Float64}},
-                        params:: Juqbox.objparams, wa::Working_Arrays, nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
+# function eval_jac_g_par(pcof::Vector{Float64},x_new:: Bool, rows::Vector{Int32}, cols::Vector{Int32}, jac_g::Union{Nothing,Vector{Float64}},
+#                         params:: Juqbox.objparams, wa::Working_Arrays, nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
+function eval_jac_g_par(pcof::Vector{Float64}, rows::Vector{Int32}, cols::Vector{Int32}, jac_g::Union{Nothing,Vector{Float64}},
+    params:: Juqbox.objparams, wa::Working_Arrays, nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
+
     if jac_g === nothing 
         if length(rows)>0
             nvar = length(pcof)
@@ -157,9 +165,9 @@ function eval_jac_g_par(pcof::Vector{Float64},x_new:: Bool, rows::Vector{Int32},
 
 
         #Return last stored
-        if x_new 
-        # pnorm =norm(pcof .- params.last_pcof) 
-        # if pnorm < 1.0e-15
+        # if x_new 
+        pnorm =norm(pcof .- params.last_pcof) 
+        if pnorm > 1.0e-15
             compute_adjoint = true    
             eval_f_g_grad!(pcof,params,wa,nodes,weights,compute_adjoint)    
             return
@@ -186,7 +194,7 @@ end
 
 function eval_h(
     x::Vector{Float64},
-    x_new:: Bool,
+    # x_new:: Bool,
     rows::Vector{Int32},
     cols::Vector{Int32},
     obj_factor::Float64,
@@ -268,8 +276,12 @@ function setup_ipopt_problem(params:: Juqbox.objparams, wa::Working_Arrays, nCoe
     params.last_infidelity_grad = zeros(nCoeff)
 
     # callback functions need access to the params object
-    eval_f(pcof,x_new) = eval_f_par(pcof, x_new,params, wa, nodes, weights)
-    eval_grad_f(pcof,x_new, grad_f) = eval_grad_f_par(pcof,x_new, grad_f, params, wa, nodes, weights)
+    eval_f(pcof) = eval_f_par(pcof,params, wa, nodes, weights)
+    eval_grad_f(pcof, grad_f) = eval_grad_f_par(pcof,grad_f, params, wa, nodes, weights)
+
+    #Comment out to use xnew with later version of ipopt
+    # eval_f(pcof,x_new) = eval_f_par(pcof, x_new,params, wa, nodes, weights)
+    # eval_grad_f(pcof,x_new, grad_f) = eval_grad_f_par(pcof,x_new, grad_f, params, wa, nodes, weights)
     intermediate(alg_mod, iter_count, obj_value, inf_pr, inf_du, mu,
                  d_norm, regularization_size, alpha_du, alpha_pr, ls_trials) =
                      intermediate_par(alg_mod, iter_count, obj_value, inf_pr, inf_du, mu,
@@ -283,8 +295,10 @@ function setup_ipopt_problem(params:: Juqbox.objparams, wa::Working_Arrays, nCoe
     g_U = nconst > 0 ? params.leak_ubound.*ones(nconst) : zeros(nconst);
     
     #Create alias even if not used
-    eval_g(pcof,x_new,g) = eval_g_par(pcof,x_new,g,params,wa,nodes,weights)
-    eval_jac_g(pcof,x_new,rows,cols,jac_g) = eval_jac_g_par(pcof,x_new,rows,cols,jac_g,params,wa,nodes,weights)
+    eval_g(pcof,g) = eval_g_par(pcof,g,params,wa,nodes,weights)
+    eval_jac_g(pcof,rows,cols,jac_g) = eval_jac_g_par(pcof,rows,cols,jac_g,params,wa,nodes,weights)
+    # eval_g(pcof,x_new,g) = eval_g_par(pcof,x_new,g,params,wa,nodes,weights)
+    # eval_jac_g(pcof,x_new,rows,cols,jac_g) = eval_jac_g_par(pcof,x_new,rows,cols,jac_g,params,wa,nodes,weights)
 
 
     # tmp
@@ -292,7 +306,8 @@ function setup_ipopt_problem(params:: Juqbox.objparams, wa::Working_Arrays, nCoe
     if @isdefined createProblem
         prob = createProblem( nCoeff, minCoeff, maxCoeff, nconst, g_L, g_U, nEleJac, nEleHess, eval_f, eval_g, eval_grad_f, eval_jac_g);
     else
-        prob = CreateIpoptProblem( nCoeff, minCoeff, maxCoeff, nconst, g_L, g_U, nEleJac, nEleHess, eval_f, eval_g, eval_grad_f, eval_jac_g,eval_h,expose_xnew=true);
+        # prob = CreateIpoptProblem( nCoeff, minCoeff, maxCoeff, nconst, g_L, g_U, nEleJac, nEleHess, eval_f, eval_g, eval_grad_f, eval_jac_g,eval_h,expose_xnew=true);
+        prob = CreateIpoptProblem( nCoeff, minCoeff, maxCoeff, nconst, g_L, g_U, nEleJac, nEleHess, eval_f, eval_g, eval_grad_f, eval_jac_g,eval_h);
     end
 
     if @isdefined addOption

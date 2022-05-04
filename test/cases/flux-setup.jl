@@ -33,7 +33,7 @@ using SparseArrays
 
 Base.show(io::IO, f::Float64) = @printf(io, "%20.13e", f)
 
-using Juqbox
+#using Juqbox
 
 verbose = false
 N = 4

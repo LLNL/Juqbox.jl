@@ -9,9 +9,13 @@ function evalObjGrad( pcof0:: Array{Float64, 1}, params:: Juqbox.objparams, wa::
     success=false
 
     # evaluate fidelity
-    grad = zeros(length(pcof0))
-    objv = Juqbox.eval_f_par(pcof0,true,params, wa, [0.0], [1.0]);    # Use these functions to compute obj 
-    Juqbox.eval_grad_f_par(pcof0,false,grad,params, wa, [0.0], [1.0])  # and grad since they now include the tikhonov terms
+    nCoeff = length(pcof0)
+    grad = zeros(nCoeff)
+    objv = Juqbox.eval_f_par(pcof0,params, wa, [0.0], [1.0]);    # Use these functions to compute obj
+    Juqbox.eval_grad_f_par(pcof0,grad,params, wa, [0.0], [1.0])  # and grad since they now include the tikhonov terms
+
+    # objv = Juqbox.eval_f_par(pcof0,true,params, wa, [0.0], [1.0]);    # Use these functions to compute obj 
+    # Juqbox.eval_grad_f_par(pcof0,false,grad,params, wa, [0.0], [1.0])  # and grad since they now include the tikhonov terms
 
 
     if writeFile

@@ -25,7 +25,7 @@ using Random
 
 Base.show(io::IO, f::Float64) = @printf(io, "%20.13e", f)
 
-import Juqbox
+#import Juqbox
 
 verbose = false
 Nosc=1 # Number of oscillators

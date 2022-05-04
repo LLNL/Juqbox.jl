@@ -34,33 +34,10 @@ using SparseArrays
 
 Base.show(io::IO, f::Float64) = @printf(io, "%20.13e", f)
 
-import Juqbox
+#import Juqbox
 
 verbose = false
 
-function initial_cond(Ntot, N, Ne, Ng)
-    Ident = Matrix{Float64}(I, Ntot, Ntot)
-    U0 = Ident[1:Ntot, 1:N] # Rectangular subset of identity
-    # adjust the initial guess
-    if Ng[1] + Ng[2] > 0
-        Nt = Ne + Ng
-        # build up a basis for the essential states
-        col = 0
-        m = 0
-        for k2 in 1:Nt[2]
-            for k1 in 1:Nt[1]
-                m += 1
-                # is this a guard level?
-                guard = (k1 > Ne[1]) || (k2 > Ne[2])
-                if !guard
-                    col += 1
-                    U0[:,col] = Ident[:,m]
-                end # if ! guard
-            end # for
-        end # for
-    end # if
-    return U0
-end
 
 function orig_wmatsetup(Ne::Array{Int64,1}, Ng::Array{Int64,1})
     Nt = Ne + Ng
@@ -331,7 +308,7 @@ rot2 = Diagonal(exp.(im*omega2*Tmax))
 # target in the rotating frame
 vtarget = rot1*rot2*utarget
 
-U0 = initial_cond(Ntot, N, Ne, Ng)
+U0 = Juqbox.initial_cond(Ne, Ng)
 
 # assemble problem description for the optimization
 params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
