@@ -101,9 +101,8 @@ mutable struct objparams
     secondaryHist ::Array{Float64,1}
     dualInfidelityHist  ::Array{Float64,1}
 
-    # Number of terms in truncated Neumann series (not counting identity) 
-    # to solve linear system in timestepping
-    nNeumann :: Int64
+    #Linear solver object to solve linear system in timestepping
+    linear_solver ::lsolver_object
 
     traceInfidelityThreshold :: Float64
     lastTraceInfidelity :: Float64
@@ -129,7 +128,8 @@ mutable struct objparams
                        forb_states:: Array{ComplexF64,2} = Array{ComplexF64}(undef,0,2),
                        forb_weights:: Vector{Float64} = Float64[],
                        objFuncType:: Int64 = 1, leak_lbound:: Float64=-1.0e19, leak_ubound:: Float64=1.0e-3,
-                       wmatScale::Float64 = 1.0, use_sparse::Bool = false, use_custom_forbidden::Bool = false)
+                       wmatScale::Float64 = 1.0, use_sparse::Bool = false, use_custom_forbidden::Bool = false,
+                       linear_solver::lsolver_object = lsolver_object())
         pFidType = 2
         Nosc   = length(Ne)
         N      = prod(Ne)
@@ -218,8 +218,6 @@ mutable struct objparams
         #     throw(ArgumentError("Uncoupled Hamiltonians for more than a single oscillator not currently supported.\n"))
         # end
 
-        # Default number of Neumann series terms
-        nNeumann = 3
         quiet = false
 
         traceInfidelityThreshold = 0.0
@@ -273,6 +271,7 @@ mutable struct objparams
             Hunc_ops1 = Hunc_ops
         end
         
+
         new(
              Nosc, N, Nguard, Ne, Ng, Ne+Ng, T, nsteps, Uinit, Utarget, 
              use_bcarrier, Nfreq, Cfreq, kpar, tik0, Hconst, Hsym_ops1, 
@@ -281,7 +280,7 @@ mutable struct objparams
              objFuncType,leak_lbound,leak_ubound,
              0.0,0.0,zeros(0),zeros(0),zeros(0),saveConvHist,
              zeros(0), zeros(0), zeros(0), zeros(0), 
-             nNeumann, traceInfidelityThreshold, 0.0, 0.0, usingPriorCoeffs,
+             linear_solver, traceInfidelityThreshold, 0.0, 0.0, usingPriorCoeffs,
              priorCoeffs, quiet, Rfreq, false, []
             )
 
@@ -344,6 +343,9 @@ mutable struct Working_Arrays
     function Working_Arrays(params::objparams, nCoeff::Int64)
         N = params.N
         Ntot = N + params.Nguard
+
+        allocate_linear_solver_arrays!(params.linear_solver,Ntot,N)
+
         K0,S0,K05,S05,K1,S1,vtargetr,vtargeti = KS_alloc(params)
         lambdar,lambdar0,lambdai,lambdai0,lambdar05,κ₁,κ₂,ℓ₁,ℓ₂,rhs,gr0,gi0,gr1,gi1,hr0,hi0,hi1,hr1,vr,vi,vi05,vr0,vfinalr,vfinali = time_step_alloc(Ntot,N)
         if params.pFidType == 3
@@ -393,7 +395,7 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, wa::Working_A
     Nfreq = params.Nfreq
     Nsig  = 2*(Ncoupled + Nunc) # Updated for uncoupled ctrl
 
-    nNeumann = params.nNeumann
+    linear_solver = params.linear_solver    
 
     # Reference pre-allocated working arrays
     K0 = wa.K0
@@ -566,7 +568,7 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, wa::Working_A
             
             # Take a step forward and accumulate weight matrix integral. Note the √2 multiplier is to account
             # for the midpoint rule in the numerical integration of the imaginary part of the signal.
-            @inbounds t = step!(t, nNeumann, vr, vi, vi05, dt*gamma[q], K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs)
+            @inbounds t = step!(t, vr, vi, vi05, dt*gamma[q], K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs,linear_solver)
 
             forbidden = tinv*penalf2a(vr, vi05, wmat_real)  
             forbidden_imag1 = tinv*penalf2imag(vr0, vi05, wmat_imag)
@@ -583,8 +585,8 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, wa::Working_A
 
                 copy!(wr1,wr)
 
-                @inbounds step_fwdGrad!(t0, nNeumann, wr1, wi, wi05, dt*gamma[q],
-                                                  gr0, gi0, gr1, gi1, K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs) 
+                @inbounds step_fwdGrad!(t0, wr1, wi, wi05, dt*gamma[q],
+                                        gr0, gi0, gr1, gi1, K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs,linear_solver) 
                 
                 # Real part of forbidden state weighting
                 forbalpha0 = tinv*penalf2grad(vr0, vi05, wr, wi05, wmat_real)
@@ -714,7 +716,7 @@ if evaladjoint
 
 
                 # Integrate state variables backwards in time one step
-                @inbounds t = step!(t, nNeumann, vr, vi, vi05, dt*gamma[q], K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs)
+                @inbounds t = step!(t, vr, vi, vi05, dt*gamma[q], K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs,linear_solver)
 
                 # Forcing for adjoint equations (real part of forbidden state penalty)
                 mul!(hi0,wmat_real,vi05,tinv,0.0)
@@ -727,7 +729,7 @@ if evaladjoint
 
                 # evolve lambdar, lambdai
                 temp = t0
-                @inbounds temp = step!(temp, nNeumann, lambdar, lambdai, lambdar05, dt*gamma[q], hr0, hi0, hr1, hi1, K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs)
+                @inbounds temp = step!(temp, lambdar, lambdai, lambdar05, dt*gamma[q], hr0, hi0, hr1, hi1, K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs,linear_solver)
 
                 # Accumulate gradient
                 adjoint_grad_calc!(params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, vr0, vi05, vr, lambdar0, lambdar05, lambdai, lambdai0, t0, dt,splinepar, gr, gi, tr_adj) 
@@ -1846,7 +1848,6 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
     Nguard = params.Nguard  
     T = params.T
     nsteps = params.nsteps
-    nNeumann = params.nNeumann
     H0 = params.Hconst
 
     Ntot = N + Nguard
@@ -1941,7 +1942,7 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
             # Take a step forward and accumulate weight matrix integral. Note the √2 multiplier is to account
             # for the midpoint rule in the numerical integration of the imaginary part of the signal.
             # @inbounds t, vr, vi, vi05 = step(t, vr, vi, dt*gamma[q], K0, S0, K05, S05, K1, S1, Ident)
-            @inbounds t = step!(t, nNeumann, vr, vi, vi05, dt*gamma[q], K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs)
+            @inbounds t = step!(t, vr, vi, vi05, dt*gamma[q], K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs,linear_solver)
 
             # Keep prior value for next step (FG: will this work for multiple stages?)
 
@@ -2024,7 +2025,7 @@ function estimate_Neumann!(tol::Float64, params::objparams, maxpar::Array{Float6
     normS = opnorm(S)
     nterms = ceil(Int64,log(tol)/log(normS))-1
     if(nterms > 0)
-        params.nNeumann = nterms
+        params.linear_solver.iter = nterms
     end
     # return nterms
 end
