@@ -26,8 +26,8 @@ using Random
 
 Base.show(io::IO, f::Float64) = @printf(io, "%20.13e", f)
 
-include("../src/Juqbox.jl")
-using .Juqbox # quantum control module
+# include("../src/Juqbox.jl")
+using Juqbox # quantum control module
 
 Random.seed!(1234)
 

@@ -356,6 +356,107 @@ end
 end
 
 
+
+
+
+
+
+# This is for the adjoint solve Without forcing. We note that h is negative in this case.
+@inline function step_no_forcing!(t::Float64, μ::Array{Float64,N}, ν::Array{Float64,N}, X::Array{Float64,N}, h::Float64,
+  					K0::Array{Float64,N},S0::Array{Float64,N},K05::Array{Float64,N},S05::Array{Float64,N},
+ 					K1::Array{Float64,N},S1::Array{Float64,N},In::Array{Float64,N},
+ 					κ₁::Array{Float64,N}, κ₂::Array{Float64,N},ℓ₁::Array{Float64,N}, ℓ₂::Array{Float64,N},
+  					rhs::Array{Float64,N},linear_solver::lsolver_object) where N
+
+    # rhs .= S0*μ .- K05*ν .+ uforce0
+	LinearAlgebra.mul!(rhs,S0,μ)
+	mul!(rhs,K05,ν,-1.0,1.0)
+
+	# solve linear system
+	linear_solver.solve(h,S0,rhs,κ₁,κ₂)
+
+	# μ  .= μ .+ 0.5*h.*κ₂
+	LinearAlgebra.axpy!(0.5*h, κ₂, μ)
+	
+	# X   .= (μ .+ 0.5*h.*κ₂)
+	copy!(X,μ)
+
+	# ℓ₂  .= K0*X .+ S05*ν .+ vforce0
+	LinearAlgebra.mul!(ℓ₂,K0,X)
+	mul!(ℓ₂,S05,ν,1.0,1.0)
+	
+	# rhs .= S05*(ν .+ 0.5*h*ℓ₂) .+ K1*X .+ vforce1
+	LinearAlgebra.mul!(rhs,S05,ν)
+	mul!(rhs,S05,ℓ₂,0.5*h,1.0)
+	mul!(rhs,K1,X,1.0,1.0)
+	
+	# solve linear system
+	linear_solver.solve(h,S05,rhs,κ₂,ℓ₁)
+
+	ν  .= ν .+ (0.5*h).*(ℓ₂ .+ ℓ₁)
+
+	# κ₁ .= -K05*ν .+ S1*X .+ uforce1
+	LinearAlgebra.mul!(κ₁,S1,X)
+	mul!(κ₁,K05,ν,-1.0,1.0)
+
+	# μ  .= μ .+ 0.5*h.*κ₁
+	LinearAlgebra.axpy!(0.5*h, κ₁, μ)
+
+	t  = t + h
+end
+
+# sparse version of step function above
+@inline function step_no_forcing!(t::Float64, μ::Array{Float64,N}, ν::Array{Float64,N}, X::Array{Float64,N}, h::Float64,
+  					K0::SparseMatrixCSC{Float64,Int64},S0::SparseMatrixCSC{Float64,Int64},K05::SparseMatrixCSC{Float64,Int64},S05::SparseMatrixCSC{Float64,Int64},
+ 					K1::SparseMatrixCSC{Float64,Int64},S1::SparseMatrixCSC{Float64,Int64},In::SparseMatrixCSC{Float64,Int64},
+					κ₁::Array{Float64,N}, κ₂::Array{Float64,N},ℓ₁::Array{Float64,N}, ℓ₂::Array{Float64,N},
+  					rhs::Array{Float64,N},linear_solver::lsolver_object) where N
+
+    # rhs .= S0*μ .- K05*ν .+ uforce0
+	LinearAlgebra.mul!(rhs,S0,μ)
+	mul!(rhs,K05,ν,-1.0,1.0)
+	
+	# solve linear system
+	linear_solver.solve(h,S0,rhs,κ₁,κ₂)
+
+	# μ  .= μ .+ 0.5*h.*κ₂
+	LinearAlgebra.axpy!(0.5*h, κ₂, μ)
+	
+	# X   .= (μ .+ 0.5*h.*κ₂)
+	copy!(X,μ)
+
+	# ℓ₂  .= K0*X .+ S05*ν .+ vforce0
+	LinearAlgebra.mul!(ℓ₂,K0,X)
+	mul!(ℓ₂,S05,ν,1.0,1.0)
+
+	# rhs .= S05*(ν .+ 0.5*h*ℓ₂) .+ K1*X .+ vforce1
+	LinearAlgebra.mul!(rhs,S05,ν)
+	mul!(rhs,S05,ℓ₂,0.5*h,1.0)
+	mul!(rhs,K1,X,1.0,1.0)
+
+	# solve linear system
+	linear_solver.solve(h,S05,rhs,κ₂,ℓ₁)
+
+	ν  .= ν .+ (0.5*h).*(ℓ₂ .+ ℓ₁)
+
+	# κ₁ .= -K05*ν .+ S1*X .+ uforce1
+	LinearAlgebra.mul!(κ₁,S1,X)
+	mul!(κ₁,K05,ν,-1.0,1.0)
+
+	# μ  .= μ .+ 0.5*h.*κ₁
+	LinearAlgebra.axpy!(0.5*h, κ₁, μ)
+
+	t  = t + h
+
+end
+
+
+
+
+
+
+
+
 # FMG: This routine has been modified. This is for the forward evolution with no forcing.
 @inline function step!(t::Float64, u::Array{Float64,N}, v::Array{Float64,N}, v05::Array{Float64,N}, h::Float64,
   					  K0::Array{Float64,N},S0::Array{Float64,N},K05::Array{Float64,N},S05::Array{Float64,N},

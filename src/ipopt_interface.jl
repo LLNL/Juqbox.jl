@@ -47,6 +47,8 @@ function eval_f_g_grad!(pcof::Vector{Float64},params:: Juqbox.objparams, wa::Wor
             _, totalgrad, primaryobjf, secondaryobjf, traceInfidelity, infidelitygrad, leakgrad = Juqbox.traceobjgrad(pcof,params,wa,false,compute_adjoint)
             for j in 1:length(infidelitygrad)
                 params.last_infidelity_grad[j] += infidelitygrad[j]*weights[i]
+            end
+            for j in 1:length(leakgrad)            
                 params.last_leak_grad[j] += leakgrad[j]*weights[i]
             end
         else
@@ -130,11 +132,8 @@ function eval_grad_f_par(pcof::Vector{Float64}, grad_f::Vector{Float64}, params:
         eval_f_g_grad!(pcof,params,wa,nodes,weights,compute_adjoint)
     end
 
-    if params.objFuncType == 1
-        grad_f .= params.last_infidelity_grad + params.last_leak_grad
-    else
-        grad_f .= params.last_infidelity_grad
-    end
+    #When params.objFuncType == 1, this stores the total grad
+    grad_f .= params.last_infidelity_grad
     
     # Add in Tikhonov regularization gradient term
     wa.gr .= 0.0
@@ -272,8 +271,10 @@ function setup_ipopt_problem(params:: Juqbox.objparams, wa::Working_Arrays, nCoe
 
     #Initialize the last fidelity and leak terms and gradients
     params.last_pcof = zeros(nCoeff)
-    params.last_leak_grad = zeros(nCoeff)    
     params.last_infidelity_grad = zeros(nCoeff)
+    if params.objFuncType != 1 #Only allcoate for inequality opt...
+        params.last_leak_grad = zeros(nCoeff)        
+    end
 
     # callback functions need access to the params object
     eval_f(pcof) = eval_f_par(pcof,params, wa, nodes, weights)

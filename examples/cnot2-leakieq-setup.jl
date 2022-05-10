@@ -32,8 +32,8 @@ using Plots
 using SparseArrays
 
 Base.show(io::IO, f::Float64) = @printf(io, "%20.13e", f)
-include("../src/Juqbox.jl")
-using .Juqbox # quantum control module
+# include("../src/Juqbox.jl")
+using Juqbox # quantum control module
 
 eval_lab = false # true
 println("Setup for ", eval_lab ? "lab frame evaluation" : "rotating frame optimization")
@@ -178,10 +178,10 @@ end
 # assemble problem description for the optimization
 if eval_lab
     params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
-                              Hconst=H0, Hunc_ops=Hunc_ops, use_sparse=use_sparse)
+                              Hconst=H0, Hunc_ops=Hunc_ops, use_sparse=use_sparse,objFuncType=3,leak_ubound=1.e-3)
 else
     params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
-                              Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, use_sparse=use_sparse,objFuncType=2,leak_ubound=1.e-3)
+                              Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, use_sparse=use_sparse,objFuncType=3,leak_ubound=1.e-3)
 end
 
 # initial parameter guess
