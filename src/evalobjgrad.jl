@@ -38,11 +38,11 @@ and either be symmetric or skew-symmetric.
 - `Hanti_ops:: Array{Array{Float64,2},1}`: (keyword) Array of anti-symmetric control Hamiltonians, each of size Ntot × Ntot
 - `Hunc_ops:: Array{Array{Float64,2},1}`: (keyword) Array of uncoupled control Hamiltonians, each of size Ntot × Ntot
 - `wmatScale::Float64 = 1.0`: (keyword) Scaling factor for suppressing guarded energy levels
-- `objFuncType ::Int64 = 1`  # 1 = objective function include infidelity and leakage
-                             # 2 = objective function only includes infidelity... no leakage in obj function or constraint
-                             # 3 = objective function only includes infidelity; leakage treated as inequality constraint
-- `leak_lbound ::Float64 = -1.0e19` : The lower bound on the leakage inequality constraint (typically -1e19)
-- `leak_ubound ::Float64 = 1.0e-3`  : The upper bound on the leakage inequality constraint (See examples/cnot2-leakieq-setup.jl )
+- `objFuncType::Int64 = 1`  # 1 = objective function include infidelity and leakage
+                            # 2 = objective function only includes infidelity... no leakage in obj function or constraint
+                            # 3 = objective function only includes infidelity; leakage treated as inequality constraint
+- `leak_lbound::Float64 = -1.0e19` : The lower bound on the leakage inequality constraint (typically -1e19)
+- `leak_ubound::Float64 = 1.0e-3`  : The upper bound on the leakage inequality constraint (See examples/cnot2-leakieq-setup.jl )
 - `linear_solver::lsolver_object = lsolver_object()` : The linear solver object used to solve the implicit & adjoint system
 - `use_sparse::Bool = false`: (keyword) Set to true to sparsify all Hamiltonian matrices
 """

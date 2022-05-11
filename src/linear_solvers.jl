@@ -17,8 +17,8 @@ Constructor for the mutable struct lsolver_object. That allcoates arrays and set
 	for the different linear solvers supported.
  
 # Arguments
-- `nvar::Int64 = 0` : Dimensionality of the Hilbert space (prod(Ne + Ng))
-- `ndim::Int64 = 0` : Dimensionality of the Hilbert space of the essential level (prod(Ne))
+- `nvar::Int64 = 0` : Computed internally (prod(Ne + Ng))
+- `ndim::Int64 = 0` : Computed internally (prod(Ne))
 - `tol::Float64 = 1e-10` : Convergence tolerance of the iterative solver (only needed for Jacobi)
 - `iter::Int64 = 3` : Number of iterations for the linear solver
 - `solver::Int64 = NEUMANN_SOLVER` : (keyword) ID of the iterative solver. 
