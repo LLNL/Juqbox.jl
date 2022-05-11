@@ -5,6 +5,26 @@ using LinearAlgebra
 const NEUMANN_SOLVER = 1
 const JACOBI_SOLVER  = 2
 
+
+"""
+    linear_solver = lsolver_object(; nvar = nvar,
+                                     ndim = ndim,
+                                     tol  = tol,
+                                     iter = iter,
+                                     solver = NEUMANN_SOLVER)
+
+Constructor for the mutable struct lsolver_object. That allcoates arrays and sets up the function pointers
+	for the different linear solvers supported.
+ 
+# Arguments
+- `nvar::Int64 = 0` : Dimensionality of the Hilbert space (prod(Ne + Ng))
+- `ndim::Int64 = 0` : Dimensionality of the Hilbert space of the essential level (prod(Ne))
+- `tol::Float64 = 1e-10` : Convergence tolerance of the iterative solver (only needed for Jacobi)
+- `iter::Int64 = 3` : Number of iterations for the linear solver
+- `solver::Int64 = NEUMANN_SOLVER` : (keyword) ID of the iterative solver. 
+                                     Can take the value of NEUMANN_SOLVER (i.e. 1) or JACOBI_SOLVER (i.e. 2)
+                                     See examples/cnot2-jacobi-setup.jl 
+"""
 mutable struct lsolver_object
 
     nvar  ::Int64
@@ -25,7 +45,7 @@ mutable struct lsolver_object
         elseif solver == NEUMANN_SOLVER
             solve = (a,b,c,d,e) -> neumann!(a,b,c,d,e,iter)
         else
-            error("Please specify a correct linear solver")
+            error("Please specify a supported linear solver")
         end
         new(nvar,tol,iter,rwork,solver,solve)
 

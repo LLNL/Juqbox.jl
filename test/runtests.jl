@@ -20,7 +20,7 @@ println("time stepping test: pass=", success)
 @test success
 
 # test traceobjgrad for various setups
-caseNames =["rabi", "swap02", "flux", "cnot2", "cnot3"]
+caseNames =["rabi", "swap02", "flux", "cnot2", "cnot3", "cnot2-leakieq", "cnot2-jacobi"]
 caseDir = "cases"
 nCases = length(caseNames)
 pass = BitArray(undef, nCases)

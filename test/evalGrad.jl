@@ -14,9 +14,19 @@ function evalObjGrad( pcof0:: Array{Float64, 1}, params:: Juqbox.objparams, wa::
     objv = Juqbox.eval_f_par(pcof0,params, wa, [0.0], [1.0]);    # Use these functions to compute obj
     Juqbox.eval_grad_f_par(pcof0,grad,params, wa, [0.0], [1.0])  # and grad since they now include the tikhonov terms
 
+    
+    if params.objFuncType != 1
+        leakage   = params.last_leak
+        leak_grad = zeros(nCoeff)
+        tmp = zeros(Int32,0)
+        Juqbox.eval_jac_g_par(pcof0, tmp, tmp,leak_grad,params,wa)
+        
+        objv = [objv, leakage]
+        grad = vcat(grad,leak_grad)
+    end
+
     # objv = Juqbox.eval_f_par(pcof0,true,params, wa, [0.0], [1.0]);    # Use these functions to compute obj 
     # Juqbox.eval_grad_f_par(pcof0,false,grad,params, wa, [0.0], [1.0])  # and grad since they now include the tikhonov terms
-
 
     if writeFile
         save(refFileName, "obj0", objv, "grad0", grad)
@@ -30,7 +40,11 @@ function evalObjGrad( pcof0:: Array{Float64, 1}, params:: Juqbox.objparams, wa::
         objvRef = dict["obj0"]
         gradRef = dict["grad0"]
 
-        objDiff = abs(objv - objvRef)
+        if length(objv) == 1
+            objDiff = abs(objv - objvRef)
+        else
+            objDiff = norm(objv - objvRef)
+        end
 
         refNorm = norm(gradRef)
         aNorm = norm(grad-gradRef)
