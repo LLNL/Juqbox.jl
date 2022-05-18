@@ -712,7 +712,7 @@ if evaladjoint
         lambdai_nfrc  .= lambdai
         lambdai0_nfrc .= lambdai0
         lambdar05_nfrc.= lambdar05
-        infidelgrad = zeros(gradSize, 1);
+        infidelgrad = zeros(gradSize);
     end
 
     #Backward time stepping loop
