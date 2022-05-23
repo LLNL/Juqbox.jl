@@ -319,8 +319,8 @@ function setup_ipopt_problem(params:: Juqbox.objparams, wa::Working_Arrays, nCoe
         addOption( prob, "acceptable_tol", acceptTol);
         addOption( prob, "acceptable_iter", acceptIter);
         addOption( prob, "jacobian_approximation", jacob_approx);
-        addOption( prob, "derivative_test", "first-order");
-        addOption( prob, "derivative_test_tol", 0.0001);
+        # addOption( prob, "derivative_test", "first-order");
+        # addOption( prob, "derivative_test_tol", 0.0001);
         
         if !startFromScratch # enable warm start of Ipopt
             addOption( prob, "warm_start_init_point", "yes")
@@ -345,9 +345,9 @@ function setup_ipopt_problem(params:: Juqbox.objparams, wa::Working_Arrays, nCoe
         AddIpoptNumOption( prob, "acceptable_tol", acceptTol);
         AddIpoptIntOption( prob, "acceptable_iter", acceptIter);
         AddIpoptStrOption( prob, "jacobian_approximation", jacob_approx);
-        AddIpoptStrOption( prob, "derivative_test", "first-order");
-        AddIpoptNumOption( prob, "derivative_test_tol", 1.0e-4);
-        AddIpoptNumOption( prob, "derivative_test_perturbation", 1.0e-8);
+        # AddIpoptStrOption( prob, "derivative_test", "first-order");
+        # AddIpoptNumOption( prob, "derivative_test_tol", 1.0e-4);
+        # AddIpoptNumOption( prob, "derivative_test_perturbation", 1.0e-8);
         
         
 

@@ -25,10 +25,8 @@ using Ipopt
 using Random
 
 Base.show(io::IO, f::Float64) = @printf(io, "%20.13e", f)
-Random.seed!(1234)
 
-include("../src/Juqbox.jl")
-using .Juqbox # quantum control module
+using Juqbox # quantum control module
 
 Nosc = 1 # Number of coupled sub-systems = oscillators
 N = 4 # Number of essential energy levels
@@ -139,8 +137,8 @@ minCoeff, maxCoeff = Juqbox.assign_thresholds_freq(maxamp, Nctrl, Nfreq, D1)
 samplerate = 32 # only used for plotting
 casename = "cnot1" # base file name (used in optimize-once.jl)
 
-maxIter = 150 # 0  # optional argument
-lbfgsMax = 10 # optional argument
+maxIter = 75 # 0  # optional argument
+lbfgsMax = 250 # optional argument
 ipTol = 1e-5   # optional argument
 acceptTol = ipTol # 1e-4 # acceptable tolerance 
 acceptIter = 15

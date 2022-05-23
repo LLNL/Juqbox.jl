@@ -33,7 +33,6 @@ using SparseArrays
 
 Base.show(io::IO, f::Float64) = @printf(io, "%20.13e", f)
 
-# include("../src/Juqbox.jl")
 using Juqbox # quantum control module
 
 eval_lab = false # true
