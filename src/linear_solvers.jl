@@ -53,6 +53,16 @@ mutable struct lsolver_object
 
 end #mutable struct lsolver_object    
 
+#Routine to recreate closured for updated iter and tol values
+function recreate_linear_solver_closure!(lsolver::lsolver_object)
+    
+    if lsolver.solver_id == JACOBI_SOLVER
+        lsolver.solve = (a,b,c,d,e) -> jacobi!(a,b,c,d,e,lsolver.iter,lsolver.tol)
+    elseif lsolver.solver_id == NEUMANN_SOLVER
+        lsolver.solve = (a,b,c,d,e) -> neumann!(a,b,c,d,e,lsolver.iter)
+    end
+
+end
 
 
 @inline function neumann!(h::Float64, S::SparseMatrixCSC{Float64,Int64}, 

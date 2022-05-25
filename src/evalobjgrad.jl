@@ -2061,6 +2061,7 @@ function estimate_Neumann!(tol::Float64, params::objparams, maxpar::Array{Float6
     nterms = ceil(Int64,log(tol)/log(normS))-1
     if(nterms > 0)
         params.linear_solver.iter = nterms
+        recreate_linear_solver_closure!(params.linear_solver)
     end
     # return nterms
 end
