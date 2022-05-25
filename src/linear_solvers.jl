@@ -7,69 +7,51 @@ const JACOBI_SOLVER  = 2
 
 
 """
-    linear_solver = lsolver_object(; nvar = nvar,
-                                     ndim = ndim,
-                                     tol  = tol,
+    linear_solver = lsolver_object(; tol  = tol,
                                      iter = iter,
+                                     nrhs = nrhs,
                                      solver = NEUMANN_SOLVER)
 
 Constructor for the mutable struct lsolver_object. That allcoates arrays and sets up the function pointers
 	for the different linear solvers supported.
  
 # Arguments
-- `nvar::Int64 = 0` : Computed internally (prod(Ne + Ng))
-- `ndim::Int64 = 0` : Computed internally (prod(Ne))
-- `tol::Float64 = 1e-10` : Convergence tolerance of the iterative solver (only needed for Jacobi)
-- `iter::Int64 = 3` : Number of iterations for the linear solver
-- `solver::Int64 = NEUMANN_SOLVER` : (keyword) ID of the iterative solver. 
+- `tol::Float64  = 1e-10` : Convergence tolerance of the iterative solver (only needed for Jacobi)
+- `iter::Int64   = 3` : Number of iterations for the linear solver
+- `nrhs::Int64   = 1` : Number of right-hand sides (used for tolerance scaling)
+- `solver::Int64 = NEUMANN_SOLVER` : (keyword) ID of the iterative solver.
                                      Can take the value of NEUMANN_SOLVER (i.e. 1) or JACOBI_SOLVER (i.e. 2)
-                                     See examples/cnot2-jacobi-setup.jl 
+                                     See examples/cnot2-jacobi-setup.jl
 """
 mutable struct lsolver_object
 
-    nvar  ::Int64
     tol   ::Float64
-    iter  ::Int64
-    rwork ::Array{Float64,2}
-    
+    iter  ::Int64    
     solver_id ::Int64
+    solver_name ::String
     solve ::Function
+    print_info ::Function
     
-
-    function lsolver_object(;nvar::Int64 = 0, ndim::Int64 = 0, tol::Float64 = 1e-10, 
-                            iter::Int64 = 3, solver::Int64 = NEUMANN_SOLVER)
+    function lsolver_object(;tol::Float64 = 1e-10, iter::Int64 = 3, nrhs::Int64=1, solver::Int64 = NEUMANN_SOLVER)
         
-        rwork = zeros(Float64,nvar,ndim)
+        tol *= nrhs
         if solver == JACOBI_SOLVER
-            solve = (a,b,c,d,e) -> jacobi!(a,b,c,d,e,rwork,iter,tol)
+            solve = (a,b,c,d,e) -> jacobi!(a,b,c,d,e,iter,tol)
+            solver_name = "Jacobi"
+            print_info = () -> println("*** Using linear solver: ", solver_name," with iter = ", iter, ", tol = ", tol)
+
         elseif solver == NEUMANN_SOLVER
             solve = (a,b,c,d,e) -> neumann!(a,b,c,d,e,iter)
+            solver_name = "Neumann"
+            print_info = () -> println("*** Using linear solver: ", solver_name," with iter = ", iter)
         else
             error("Please specify a supported linear solver")
         end
-        new(nvar,tol,iter,rwork,solver,solve)
-
+	
+        new(tol,iter,solver,solver_name,solve,print_info)
     end
 
 end #mutable struct lsolver_object    
-
-
-
-#Routine to resize appropriate work array and recreate closured for updated iter and tol values
-function allocate_linear_solver_arrays!(lsolver::lsolver_object, nvar::Int64, ndim ::Int64)
-
-    
-    if lsolver.solver_id == JACOBI_SOLVER
-        #Resize work array
-        lsolver.rwork = zeros(Float64,nvar,ndim)
-
-        #Recreate closure using new resized work array
-        lsolver.solve = (a,b,c,d,e) -> jacobi!(a,b,c,d,e,lsolver.rwork,lsolver.iter,lsolver.tol)
-    elseif lsolver.solver_id == NEUMANN_SOLVER
-        lsolver.solve = (a,b,c,d,e) -> neumann!(a,b,c,d,e,lsolver.iter)
-    end
-
-end
 
 
 
@@ -102,57 +84,43 @@ end
 
 
 
-@inline function jacobi!(h::Float64, S::Array{Float64,N}, B::Array{Float64,N}, 
-						 T::Array{Float64,N}, X::Array{Float64,N},xold::Array{Float64,N},
-                         iter::Int64,tol::Float64) where N
-    
-	copy!(X,B)
+@inline function jacobi!(h::Float64, S::Array{Float64,N}, B::Array{Float64,N},
+                         T::Array{Float64,N}, X::Array{Float64,N}, iter::Int64,tol::Float64) where N
+						 
+	X .= B #copy!(X,B)
 	coeff = -0.5*h
-  	# nsize, _ = size(X)
-    S .*= coeff
+	o_coeff = 1.0/coeff
+	S .*= coeff
 	for j = 1:iter
-		copy!(xold,X)
-        LinearAlgebra.mul!(T,S,xold)
-		# for i in 1:nsize
-		# 	# D = 1.0 + coeff*S[i,i]
-		# 	# Ax = T[i,:] .- D*xold[i,:]
-		# 	# X[i,:] = 1.0/D .* (B[i,:] .- Ax)
-		# end
-		# Since diag(S) = 0	
-		X .= B .- T
-		err = norm(xold .- X)
+		LinearAlgebra.mul!(T,S,X)
+		T = B - T
+		err = norm(T - X)
+		X .= T #copy!(X,T)
 		if err < tol
-            S ./= coeff
+			S .*= o_coeff
 			return
 		end
 	end
-    S ./= coeff
+	S .*= o_coeff
 end
 
 
-@inline function jacobi!(h::Float64, S::SparseMatrixCSC{Float64,Int64}, B::Array{Float64,N}, 
-						T::Array{Float64,N}, X::Array{Float64,N},xold::Array{Float64,N},
-                        iter::Int64,tol::Float64) where N
-
-	copy!(X,B)
+@inline function jacobi!(h::Float64, S::SparseMatrixCSC{Float64,Int64}, B::Array{Float64,N},
+                         T::Array{Float64,N}, X::Array{Float64,N}, iter::Int64,tol::Float64) where N
+				 
+	X .= B #copy!(X,B)
 	coeff = -0.5*h
-    S .*= coeff
-	# nsize, _ = size(X)
+	o_coeff = 1.0/coeff
+	S .*= coeff
 	for j = 1:iter
-		copy!(xold,X)
-		LinearAlgebra.mul!(T,S,xold)
-		# for i in 1:nsize
-		# 	# D = 1.0 + coeff*S[i,i]
-		# 	# Ax = T[i,:] .- D*xold[i,:]
-		# 	# X[i,:] = 1.0/D .* (B[i,:] .- Ax)
-		# end
-		# Since diag(S) = 0	
-		X .= B .- T
-		err = norm(xold .- X)
+		LinearAlgebra.mul!(T,S,X)
+		T = B - T
+		err = norm(T - X)
+		X .= T #copy!(X,T)
 		if err < tol
-            S ./= coeff
+			S .*= o_coeff
 			return
 		end
 	end
-    S ./= coeff    
+	S .*= o_coeff
 end

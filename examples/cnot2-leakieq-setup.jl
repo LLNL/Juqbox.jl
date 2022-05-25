@@ -187,6 +187,8 @@ else
                               Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, use_sparse=use_sparse,objFuncType=3,leak_ubound=1.e-3)
 end
 
+params.linear_solver.print_info()
+
 # initial parameter guess
 if eval_lab
     startFromScratch = false

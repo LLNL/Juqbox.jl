@@ -33,8 +33,8 @@ using SparseArrays
 
 Base.show(io::IO, f::Float64) = @printf(io, "%20.13e", f)
 
-# include("../src/Juqbox.jl")
-using Juqbox # quantum control module
+include("../src/Juqbox.jl")
+using .Juqbox # quantum control module
 
 eval_lab = false # true
 println("Setup for ", eval_lab ? "lab frame evaluation" : "rotating frame optimization")
@@ -177,7 +177,7 @@ else
 end
 
 # create a linear solver object
-linear_solver = Juqbox.lsolver_object(solver=Juqbox.JACOBI_SOLVER,iter=100,tol=1e-15)
+linear_solver = Juqbox.lsolver_object(solver=Juqbox.JACOBI_SOLVER,iter=100,tol=1e-15,nrhs=prod(Ne))
 
 # assemble problem description for the optimization
 if eval_lab
@@ -187,6 +187,8 @@ else
     params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
                               Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, use_sparse=use_sparse,linear_solver=linear_solver)
 end
+
+params.linear_solver.print_info()
 
 # initial parameter guess
 if eval_lab

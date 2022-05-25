@@ -139,7 +139,7 @@ mutable struct objparams
                        forb_weights:: Vector{Float64} = Float64[],
                        objFuncType:: Int64 = 1, leak_lbound:: Float64=-1.0e19, leak_ubound:: Float64=1.0e-3,
                        wmatScale::Float64 = 1.0, use_sparse::Bool = false, use_custom_forbidden::Bool = false,
-                       linear_solver::lsolver_object = lsolver_object())
+                       linear_solver::lsolver_object = lsolver_object(nrhs=prod(Ne)))
         pFidType = 2
         Nosc   = length(Ne)
         N      = prod(Ne)
@@ -358,8 +358,6 @@ mutable struct Working_Arrays
     function Working_Arrays(params::objparams, nCoeff::Int64)
         N = params.N
         Ntot = N + params.Nguard
-
-        allocate_linear_solver_arrays!(params.linear_solver,Ntot,N)
 
         K0,S0,K05,S05,K1,S1,vtargetr,vtargeti = KS_alloc(params)
         lambdar,lambdar0,lambdai,lambdai0,lambdar05,κ₁,κ₂,ℓ₁,ℓ₂,rhs,gr0,gi0,gr1,gi1,hr0,hi0,hi1,hr1,vr,vi,vi05,vr0,vfinalr,vfinali = time_step_alloc(Ntot,N)
