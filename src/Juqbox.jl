@@ -22,6 +22,7 @@ export run_optimizer, plot_conv_hist, wmatsetup
 export zero_start_end!, assign_thresholds, assign_thresholds_freq, assign_thresholds_ctrl_freq 
 export calculate_timestep, marginalize3
 export save_pcof, read_pcof, juq2qis
+export lsolver_object
 
 # Julia versions prior to v"1.3.1" can't use LinearAlgebra's 5 argument mul!, routines
 # included here for backwards compatability
@@ -30,6 +31,8 @@ if(VERSION < v"1.3.1")
 end
 
 include("bsplines.jl") # add all B-spline functionality to the Juqbox module
+
+include("linear_solvers.jl")
 
 include("StormerVerlet.jl") # add in time-stepping functionality
 
@@ -49,5 +52,6 @@ include("plot-results.jl")
 include("ipopt_interface.jl")
 
 include("save_pcof.jl")
+
 
 end # module

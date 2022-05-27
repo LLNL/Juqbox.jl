@@ -8,7 +8,11 @@
                         Hsym_ops=Hsym_ops,
                         Hanti_ops=Hanti_ops, 
                         Hunc_ops=Hunc_ops,
-                        wmatScale=wmatScale, 
+                        wmatScale=wmatScale,
+                        objFuncType=objFuncType,
+                        leak_lbound=leak_lbound,
+                        leak_ubound=leak_ubound,
+                        linear_solver = lsolver_object()
                         use_sparse=use_sparse])
 
 Constructor for the mutable struct objparams. The sizes of the arrays in the argument list are based on
@@ -34,6 +38,12 @@ and either be symmetric or skew-symmetric.
 - `Hanti_ops:: Array{Array{Float64,2},1}`: (keyword) Array of anti-symmetric control Hamiltonians, each of size Ntot × Ntot
 - `Hunc_ops:: Array{Array{Float64,2},1}`: (keyword) Array of uncoupled control Hamiltonians, each of size Ntot × Ntot
 - `wmatScale::Float64 = 1.0`: (keyword) Scaling factor for suppressing guarded energy levels
+- `objFuncType::Int64 = 1`  # 1 = objective function include infidelity and leakage
+                            # 2 = objective function only includes infidelity... no leakage in obj function or constraint
+                            # 3 = objective function only includes infidelity; leakage treated as inequality constraint
+- `leak_lbound::Float64 = -1.0e19` : The lower bound on the leakage inequality constraint (typically -1e19)
+- `leak_ubound::Float64 = 1.0e-3`  : The upper bound on the leakage inequality constraint (See examples/cnot2-leakieq-setup.jl )
+- `linear_solver::lsolver_object = lsolver_object()` : The linear solver object used to solve the implicit & adjoint system
 - `use_sparse::Bool = false`: (keyword) Set to true to sparsify all Hamiltonian matrices
 """
 mutable struct objparams
@@ -80,6 +90,20 @@ mutable struct objparams
     pFidType    ::Int64
     globalPhase ::Float64
 
+    # Optimization problem formulation
+    objFuncType ::Int64   # 1 = objective function include infidelity and leakage
+                          # 2 = objective function only includes infidelity... no leakage in obj function or constraint
+                          # 3 = objective function only includes infidelity; leakage treated as inequality constraint                            
+    leak_lbound ::Float64 # The lower bound on the leakage inequality constraint (typically -1e19)
+    leak_ubound ::Float64 # The upper bound on the leakage inequality constraint
+
+    #Store information from last computation
+    last_leak       ::Float64
+    last_infidelity ::Float64
+    last_pcof       ::Array{Float64,1}
+    last_leak_grad  ::Array{Float64,1}
+    last_infidelity_grad::Array{Float64,1}
+
     # Convergence history variables
     saveConvHist  ::Bool;
     objHist       ::Array{Float64,1}
@@ -87,9 +111,8 @@ mutable struct objparams
     secondaryHist ::Array{Float64,1}
     dualInfidelityHist  ::Array{Float64,1}
 
-    # Number of terms in truncated Neumann series (not counting identity) 
-    # to solve linear system in timestepping
-    nNeumann :: Int64
+    #Linear solver object to solve linear system in timestepping
+    linear_solver ::lsolver_object
 
     traceInfidelityThreshold :: Float64
     lastTraceInfidelity :: Float64
@@ -114,7 +137,9 @@ mutable struct objparams
                        Hunc_ops:: Array{Array{Float64,2},1} = Array{Float64,2}[],
                        forb_states:: Array{ComplexF64,2} = Array{ComplexF64}(undef,0,2),
                        forb_weights:: Vector{Float64} = Float64[],
-                       wmatScale::Float64 = 1.0, use_sparse::Bool = false, use_custom_forbidden::Bool = false)
+                       objFuncType:: Int64 = 1, leak_lbound:: Float64=-1.0e19, leak_ubound:: Float64=1.0e-3,
+                       wmatScale::Float64 = 1.0, use_sparse::Bool = false, use_custom_forbidden::Bool = false,
+                       linear_solver::lsolver_object = lsolver_object(nrhs=prod(Ne)))
         pFidType = 2
         Nosc   = length(Ne)
         N      = prod(Ne)
@@ -203,8 +228,6 @@ mutable struct objparams
         #     throw(ArgumentError("Uncoupled Hamiltonians for more than a single oscillator not currently supported.\n"))
         # end
 
-        # Default number of Neumann series terms
-        nNeumann = 3
         quiet = false
 
         traceInfidelityThreshold = 0.0
@@ -257,7 +280,20 @@ mutable struct objparams
             Hanti_ops1 = Hanti_ops
             Hunc_ops1 = Hunc_ops
         end
-        new(Nosc, N, Nguard, Ne, Ng, Ne+Ng, T, nsteps, Uinit, Utarget, use_bcarrier, Nfreq, Cfreq, kpar, tik0, Hconst, Hsym_ops1, Hanti_ops1, Hunc_ops1, Ncoupled, Nunc, isSymm, Ident, wmat, forb_states,forb_weights,wmat_real,wmat_imag, pFidType, 0.0, saveConvHist, zeros(0), zeros(0), zeros(0), zeros(0), nNeumann, traceInfidelityThreshold, 0.0, 0.0, usingPriorCoeffs, priorCoeffs, quiet, Rfreq, false, [])
+        
+
+        new(
+             Nosc, N, Nguard, Ne, Ng, Ne+Ng, T, nsteps, Uinit, Utarget, 
+             use_bcarrier, Nfreq, Cfreq, kpar, tik0, Hconst, Hsym_ops1, 
+             Hanti_ops1, Hunc_ops1, Ncoupled, Nunc, isSymm, Ident, wmat, 
+             forb_states,forb_weights,wmat_real,wmat_imag, pFidType, 0.0,
+             objFuncType,leak_lbound,leak_ubound,
+             0.0,0.0,zeros(0),zeros(0),zeros(0),saveConvHist,
+             zeros(0), zeros(0), zeros(0), zeros(0), 
+             linear_solver, traceInfidelityThreshold, 0.0, 0.0, usingPriorCoeffs,
+             priorCoeffs, quiet, Rfreq, false, []
+            )
+
     end
 
 end # mutable struct objparams
@@ -290,6 +326,11 @@ mutable struct Working_Arrays
     lambdai     ::Array{Float64,2}
     lambdai0    ::Array{Float64,2}
     lambdar05   ::Array{Float64,2}
+    lambdar_nfrc  ::Array{Float64,2}
+    lambdar0_nfrc ::Array{Float64,2}
+    lambdai_nfrc  ::Array{Float64,2}
+    lambdai0_nfrc ::Array{Float64,2}
+    lambdar05_nfrc::Array{Float64,2}
     κ₁          ::Array{Float64,2}
     κ₂          ::Array{Float64,2}
     ℓ₁          ::Array{Float64,2}
@@ -317,14 +358,32 @@ mutable struct Working_Arrays
     function Working_Arrays(params::objparams, nCoeff::Int64)
         N = params.N
         Ntot = N + params.Nguard
+
         K0,S0,K05,S05,K1,S1,vtargetr,vtargeti = KS_alloc(params)
         lambdar,lambdar0,lambdai,lambdai0,lambdar05,κ₁,κ₂,ℓ₁,ℓ₂,rhs,gr0,gi0,gr1,gi1,hr0,hi0,hi1,hr1,vr,vi,vi05,vr0,vfinalr,vfinali = time_step_alloc(Ntot,N)
         if params.pFidType == 3
             gr, gi, gradobjfadj, tr_adj = grad_alloc(nCoeff-1)
         else
             gr, gi, gradobjfadj, tr_adj = grad_alloc(nCoeff)
-        end            
-        new(K0,S0,K05,S05,K1,S1,vtargetr,vtargeti,lambdar,lambdar0,lambdai,lambdai0,lambdar05,κ₁,κ₂,ℓ₁,ℓ₂,rhs,gr0,gi0,gr1,gi1,hr0,hi0,hi1,hr1,vr,vi,vi05,vr0,vfinalr,vfinali,gr, gi, gradobjfadj, tr_adj)
+        end
+        if params.objFuncType != 1
+            lambdar_nfrc  = zeros(Float64,size(lambdar))
+            lambdar0_nfrc = zeros(Float64,size(lambdar0))
+            lambdai_nfrc  = zeros(Float64,size(lambdai))
+            lambdai0_nfrc = zeros(Float64,size(lambdai0))
+            lambdar05_nfrc= zeros(Float64,size(lambdar05))
+        else
+            lambdar_nfrc  = zeros(0,0)
+            lambdar0_nfrc = zeros(0,0)
+            lambdai_nfrc  = zeros(0,0)
+            lambdai0_nfrc = zeros(0,0)
+            lambdar05_nfrc= zeros(0,0)
+        end
+        new(K0,S0,K05,S05,K1,S1,vtargetr,vtargeti,
+            lambdar,lambdar0,lambdai,lambdai0,lambdar05,
+            lambdar_nfrc,lambdar0_nfrc,lambdai_nfrc,lambdai0_nfrc,lambdar05_nfrc,
+            κ₁,κ₂,ℓ₁,ℓ₂,rhs,gr0,gi0,gr1,gi1,hr0,hi0,hi1,hr1,
+            vr,vi,vi05,vr0,vfinalr,vfinali,gr, gi, gradobjfadj, tr_adj)
     end
     
 end
@@ -366,7 +425,7 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, wa::Working_A
     Nfreq = params.Nfreq
     Nsig  = 2*(Ncoupled + Nunc) # Updated for uncoupled ctrl
 
-    nNeumann = params.nNeumann
+    linear_solver = params.linear_solver    
 
     # Reference pre-allocated working arrays
     K0 = wa.K0
@@ -382,6 +441,11 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, wa::Working_A
     lambdai = wa.lambdai
     lambdai0 = wa.lambdai0
     lambdar05 = wa.lambdar05
+    lambdar_nfrc  = wa.lambdar_nfrc
+    lambdar0_nfrc = wa.lambdar0_nfrc
+    lambdai_nfrc  = wa.lambdai_nfrc
+    lambdai0_nfrc = wa.lambdai0_nfrc
+    lambdar05_nfrc= wa.lambdar05_nfrc
     κ₁ = wa.κ₁
     κ₂ = wa.κ₂
     ℓ₁ = wa.ℓ₁
@@ -405,6 +469,7 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, wa::Working_A
     gi = wa.gi
     gradobjfadj = wa.gradobjfadj 
     tr_adj = wa.tr_adj
+
 
     # primary fidelity type
     pFidType = params.pFidType  
@@ -531,7 +596,7 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, wa::Working_A
             
             # Take a step forward and accumulate weight matrix integral. Note the √2 multiplier is to account
             # for the midpoint rule in the numerical integration of the imaginary part of the signal.
-            @inbounds t = step!(t, nNeumann, vr, vi, vi05, dt*gamma[q], K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs)
+            @inbounds t = step!(t, vr, vi, vi05, dt*gamma[q], K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs,linear_solver)
 
             forbidden = tinv*penalf2a(vr, vi05, wmat_real)  
             forbidden_imag1 = tinv*penalf2imag(vr0, vi05, wmat_imag)
@@ -548,8 +613,8 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, wa::Working_A
 
                 copy!(wr1,wr)
 
-                @inbounds step_fwdGrad!(t0, nNeumann, wr1, wi, wi05, dt*gamma[q],
-                                                  gr0, gi0, gr1, gi1, K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs) 
+                @inbounds step_fwdGrad!(t0, wr1, wi, wi05, dt*gamma[q],
+                                        gr0, gi0, gr1, gi1, K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs,linear_solver) 
                 
                 # Real part of forbidden state weighting
                 forbalpha0 = tinv*penalf2grad(vr0, vi05, wr, wi05, wmat_real)
@@ -604,9 +669,6 @@ end
 vfinalr = copy(vr)
 vfinali = copy(-vi)
 
-tikhonovpenalty = tikhonov_pen(pcof, params)
-
-objfv = objfv .+ tikhonovpenalty
 
 traceInfidelity = 1.0 - tracefidabs2(vfinalr, vfinali, vtargetr, vtargeti)
 
@@ -622,10 +684,11 @@ if evaladjoint
         gradSize = Nsig*D1
     end
 
+
     # initialize array for storing the adjoint gradient so it can be returned to the calling function/program
-    totalgrad = zeros(gradSize, 1);
-    gradobjfadj[:] .= 0.0
-    
+    leakgrad = zeros(0);
+    infidelgrad = zeros(0);
+    gradobjfadj[:] .= 0.0    
     t = T
     dt = -dt
 
@@ -635,9 +698,20 @@ if evaladjoint
         scomplex0 = exp(1im*params.globalPhase) - scomplex0
     end
 
+
     # Set initial condition for adjoint variables
     init_adjoint!(pFidType, params.globalPhase, N, scomplex0, lambdar, lambdar0, lambdar05,lambdai, lambdai0,
-                  vtargetr, vtargeti)
+                    vtargetr, vtargeti)
+
+    #Initialize adjoint variables without forcing
+    if params.objFuncType != 1
+        lambdar_nfrc  .= lambdar
+        lambdar0_nfrc .= lambdar0
+        lambdai_nfrc  .= lambdai
+        lambdai0_nfrc .= lambdai0
+        lambdar05_nfrc.= lambdar05
+        infidelgrad = zeros(gradSize);
+    end
 
     #Backward time stepping loop
     for step in nsteps-1:-1:0
@@ -660,7 +734,7 @@ if evaladjoint
 
 
             # Integrate state variables backwards in time one step
-            @inbounds t = step!(t, nNeumann, vr, vi, vi05, dt*gamma[q], K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs)
+            @inbounds t = step!(t, vr, vi, vi05, dt*gamma[q], K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs,linear_solver)
 
             # Forcing for adjoint equations (real part of forbidden state penalty)
             mul!(hi0,wmat_real,vi05,tinv,0.0)
@@ -673,7 +747,7 @@ if evaladjoint
 
             # evolve lambdar, lambdai
             temp = t0
-            @inbounds temp = step!(temp, nNeumann, lambdar, lambdai, lambdar05, dt*gamma[q], hr0, hi0, hr1, hi1, K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs)
+            @inbounds temp = step!(temp, lambdar, lambdai, lambdar05, dt*gamma[q], hr0, hi0, hr1, hi1, K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs,linear_solver)
 
             # Accumulate gradient
             adjoint_grad_calc!(params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, vr0, vi05, vr, lambdar0, lambdar05, lambdai, lambdai0, t0, dt,splinepar, gr, gi, tr_adj) 
@@ -683,13 +757,24 @@ if evaladjoint
             copy!(lambdai0,lambdai)
             copy!(lambdar0,lambdar)
 
+            #Do adjoint step to compute infidelity grad (without forcing)
+            if params.objFuncType != 1
+                temp = t0
+                @inbounds temp = step_no_forcing!(temp, lambdar_nfrc, lambdai_nfrc, lambdar05_nfrc, dt*gamma[q], K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs,linear_solver)
+
+                # Accumulate gradient
+                adjoint_grad_calc!(params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, vr0, vi05, vr, lambdar0_nfrc, lambdar05_nfrc, lambdai_nfrc, lambdai0_nfrc, t0, dt,splinepar, gr, gi, tr_adj) 
+                axpy!(gamma[q]*dt,tr_adj,infidelgrad)
+                
+                # save for next stage
+                copy!(lambdai0_nfrc,lambdai_nfrc)
+                copy!(lambdar0_nfrc,lambdar_nfrc)    
+            end
+
         end #for stages
     end # for step (backward time stepping loop)
 
-    # Add in Tikhonov regularization gradient term
-    tikhonov_grad!(pcof, params, gr)  
-    axpy!(1.0,gr,gradobjfadj)
-
+    primObjGradPhase=0.0
     if pFidType == 3
         # gradient wrt the global phase
         rotTarg = exp(1im*params.globalPhase)*(vtargetr + im*vtargeti)
@@ -705,10 +790,24 @@ if evaladjoint
         totalgrad = zeros(Psize) # allocate array to return the gradient
         totalgrad[:] = gradobjfadj[:]
     end
-    
+
+    if params.objFuncType != 1
+        leakgrad = zeros(size(totalgrad));
+        if pFidType == 3 
+            push!(infidelgrad,primObjGradPhase) 
+        end
+        leakgrad .= totalgrad - infidelgrad
+    else
+        #This is needed because when params.objFuncType == 1, 
+        #We assume that the infidelgrad stores the totalgrad in ipopt interface
+        infidelgrad = totalgrad 
+    end
+   
 end # if evaladjoint
 
 if verbose
+    tikhonovpenalty = tikhonov_pen(pcof, params)
+
     println("Total objective func: ", objfv)
     println("Primary objective func: ", primaryobjf, " Guard state penalty: ", secondaryobjf, " Tikhonov penalty: ", tikhonovpenalty)
     if evaladjoint
@@ -775,6 +874,9 @@ if verbose
     
 end #if verbose
 
+
+
+
 # return to calling routine (the order of the return arguments is somewhat inconsistent. At least add a description in the docs)
 if verbose && evaladjoint
     return objfv, totalgrad, usaver+1im*usavei, mfidelityrot, dfdp, wr1 - 1im*wi
@@ -782,9 +884,9 @@ elseif verbose
     println("Returning from traceobjgrad with objfv, unitary history, fidelity")
     return objfv, usaver+1im*usavei, mfidelityrot
 elseif evaladjoint
-    return objfv, totalgrad, primaryobjf, secondaryobjf, traceInfidelity
+    return objfv, totalgrad, primaryobjf, secondaryobjf, traceInfidelity, infidelgrad, leakgrad
 else
-    return objfv
+    return objfv, primaryobjf, secondaryobjf
 end #if
 end
 
@@ -1781,7 +1883,6 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
     Nguard = params.Nguard  
     T = params.T
     nsteps = params.nsteps
-    nNeumann = params.nNeumann
     H0 = params.Hconst
 
     Ntot = N + Nguard
@@ -1876,7 +1977,7 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
             # Take a step forward and accumulate weight matrix integral. Note the √2 multiplier is to account
             # for the midpoint rule in the numerical integration of the imaginary part of the signal.
             # @inbounds t, vr, vi, vi05 = step(t, vr, vi, dt*gamma[q], K0, S0, K05, S05, K1, S1, Ident)
-            @inbounds t = step!(t, nNeumann, vr, vi, vi05, dt*gamma[q], K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs)
+            @inbounds t = step!(t, vr, vi, vi05, dt*gamma[q], K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs,linear_solver)
 
             # Keep prior value for next step (FG: will this work for multiple stages?)
 
@@ -1959,7 +2060,8 @@ function estimate_Neumann!(tol::Float64, params::objparams, maxpar::Array{Float6
     normS = opnorm(S)
     nterms = ceil(Int64,log(tol)/log(normS))-1
     if(nterms > 0)
-        params.nNeumann = nterms
+        params.linear_solver.iter = nterms
+        recreate_linear_solver_closure!(params.linear_solver)
     end
     # return nterms
 end

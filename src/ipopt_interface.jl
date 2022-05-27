@@ -1,10 +1,39 @@
-# setup callback functions for Ipopt
-function eval_f_par(pcof::Vector{Float64}, params:: Juqbox.objparams, wa::Working_Arrays,
-                    nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
+# mutable struct opt_params
+
+#     nvar ::Int64    # number of variables in the optimization problem
+#     neqconst ::Int64  # number of equality constraints
+#     nieqconst ::Int64 # number of inequality constraints
+#     maxIter ::Int64 # maximum number of iterations for optimizer
+
+#     nele_jac ::Int64 # number of elements in constraint Jacobian
+#     nele_hess ::Int64 # number of elements in the constrint Hessian
+#     jacob_approx ::String # Jacobian computation (either exact or finite-difference-values)
+#     hessian_approx ::String # Hessian computation (either exact or limited-memory)
+
+#     x_L ::Array{Float64,1} # lower bound for design variables
+#     x_U ::Array{Float64,1} # upper bound for design variables
+
+#     g_L ::Array{Float64,1} # lower bound for constraints
+#     g_U ::Array{Float64,1} # upper bound for constraints
     
+# end #opt_params struct
+
+
+
+
+function eval_f_g_grad!(pcof::Vector{Float64},params:: Juqbox.objparams, wa::Working_Arrays,
+                       nodes::AbstractArray=[0.0], weights::AbstractArray=[1.0], compute_adjoint::Bool=true)
+
+    params.last_pcof .= pcof
+    params.last_infidelity = 0.0
+    params.last_leak = 0.0
+    params.last_infidelity_grad .= 0.0
+    params.last_leak_grad .= 0.0
+
+
     # Loop over specified nodes and compute risk-neutral objective value. Default is usual optimization.
-    exp_v = 0.0
     nquad = length(nodes)
+
     # H0_old = copy(params.Hconst)
     for i = 1:nquad 
         ep = nodes[i]
@@ -14,61 +43,103 @@ function eval_f_par(pcof::Vector{Float64}, params:: Juqbox.objparams, wa::Workin
             params.Hconst[j,j] += 0.01*ep*(10.0^(j-2))
         end
 
-        E = Juqbox.traceobjgrad(pcof,params,wa,false,false)
-        exp_v += E[1]*weights[i]
+        if compute_adjoint
+            _, totalgrad, primaryobjf, secondaryobjf, traceInfidelity, infidelitygrad, leakgrad = Juqbox.traceobjgrad(pcof,params,wa,false,compute_adjoint)
+            for j in 1:length(infidelitygrad)
+                params.last_infidelity_grad[j] += infidelitygrad[j]*weights[i]
+            end
+            for j in 1:length(leakgrad)            
+                params.last_leak_grad[j] += leakgrad[j]*weights[i]
+            end
+        else
+            _, primaryobjf, secondaryobjf = Juqbox.traceobjgrad(pcof,params,wa,false,compute_adjoint)
+        end
+
+        params.last_infidelity += primaryobjf[1]*weights[i]
+        params.last_leak       += secondaryobjf[1]*weights[i]
 
         # Reset 
         for j = 2:size(params.Hconst,2)
-            # params.Hconst[j,j] += H0_old[j,j] + 0.01*ep*(10.0^(j-2))
             params.Hconst[j,j] -= 0.01*ep*(10.0^(j-2))
         end
     end
-    # copy!(params.Hconst,H0_old)
-    return exp_v
-  end
 
-function eval_g(pcof)
-    return 0.0
+    params.lastTraceInfidelity = params.last_infidelity
+    params.lastLeakIntegral = params.last_leak
+
 end
 
-function eval_grad_f_par(pcof::Vector{Float64}, grad_f::Vector{Float64}, params:: Juqbox.objparams, wa::Working_Arrays,
-                        nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
-    grad_f .= 0.0
 
-    nquad = length(nodes)
-    # H0_old = copy(params.Hconst)
-    exp_inf = 0.0
-    exp_sec = 0.0
-    for i = 1:nquad 
-        ep = nodes[i]
+# setup callback functions for Ipopt
 
-        # Additive noise
-        for j = 2:size(params.Hconst,2)
-            params.Hconst[j,j] += 0.01*ep*(10.0^(j-2))
-        end
+# function eval_f_par(pcof::Vector{Float64},x_new:: Bool, params:: Juqbox.objparams, wa::Working_Arrays,
+#                     nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
+function eval_f_par(pcof::Vector{Float64}, params:: Juqbox.objparams, wa::Working_Arrays,
+    nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
 
-        _, Gtemp, _, secondaryobjf, traceinfid = Juqbox.traceobjgrad(pcof,params,wa,false, true)
 
-        Gtemp = vcat(Gtemp...) 
-        for j in 1:length(Gtemp)
-            grad_f[j] += Gtemp[j]*weights[i]
-        end
-
-        # Accumulate expected value of infidelity and guard level penalty
-        exp_inf += weights[i]*traceinfid
-        exp_sec += weights[i]*secondaryobjf
-
-        # Reset
-        for j = 2:size(params.Hconst,2)
-            params.Hconst[j,j] -= 0.01*ep*(10.0^(j-2))
-        end
+    #Return last stored
+    # if x_new 
+    pnorm =norm(pcof .- params.last_pcof)     
+    if pnorm > 1.0e-15
+        compute_adjoint = true
+        eval_f_g_grad!(pcof,params,wa,nodes,weights,compute_adjoint)        
     end
-    # copy!(params.Hconst,H0_old)
 
+    if params.objFuncType == 1
+        f = params.last_infidelity + params.last_leak
+    else
+        f = params.last_infidelity
+    end
     
-    # remember the value of the primary obj func (for termination in intermediate_par)
-    params.lastTraceInfidelity = exp_inf
-    params.lastLeakIntegral = exp_sec
+    # Add in Tikhonov regularization
+    tikhonovpenalty = Juqbox.tikhonov_pen(pcof, params)
+
+    return f .+ tikhonovpenalty
+  end
+
+
+# function eval_g_par(pcof::Vector{Float64},x_new:: Bool,g::Vector{Float64},params:: Juqbox.objparams, wa::Working_Arrays,
+#                     nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
+function eval_g_par(pcof::Vector{Float64},g::Vector{Float64},params:: Juqbox.objparams, wa::Working_Arrays,
+    nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
+
+    #Return last stored
+    # if x_new
+    pnorm =norm(pcof .- params.last_pcof) 
+    if pnorm > 1.0e-15
+        compute_adjoint = true
+        eval_f_g_grad!(pcof,params,wa,nodes,weights,compute_adjoint)
+    end
+    
+    g[1] = params.last_leak
+
+    return g[1]
+end
+
+
+
+# function eval_grad_f_par(pcof::Vector{Float64},x_new:: Bool, grad_f::Vector{Float64}, params:: Juqbox.objparams, wa::Working_Arrays,
+#                         nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
+function eval_grad_f_par(pcof::Vector{Float64}, grad_f::Vector{Float64}, params:: Juqbox.objparams, wa::Working_Arrays,
+    nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
+    
+    #Return last stored
+    # if x_new 
+    pnorm =norm(pcof .- params.last_pcof) 
+    if pnorm > 1.0e-15
+        compute_adjoint = true
+        eval_f_g_grad!(pcof,params,wa,nodes,weights,compute_adjoint)
+    end
+
+    #When params.objFuncType == 1, this stores the total grad
+    grad_f .= params.last_infidelity_grad
+    
+    # Add in Tikhonov regularization gradient term
+    wa.gr .= 0.0
+    Juqbox.tikhonov_grad!(pcof, params, wa.gr)  
+    axpy!(1.0,wa.gr,grad_f)
+
 
     # Save intermediate parameter vectors
     if params.save_pcof_hist
@@ -76,32 +147,53 @@ function eval_grad_f_par(pcof::Vector{Float64}, grad_f::Vector{Float64}, params:
     end
 end
 
-function eval_jac_g(
-    x::Vector{Float64},         # Current solution
-    mode,                       # Either :Structure or :Values
-    rows::Vector{Int32},        # Sparsity structure - row indices
-    cols::Vector{Int32},        # Sparsity structure - column indices
-    values::Vector{Float64})    # The values of the Hessian
 
-    if mode == :Structure
-        # rows[...] = ...
-        # ...
-        # cols[...] = ...
+# function eval_jac_g_par(pcof::Vector{Float64},x_new:: Bool, rows::Vector{Int32}, cols::Vector{Int32}, jac_g::Union{Nothing,Vector{Float64}},
+#                         params:: Juqbox.objparams, wa::Working_Arrays, nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
+function eval_jac_g_par(pcof::Vector{Float64}, rows::Vector{Int32}, cols::Vector{Int32}, jac_g::Union{Nothing,Vector{Float64}},
+    params:: Juqbox.objparams, wa::Working_Arrays, nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
+
+    if jac_g === nothing 
+        if length(rows)>0
+            nvar = length(pcof)
+            for i in 1:nvar
+                rows[i] = 1;    cols[i] = i
+            end
+        end
     else
-        # values[...] = ...
-    end
-end
 
-function eval_jac_g(
+
+        #Return last stored
+        # if x_new 
+        pnorm =norm(pcof .- params.last_pcof) 
+        if pnorm > 1.0e-15
+            compute_adjoint = true    
+            eval_f_g_grad!(pcof,params,wa,nodes,weights,compute_adjoint)    
+            return
+        end
+
+        jac_g .= params.last_leak_grad 
+    end        
+    
+    return               
+end 
+
+
+function eval_jac_g_empty(
     x::Vector{Float64},         # Current solution
+    x_new:: Bool,               # If new vector x
     rows::Vector{Int32},        # Sparsity structure - row indices
     cols::Vector{Int32},        # Sparsity structure - column indices
     values::Union{Nothing,Vector{Float64}})    # The values of the Hessian
     return nothing
 end
 
+
+
+
 function eval_h(
     x::Vector{Float64},
+    # x_new:: Bool,
     rows::Vector{Int32},
     cols::Vector{Int32},
     obj_factor::Float64,
@@ -136,7 +228,7 @@ function intermediate_par(
     end
     if params.lastTraceInfidelity < params.traceInfidelityThreshold
         println("Stopping because trace infidelity = ", params.lastTraceInfidelity,
-                " < threshold = ", params.traceInfidelityThreshold)
+                " < threshold = ", params.traceInfidelityThreshold)        
         return false
     else
         return true  # Keep going
@@ -173,26 +265,50 @@ function setup_ipopt_problem(params:: Juqbox.objparams, wa::Working_Arrays, nCoe
                              startFromScratch:: Bool=true, ipTol:: Float64=1e-5, 
                              acceptTol:: Float64=1e-5, acceptIter:: Int64=15,
                              nodes::AbstractArray=[0.0], 
-                             weights::AbstractArray=[1.0])
+                             weights::AbstractArray=[1.0],
+                             jacob_approx::String="exact")
+
+
+    #Initialize the last fidelity and leak terms and gradients
+    params.last_pcof = zeros(nCoeff)
+    params.last_infidelity_grad = zeros(nCoeff)
+    if params.objFuncType != 1 #Only allcoate for inequality opt...
+        params.last_leak_grad = zeros(nCoeff)        
+    end
+
     # callback functions need access to the params object
-    eval_f(pcof) = eval_f_par(pcof, params, wa, nodes, weights)
-    eval_grad_f(pcof, grad_f) = eval_grad_f_par(pcof, grad_f, params, wa, nodes, weights)
+    eval_f(pcof) = eval_f_par(pcof,params, wa, nodes, weights)
+    eval_grad_f(pcof, grad_f) = eval_grad_f_par(pcof,grad_f, params, wa, nodes, weights)
+
+    #Comment out to use xnew with later version of ipopt
+    # eval_f(pcof,x_new) = eval_f_par(pcof, x_new,params, wa, nodes, weights)
+    # eval_grad_f(pcof,x_new, grad_f) = eval_grad_f_par(pcof,x_new, grad_f, params, wa, nodes, weights)
     intermediate(alg_mod, iter_count, obj_value, inf_pr, inf_du, mu,
                  d_norm, regularization_size, alpha_du, alpha_pr, ls_trials) =
                      intermediate_par(alg_mod, iter_count, obj_value, inf_pr, inf_du, mu,
                                       d_norm, regularization_size, alpha_du, alpha_pr, ls_trials, params)
+
     # setup the Ipopt data structure
-    mNLconstraints = 0;
-    nEleJac = 0;
+    nconst = params.objFuncType < 3 ? 0 : 1;
+    nEleJac = nconst > 0 ? nCoeff : 0;
     nEleHess = 0;
-    dum0 = zeros(0);
-    dum1 = zeros(0);
+    g_L = nconst > 0 ? params.leak_lbound.*ones(nconst) : zeros(nconst);
+    g_U = nconst > 0 ? params.leak_ubound.*ones(nconst) : zeros(nconst);
+    
+    #Create alias even if not used
+    eval_g(pcof,g) = eval_g_par(pcof,g,params,wa,nodes,weights)
+    eval_jac_g(pcof,rows,cols,jac_g) = eval_jac_g_par(pcof,rows,cols,jac_g,params,wa,nodes,weights)
+    # eval_g(pcof,x_new,g) = eval_g_par(pcof,x_new,g,params,wa,nodes,weights)
+    # eval_jac_g(pcof,x_new,rows,cols,jac_g) = eval_jac_g_par(pcof,x_new,rows,cols,jac_g,params,wa,nodes,weights)
+
+
     # tmp
     #    println("setup_ipopt_problem: nCoeff = ", nCoeff, " length(minCoeff) = ", length(minCoeff))
     if @isdefined createProblem
-        prob = createProblem( nCoeff, minCoeff, maxCoeff, mNLconstraints, dum0, dum1, nEleJac, nEleHess, eval_f, eval_g, eval_grad_f, eval_jac_g);
+        prob = createProblem( nCoeff, minCoeff, maxCoeff, nconst, g_L, g_U, nEleJac, nEleHess, eval_f, eval_g, eval_grad_f, eval_jac_g);
     else
-        prob = CreateIpoptProblem( nCoeff, minCoeff, maxCoeff, mNLconstraints, dum0, dum1, nEleJac, nEleHess, eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h);
+        # prob = CreateIpoptProblem( nCoeff, minCoeff, maxCoeff, nconst, g_L, g_U, nEleJac, nEleHess, eval_f, eval_g, eval_grad_f, eval_jac_g,eval_h,expose_xnew=true);
+        prob = CreateIpoptProblem( nCoeff, minCoeff, maxCoeff, nconst, g_L, g_U, nEleJac, nEleHess, eval_f, eval_g, eval_grad_f, eval_jac_g,eval_h);
     end
 
     if @isdefined addOption
@@ -202,6 +318,10 @@ function setup_ipopt_problem(params:: Juqbox.objparams, wa::Working_Arrays, nCoe
         addOption( prob, "tol", ipTol);
         addOption( prob, "acceptable_tol", acceptTol);
         addOption( prob, "acceptable_iter", acceptIter);
+        addOption( prob, "jacobian_approximation", jacob_approx);
+        # addOption( prob, "derivative_test", "first-order");
+        # addOption( prob, "derivative_test_tol", 0.0001);
+        
         if !startFromScratch # enable warm start of Ipopt
             addOption( prob, "warm_start_init_point", "yes")
             # addOption( prob, "mu_init", 1e-6) # not sure how to set this parameter
@@ -224,6 +344,13 @@ function setup_ipopt_problem(params:: Juqbox.objparams, wa::Working_Arrays, nCoe
         AddIpoptNumOption( prob, "tol", ipTol);
         AddIpoptNumOption( prob, "acceptable_tol", acceptTol);
         AddIpoptIntOption( prob, "acceptable_iter", acceptIter);
+        AddIpoptStrOption( prob, "jacobian_approximation", jacob_approx);
+        # AddIpoptStrOption( prob, "derivative_test", "first-order");
+        # AddIpoptNumOption( prob, "derivative_test_tol", 1.0e-4);
+        # AddIpoptNumOption( prob, "derivative_test_perturbation", 1.0e-8);
+        
+        
+
         if !startFromScratch # enable warm start of Ipopt
             AddIpoptStrOption( prob, "warm_start_init_point", "yes")
             # AddIpoptNumOption( prob, "mu_init", 1e-6) # not sure how to set this parameter

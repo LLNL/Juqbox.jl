@@ -310,9 +310,12 @@ vtarget = rot1*rot2*utarget
 
 U0 = Juqbox.initial_cond(Ne, Ng)
 
+#Build jacobi solver
+linear_solver = Juqbox.lsolver_object(solver=Juqbox.JACOBI_SOLVER,iter=100,tol=1e-15,nrhs=prod(Ne))
+
 # assemble problem description for the optimization
 params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
-                          Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, use_sparse=use_sparse)
+                          Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, use_sparse=use_sparse,linear_solver=linear_solver)
 
 # overwrite default wmat with the old style
 params.wmat_real =  orig_wmatsetup(Ne, Ng)
@@ -328,7 +331,7 @@ params.quiet = true
 
 # initial parameter guess
 startFromScratch = false # false
-startFile = "cases/cnot2.dat"
+startFile = "cases/cnot2-jacobi.dat"
 
 # dimensions for the parameter vector
 D1 = 10 # number of B-spline coeff per oscillator, freq and sin/cos

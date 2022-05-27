@@ -18,7 +18,7 @@ parameters for this example are:
 We use the usual Bsplines (no carrier waves) in this
 example.
 ==========================================================# 
-import Juqbox
+#import Juqbox
 
 verbose = false
 N = 2

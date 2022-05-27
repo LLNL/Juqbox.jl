@@ -148,13 +148,13 @@ end
 
 
 # Forward gradient calculation.
-@inline function step_fwdGrad!(t::Float64, nNeumann::Int64, u::Array{Float64,N}, v::Array{Float64,N},v05::Array{Float64,N},
+@inline function step_fwdGrad!(t::Float64, u::Array{Float64,N}, v::Array{Float64,N},v05::Array{Float64,N},
 	h::Float64, uforce0::Array{Float64,N}, vforce0::Array{Float64,N},uforce1::Array{Float64,N},
 	vforce1::Array{Float64,N},K0::Array{Float64,N},
 	S0::Array{Float64,N},K05::Array{Float64,N},S05::Array{Float64,N},
  	K1::Array{Float64,N},S1::Array{Float64,N},In::Array{Float64,N},
  	κ₁::Array{Float64,N}, κ₂::Array{Float64,N},ℓ₁::Array{Float64,N}, 
- 	ℓ₂::Array{Float64,N},rhs::Array{Float64,N}) where N
+ 	ℓ₂::Array{Float64,N},rhs::Array{Float64,N},linear_solver::lsolver_object) where N
 
  	# rhs .= K05*u .+  S05*v .+ vforce0
  	LinearAlgebra.mul!(rhs,K05,u)
@@ -162,7 +162,7 @@ end
 	LinearAlgebra.axpy!(1.0,vforce0,rhs)
 
 	# ℓ₁     .= (In .-  0.5*h.*S05)\rhs
-	neumann!(nNeumann,h,S05,rhs,v05,ℓ₁)
+	linear_solver.solve(h,S05,rhs,v05,ℓ₁)
 
 	# v05    .= v .+ 0.5*h*ℓ₁
 	copy!(v05,v)
@@ -183,7 +183,7 @@ end
 	LinearAlgebra.axpy!(0.5*h,κ₁,u)
 
 	# κ₂     .= (In .- (0.5*h)*S1)\rhs
-	neumann!(nNeumann,h,S1,rhs,κ₁,κ₂)
+	linear_solver.solve(h,S1,rhs,κ₁,κ₂)
 
 	# u      .= u .+ (0.5*h).*κ₂
 	LinearAlgebra.axpy!(0.5*h,κ₂,u)
@@ -200,13 +200,13 @@ end
 
 
 # sparse version of step_fwdGrad above
-@inline function step_fwdGrad!(t::Float64, nNeumann::Int64, u::Array{Float64,N}, v::Array{Float64,N}, v05::Array{Float64,N},
+@inline function step_fwdGrad!(t::Float64, u::Array{Float64,N}, v::Array{Float64,N}, v05::Array{Float64,N},
 	h::Float64, uforce0::Array{Float64,N}, vforce0::Array{Float64,N},uforce1::Array{Float64,N},
 	vforce1::Array{Float64,N},K0::SparseMatrixCSC{Float64,Int64},
 	S0::SparseMatrixCSC{Float64,Int64},K05::SparseMatrixCSC{Float64,Int64},S05::SparseMatrixCSC{Float64,Int64},
  	K1::SparseMatrixCSC{Float64,Int64},S1::SparseMatrixCSC{Float64,Int64},In::SparseMatrixCSC{Float64,Int64},
  	κ₁::Array{Float64,N}, κ₂::Array{Float64,N},ℓ₁::Array{Float64,N}, 
- 	ℓ₂::Array{Float64,N},rhs::Array{Float64,N}) where N
+ 	ℓ₂::Array{Float64,N},rhs::Array{Float64,N},linear_solver::lsolver_object) where N
 
  	# rhs .= K05*u .+  S05*v .+ vforce0
  	LinearAlgebra.mul!(rhs,K05,u)
@@ -214,7 +214,7 @@ end
 	LinearAlgebra.axpy!(1.0,vforce0,rhs)
 
 	# ℓ₁     .= (In .-  0.5*h.*S05)\rhs
-	neumann!(nNeumann,h,S05,rhs,v05,ℓ₁)
+	linear_solver.solve(h,S05,rhs,v05,ℓ₁)
 
 	# v05    .= v .+ 0.5*h*ℓ₁
 	copy!(v05,v)
@@ -235,7 +235,7 @@ end
 	LinearAlgebra.axpy!(0.5*h,κ₁,u)
 
 	# κ₂     .= (In .- (0.5*h)*S1)\rhs
-	neumann!(nNeumann,h,S1,rhs,κ₁,κ₂)
+	linear_solver.solve(h,S1,rhs,κ₁,κ₂)
 
 	# u      .= u .+ (0.5*h).*κ₂
 	LinearAlgebra.axpy!(0.5*h,κ₂,u)
@@ -252,21 +252,21 @@ end
 
 
 # This is for the adjoint solve which contains forcing. We note that h is negative in this case.
-@inline function step!(t::Float64, nNeumann::Int64, μ::Array{Float64,N}, ν::Array{Float64,N}, X::Array{Float64,N}, h::Float64,
+@inline function step!(t::Float64, μ::Array{Float64,N}, ν::Array{Float64,N}, X::Array{Float64,N}, h::Float64,
   					uforce0::Array{Float64,N}, vforce0::Array{Float64,N}, uforce1::Array{Float64,N},
   					vforce1::Array{Float64,N},
   					K0::Array{Float64,N},S0::Array{Float64,N},K05::Array{Float64,N},S05::Array{Float64,N},
  					K1::Array{Float64,N},S1::Array{Float64,N},In::Array{Float64,N},
  					κ₁::Array{Float64,N}, κ₂::Array{Float64,N},ℓ₁::Array{Float64,N}, ℓ₂::Array{Float64,N},
-  					rhs::Array{Float64,N}) where N
+  					rhs::Array{Float64,N},linear_solver::lsolver_object) where N
 
     # rhs .= S0*μ .- K05*ν .+ uforce0
 	LinearAlgebra.mul!(rhs,S0,μ)
 	mul!(rhs,K05,ν,-1.0,1.0)
 	LinearAlgebra.axpy!(1.0, uforce0, rhs)
 
-	# Neumann Series to invert linear system
-	neumann!(nNeumann,h,S0,rhs,κ₁,κ₂)
+	# solve linear system
+	linear_solver.solve(h,S0,rhs,κ₁,κ₂)
 
 	# μ  .= μ .+ 0.5*h.*κ₂
 	LinearAlgebra.axpy!(0.5*h, κ₂, μ)
@@ -286,8 +286,8 @@ end
 	mul!(rhs,K1,X,1.0,1.0)
 	LinearAlgebra.axpy!(1.0, vforce1, rhs)
 
-	# Neumann Series to invert linear system
-	neumann!(nNeumann,h,S05,rhs,κ₂,ℓ₁)
+	# solve linear system
+	linear_solver.solve(h,S05,rhs,κ₂,ℓ₁)
 
 	ν  .= ν .+ (0.5*h).*(ℓ₂ .+ ℓ₁)
 
@@ -303,21 +303,21 @@ end
 end
 
 # sparse version of step function above
-@inline function step!(t::Float64, nNeumann::Int64, μ::Array{Float64,N}, ν::Array{Float64,N}, X::Array{Float64,N}, h::Float64,
+@inline function step!(t::Float64, μ::Array{Float64,N}, ν::Array{Float64,N}, X::Array{Float64,N}, h::Float64,
   					uforce0::Array{Float64,N}, vforce0::Array{Float64,N}, uforce1::Array{Float64,N},
   					vforce1::Array{Float64,N},
   					K0::SparseMatrixCSC{Float64,Int64},S0::SparseMatrixCSC{Float64,Int64},K05::SparseMatrixCSC{Float64,Int64},S05::SparseMatrixCSC{Float64,Int64},
  					K1::SparseMatrixCSC{Float64,Int64},S1::SparseMatrixCSC{Float64,Int64},In::SparseMatrixCSC{Float64,Int64},
 					κ₁::Array{Float64,N}, κ₂::Array{Float64,N},ℓ₁::Array{Float64,N}, ℓ₂::Array{Float64,N},
-  					rhs::Array{Float64,N}) where N
+  					rhs::Array{Float64,N},linear_solver::lsolver_object) where N
 
     # rhs .= S0*μ .- K05*ν .+ uforce0
 	LinearAlgebra.mul!(rhs,S0,μ)
 	mul!(rhs,K05,ν,-1.0,1.0)
 	LinearAlgebra.axpy!(1.0, uforce0, rhs)
 
-	# Neumann Series to invert linear system
-	neumann!(nNeumann,h,S0,rhs,κ₁,κ₂)
+	# solve linear system
+	linear_solver.solve(h,S0,rhs,κ₁,κ₂)
 
 	# μ  .= μ .+ 0.5*h.*κ₂
 	LinearAlgebra.axpy!(0.5*h, κ₂, μ)
@@ -337,8 +337,8 @@ end
 	mul!(rhs,K1,X,1.0,1.0)
 	LinearAlgebra.axpy!(1.0, vforce1, rhs)
 
-	# Neumann Series to invert linear system
-	neumann!(nNeumann,h,S05,rhs,κ₂,ℓ₁)
+	# solve linear system
+	linear_solver.solve(h,S05,rhs,κ₂,ℓ₁)
 
 	ν  .= ν .+ (0.5*h).*(ℓ₂ .+ ℓ₁)
 
@@ -356,19 +356,120 @@ end
 end
 
 
+
+
+
+
+
+# This is for the adjoint solve Without forcing. We note that h is negative in this case.
+@inline function step_no_forcing!(t::Float64, μ::Array{Float64,N}, ν::Array{Float64,N}, X::Array{Float64,N}, h::Float64,
+  					K0::Array{Float64,N},S0::Array{Float64,N},K05::Array{Float64,N},S05::Array{Float64,N},
+ 					K1::Array{Float64,N},S1::Array{Float64,N},In::Array{Float64,N},
+ 					κ₁::Array{Float64,N}, κ₂::Array{Float64,N},ℓ₁::Array{Float64,N}, ℓ₂::Array{Float64,N},
+  					rhs::Array{Float64,N},linear_solver::lsolver_object) where N
+
+    # rhs .= S0*μ .- K05*ν .+ uforce0
+	LinearAlgebra.mul!(rhs,S0,μ)
+	mul!(rhs,K05,ν,-1.0,1.0)
+
+	# solve linear system
+	linear_solver.solve(h,S0,rhs,κ₁,κ₂)
+
+	# μ  .= μ .+ 0.5*h.*κ₂
+	LinearAlgebra.axpy!(0.5*h, κ₂, μ)
+	
+	# X   .= (μ .+ 0.5*h.*κ₂)
+	copy!(X,μ)
+
+	# ℓ₂  .= K0*X .+ S05*ν .+ vforce0
+	LinearAlgebra.mul!(ℓ₂,K0,X)
+	mul!(ℓ₂,S05,ν,1.0,1.0)
+	
+	# rhs .= S05*(ν .+ 0.5*h*ℓ₂) .+ K1*X .+ vforce1
+	LinearAlgebra.mul!(rhs,S05,ν)
+	mul!(rhs,S05,ℓ₂,0.5*h,1.0)
+	mul!(rhs,K1,X,1.0,1.0)
+	
+	# solve linear system
+	linear_solver.solve(h,S05,rhs,κ₂,ℓ₁)
+
+	ν  .= ν .+ (0.5*h).*(ℓ₂ .+ ℓ₁)
+
+	# κ₁ .= -K05*ν .+ S1*X .+ uforce1
+	LinearAlgebra.mul!(κ₁,S1,X)
+	mul!(κ₁,K05,ν,-1.0,1.0)
+
+	# μ  .= μ .+ 0.5*h.*κ₁
+	LinearAlgebra.axpy!(0.5*h, κ₁, μ)
+
+	t  = t + h
+end
+
+# sparse version of step function above
+@inline function step_no_forcing!(t::Float64, μ::Array{Float64,N}, ν::Array{Float64,N}, X::Array{Float64,N}, h::Float64,
+  					K0::SparseMatrixCSC{Float64,Int64},S0::SparseMatrixCSC{Float64,Int64},K05::SparseMatrixCSC{Float64,Int64},S05::SparseMatrixCSC{Float64,Int64},
+ 					K1::SparseMatrixCSC{Float64,Int64},S1::SparseMatrixCSC{Float64,Int64},In::SparseMatrixCSC{Float64,Int64},
+					κ₁::Array{Float64,N}, κ₂::Array{Float64,N},ℓ₁::Array{Float64,N}, ℓ₂::Array{Float64,N},
+  					rhs::Array{Float64,N},linear_solver::lsolver_object) where N
+
+    # rhs .= S0*μ .- K05*ν .+ uforce0
+	LinearAlgebra.mul!(rhs,S0,μ)
+	mul!(rhs,K05,ν,-1.0,1.0)
+	
+	# solve linear system
+	linear_solver.solve(h,S0,rhs,κ₁,κ₂)
+
+	# μ  .= μ .+ 0.5*h.*κ₂
+	LinearAlgebra.axpy!(0.5*h, κ₂, μ)
+	
+	# X   .= (μ .+ 0.5*h.*κ₂)
+	copy!(X,μ)
+
+	# ℓ₂  .= K0*X .+ S05*ν .+ vforce0
+	LinearAlgebra.mul!(ℓ₂,K0,X)
+	mul!(ℓ₂,S05,ν,1.0,1.0)
+
+	# rhs .= S05*(ν .+ 0.5*h*ℓ₂) .+ K1*X .+ vforce1
+	LinearAlgebra.mul!(rhs,S05,ν)
+	mul!(rhs,S05,ℓ₂,0.5*h,1.0)
+	mul!(rhs,K1,X,1.0,1.0)
+
+	# solve linear system
+	linear_solver.solve(h,S05,rhs,κ₂,ℓ₁)
+
+	ν  .= ν .+ (0.5*h).*(ℓ₂ .+ ℓ₁)
+
+	# κ₁ .= -K05*ν .+ S1*X .+ uforce1
+	LinearAlgebra.mul!(κ₁,S1,X)
+	mul!(κ₁,K05,ν,-1.0,1.0)
+
+	# μ  .= μ .+ 0.5*h.*κ₁
+	LinearAlgebra.axpy!(0.5*h, κ₁, μ)
+
+	t  = t + h
+
+end
+
+
+
+
+
+
+
+
 # FMG: This routine has been modified. This is for the forward evolution with no forcing.
-@inline function step!(t::Float64, nNeumann::Int64, u::Array{Float64,N}, v::Array{Float64,N}, v05::Array{Float64,N}, h::Float64,
+@inline function step!(t::Float64, u::Array{Float64,N}, v::Array{Float64,N}, v05::Array{Float64,N}, h::Float64,
   					  K0::Array{Float64,N},S0::Array{Float64,N},K05::Array{Float64,N},S05::Array{Float64,N},
   					  K1::Array{Float64,N},S1::Array{Float64,N},In::Array{Float64,N},
   					  κ₁::Array{Float64,N}, κ₂::Array{Float64,N},ℓ₁::Array{Float64,N}, ℓ₂::Array{Float64,N},
-  					  rhs::Array{Float64,N}) where N
+  					  rhs::Array{Float64,N},linear_solver::lsolver_object) where N
 
  	# rhs    .= (K05*u .+  S05*v)
  	LinearAlgebra.mul!(rhs,K05,u)
  	mul!(rhs,S05,v,1.0,1.0)
 
 	# ℓ₁     .= (In .-  0.5*h.*S05)\rhs
-	neumann!(nNeumann,h,S05,rhs,v05,ℓ₁)
+	linear_solver.solve(h,S05,rhs,v05,ℓ₁)
 	
 	# v05    .= v .+ 0.5*h*ℓ₁
 	copy!(v05,v)
@@ -387,7 +488,7 @@ end
 	LinearAlgebra.axpy!(0.5*h,κ₁,u)
 
 	# κ₂     .= (In .- (0.5*h)*S1)\rhs
-	neumann!(nNeumann,h,S1,rhs,κ₁,κ₂)
+	linear_solver.solve(h,S1,rhs,κ₁,κ₂)
 
 	# u      .= u .+ (0.5*h).*κ₂
 	LinearAlgebra.axpy!(0.5*h,κ₂,u)
@@ -403,18 +504,18 @@ end
 end
 
 # sparse version of step function above
-@inline function step!(t::Float64, nNeumann::Int64, u::Array{Float64,N}, v::Array{Float64,N}, v05::Array{Float64,N}, h::Float64,
+@inline function step!(t::Float64, u::Array{Float64,N}, v::Array{Float64,N}, v05::Array{Float64,N}, h::Float64,
   					  K0::SparseMatrixCSC{Float64,Int64},S0::SparseMatrixCSC{Float64,Int64},K05::SparseMatrixCSC{Float64,Int64},S05::SparseMatrixCSC{Float64,Int64},
   					  K1::SparseMatrixCSC{Float64,Int64},S1::SparseMatrixCSC{Float64,Int64},In::SparseMatrixCSC{Float64,Int64},
   					  κ₁::Array{Float64,N}, κ₂::Array{Float64,N},ℓ₁::Array{Float64,N}, ℓ₂::Array{Float64,N},
-  					  rhs::Array{Float64,N}) where N
+  					  rhs::Array{Float64,N},linear_solver::lsolver_object) where N
 
  	# rhs    .= (K05*u .+  S05*v)
  	LinearAlgebra.mul!(rhs,K05,u)
  	mul!(rhs,S05,v,1.0,1.0)
 
 	# ℓ₁     .= (In .-  0.5*h.*S05)\rhs
-	neumann!(nNeumann,h,S05,rhs,v05,ℓ₁)
+	linear_solver.solve(h,S05,rhs,v05,ℓ₁)
 
 	# v05    .= v .+ 0.5*h*ℓ₁
 	copy!(v05,v)
@@ -433,7 +534,7 @@ end
 	LinearAlgebra.axpy!(0.5*h,κ₁,u)
 
 	# κ₂     .= (In .- (0.5*h)*S1)\rhs
-	neumann!(nNeumann,h,S1,rhs,κ₁,κ₂)
+	linear_solver.solve(h,S1,rhs,κ₁,κ₂)
 
 	# u      .= u .+ (0.5*h).*κ₂
 	LinearAlgebra.axpy!(0.5*h,κ₂,u)
@@ -542,32 +643,5 @@ end
 	v = tmp[length(u)+1:end]
 	t = t + h
 	return t, u, v
-end
-
-
-@inline function neumann!(nterms::Int64, h::Float64, S::SparseMatrixCSC{Float64,Int64}, 
-						 B::Array{Float64,N}, T::Array{Float64,N}, X::Array{Float64,N}) where N
-	copy!(X,B)
-	copy!(T,B)
-	coeff = 1.0
-	for j = 1:nterms
-		LinearAlgebra.mul!(T,S,B)
-		coeff *= (0.5*h)
-		LinearAlgebra.axpy!(coeff, T, X)
-		copy!(B,T)
-	end
-end
-
-@inline function neumann!(nterms::Int64, h::Float64, S::Array{Float64,N}, B::Array{Float64,N}, 
-						T::Array{Float64,N}, X::Array{Float64,N}) where N
-	copy!(X,B)
-	copy!(T,B)
-	coeff = 1.0
-	for j = 1:nterms
-		LinearAlgebra.mul!(T,S,B)
-		coeff *= (0.5*h)
-		LinearAlgebra.axpy!(coeff, T, X)
-		copy!(B,T)
-	end
 end
 

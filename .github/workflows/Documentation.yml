@@ -9,12 +9,16 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        version: ['1.6', '1.7']  # Test against LTS and current release
+        os: [macOS-latest, ubuntu-latest] #[macOS-latest, windows-latest, ubuntu-latest]
     steps:
       - uses: actions/checkout@v2
       - uses: julia-actions/setup-julia@latest
         with:
-          version: '1.5'
+          version: ${{ matrix.version }}
       - name: Install dependencies, part 1
         env:
            PYTHON:

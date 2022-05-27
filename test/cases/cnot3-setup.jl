@@ -46,36 +46,9 @@ using SparseArrays
 
 Base.show(io::IO, f::Float64) = @printf(io, "%20.13e", f)
 
-import Juqbox
+#import Juqbox
 
 verbose = false
-
-function initial_cond(Ntot, N, Ne, Ng)
-    Ident = Matrix{Float64}(I, Ntot, Ntot)
-    U0 = Ident[1:Ntot,1:N] # initial guess
-    #adjust initial guess
-    if Ng[1]+Ng[2]+Ng[3] > 0
-        Nt = Ne + Ng
-
-        col = 0
-        m = 0
-        for k3 in 1:Nt[3]
-            for k2 in 1:Nt[2]
-                for k1 in 1:Nt[1]
-                    m += 1
-                    # is this a guard level?
-                    guard = (k1 > Ne[1]) || (k2 > Ne[2]) || (k3 > Ne[3])
-                    if !guard
-                        col = col+1
-                        U0[:,col] = Ident[:,m]
-                    end # if ! guard
-                end #for
-            end # for
-        end # for
-        
-    end # if
-    return U0
-end
 
 function orig_wmatsetup(Ne::Array{Int64,1}, Ng::Array{Int64,1})
     Nt = Ne + Ng
@@ -396,7 +369,7 @@ rot3 = Diagonal(exp.(im*omega3*Tmax))
 # target in the rotating frame
 vtarget = rot1*rot2*rot3*utarget
 
-U0 = initial_cond(Ntot, N, Ne, Ng)
+U0 = Juqbox.initial_cond(Ne, Ng)
 
 # NOTE: maxpar is now a vector with 3 elements: amax, bmax, cmax
 params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,

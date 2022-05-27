@@ -19,7 +19,9 @@ The problem parameters for this example are,
             ξ_b    =  2π × 2(0.1126) Grad/s,
             ξ_{ab} =  2π × 0.1       Grad/s,
 We use Bsplines with carrier waves with frequencies
-0, ξ_a, 2ξ_a Grad/s for each oscillator.
+0, ξ_a, 2ξ_a Grad/s for each oscillator. The objective 
+function only includes the fidelity term. The leakage to the
+guard levels is imposed through an inequality constraint
 ==========================================================# 
 using LinearAlgebra
 using Ipopt
@@ -32,7 +34,7 @@ using Plots
 using SparseArrays
 
 Base.show(io::IO, f::Float64) = @printf(io, "%20.13e", f)
-
+# include("../src/Juqbox.jl")
 using Juqbox # quantum control module
 
 eval_lab = false # true
@@ -176,13 +178,16 @@ else
 end
 
 # assemble problem description for the optimization
+# objFuncType=3 : impose leakage as an inequality constraint
 if eval_lab
     params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
-                              Hconst=H0, Hunc_ops=Hunc_ops, use_sparse=use_sparse)
+                              Hconst=H0, Hunc_ops=Hunc_ops, use_sparse=use_sparse,objFuncType=3,leak_ubound=1.e-3)
 else
     params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
-                              Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, use_sparse=use_sparse)
+                              Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, use_sparse=use_sparse,objFuncType=3,leak_ubound=1.e-3)
 end
+
+params.linear_solver.print_info()
 
 # initial parameter guess
 if eval_lab
@@ -235,10 +240,6 @@ if use_sparse
 else
     println("Using a dense representation of the Hamiltonian matrices")
 end
-
-new_tol = 1e-12
-estimate_Neumann!(new_tol, params, maxpar);
-println("Using tolerance", new_tol, " and ", params.linear_solver.iter, " terms in the Neumann iteration")
 
 # Allocate all working arrays
 wa = Juqbox.Working_Arrays(params, nCoeff)

@@ -9,11 +9,15 @@ on:
 
 jobs:
   test:
-    runs-on: macOS-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        version: ['1.6', '1.7']  # Test against LTS and current release
+        os: [macOS-latest, ubuntu-latest] #[macOS-latest, windows-latest, ubuntu-latest]
     steps:
       - uses: actions/checkout@v2
       - uses: julia-actions/setup-julia@latest
         with:
-          version: '1.6'
+          version: ${{ matrix.version }}
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1

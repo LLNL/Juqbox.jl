@@ -33,6 +33,7 @@ using SparseArrays
 
 Base.show(io::IO, f::Float64) = @printf(io, "%20.13e", f)
 
+# include("../src/Juqbox.jl")
 using Juqbox # quantum control module
 
 eval_lab = false # true
@@ -175,14 +176,19 @@ else
     vtarget = rot1*rot2*utarget # target in the rotating frame
 end
 
+# create a linear solver object
+linear_solver = Juqbox.lsolver_object(solver=Juqbox.JACOBI_SOLVER,iter=100,tol=1e-12,nrhs=prod(Ne))
+
 # assemble problem description for the optimization
 if eval_lab
     params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
-                              Hconst=H0, Hunc_ops=Hunc_ops, use_sparse=use_sparse)
+                              Hconst=H0, Hunc_ops=Hunc_ops, use_sparse=use_sparse,linear_solver=linear_solver)
 else
     params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
-                              Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, use_sparse=use_sparse)
+                              Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, use_sparse=use_sparse,linear_solver=linear_solver)
 end
+
+params.linear_solver.print_info()
 
 # initial parameter guess
 if eval_lab
@@ -235,10 +241,6 @@ if use_sparse
 else
     println("Using a dense representation of the Hamiltonian matrices")
 end
-
-new_tol = 1e-12
-estimate_Neumann!(new_tol, params, maxpar);
-println("Using tolerance", new_tol, " and ", params.linear_solver.iter, " terms in the Neumann iteration")
 
 # Allocate all working arrays
 wa = Juqbox.Working_Arrays(params, nCoeff)
