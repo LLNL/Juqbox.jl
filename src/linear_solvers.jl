@@ -34,9 +34,9 @@ mutable struct lsolver_object
     
     function lsolver_object(;tol::Float64 = 1e-10, iter::Int64 = 3, nrhs::Int64=1, solver::Int64 = NEUMANN_SOLVER)
         
-        tol *= nrhs
         if solver == JACOBI_SOLVER
-            solve = (a,b,c,d,e) -> jacobi!(a,b,c,d,e,iter,tol)
+			tol *= sqrt(nrhs)
+			solve = (a,b,c,d,e) -> jacobi!(a,b,c,d,e,iter,tol)
             solver_name = "Jacobi"
             print_info = () -> println("*** Using linear solver: ", solver_name," with iter = ", iter, ", tol = ", tol)
 
