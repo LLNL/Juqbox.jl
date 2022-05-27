@@ -236,6 +236,10 @@ else
     println("Using a dense representation of the Hamiltonian matrices")
 end
 
+new_tol = 1e-12
+estimate_Neumann!(new_tol, params, maxpar);
+println("Using tolerance", new_tol, " and ", params.linear_solver.iter, " terms in the Neumann iteration")
+
 # Allocate all working arrays
 wa = Juqbox.Working_Arrays(params, nCoeff)
 prob = Juqbox.setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff, maxIter=maxIter, lbfgsMax=lbfgsMax, startFromScratch=startFromScratch)
