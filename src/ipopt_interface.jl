@@ -226,7 +226,11 @@ function intermediate_par(
         push!(params.primaryHist, params.lastTraceInfidelity)
         push!(params.secondaryHist,  params.lastLeakIntegral)
     end
-    if params.lastTraceInfidelity < params.traceInfidelityThreshold
+    if obj_value < params.objThreshold
+        println("Stopping because objective value = ", obj_value,
+                " < threshold = ", params.objThreshold)        
+        return false
+    elseif params.lastTraceInfidelity < params.traceInfidelityThreshold
         println("Stopping because trace infidelity = ", params.lastTraceInfidelity,
                 " < threshold = ", params.traceInfidelityThreshold)        
         return false

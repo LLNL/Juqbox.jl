@@ -114,6 +114,7 @@ mutable struct objparams
     #Linear solver object to solve linear system in timestepping
     linear_solver ::lsolver_object
 
+    objThreshold :: Float64
     traceInfidelityThreshold :: Float64
     lastTraceInfidelity :: Float64
     lastLeakIntegral :: Float64    
@@ -230,6 +231,7 @@ mutable struct objparams
 
         quiet = false
 
+        objThreshold = 0.0
         traceInfidelityThreshold = 0.0
         usingPriorCoeffs = false
         priorCoeffs = [] # zeros(0)
@@ -290,7 +292,7 @@ mutable struct objparams
              objFuncType,leak_lbound,leak_ubound,
              0.0,0.0,zeros(0),zeros(0),zeros(0),saveConvHist,
              zeros(0), zeros(0), zeros(0), zeros(0), 
-             linear_solver, traceInfidelityThreshold, 0.0, 0.0, usingPriorCoeffs,
+             linear_solver, objThreshold, traceInfidelityThreshold, 0.0, 0.0, usingPriorCoeffs,
              priorCoeffs, quiet, Rfreq, false, []
             )
 
