@@ -292,8 +292,8 @@ mutable struct objparams
              objFuncType,leak_lbound,leak_ubound,
              0.0,0.0,zeros(0),zeros(0),zeros(0),saveConvHist,
              zeros(0), zeros(0), zeros(0), zeros(0), 
-             linear_solver, objThreshold, traceInfidelityThreshold, 0.0, 0.0, usingPriorCoeffs,
-             priorCoeffs, quiet, Rfreq, false, []
+             linear_solver, objThreshold, traceInfidelityThreshold, 0.0, 0.0, 
+             usingPriorCoeffs, priorCoeffs, quiet, Rfreq, false, []
             )
 
     end
