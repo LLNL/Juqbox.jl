@@ -107,8 +107,8 @@ vtarget = rot1*utarget
 
 params = Juqbox.objparams([N], [Nguard], T, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
                           Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops)
-
-# initial parameter guess
+# terminate if objective function is below this value
+params.objThreshold = 1e-3
 
 # D1 smaller than 5 does not work
 D1 = 10 # Number of B-spline coefficients per segment
