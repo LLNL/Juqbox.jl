@@ -1896,6 +1896,8 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
     Nfreq = params.Nfreq
     Nsig = 2*Ncoupled + Nunc
 
+    linear_solver = params.linear_solver    
+
     Psize = size(pcof,1) #must provide separate coefficients for the real and imaginary parts of the control fcn
     if Psize%2 != 0 || Psize < 6
         error("pcof must have an even number of elements >= 6, not ", Psize)
