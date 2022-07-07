@@ -1940,7 +1940,7 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
     # Note: Initial condition is supplied as an argument
 
     #real and imaginary part of initial condition
-    vr   = U0[:,Q:Q]
+    vr   = U0[:,Q:Q] # Store vr as a matrix with one column
     vi   = zeros(Float64,Ntot,Q)
     vi05 = zeros(Float64,Ntot,Q)
 
