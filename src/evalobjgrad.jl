@@ -1877,7 +1877,7 @@ end
 end
 
 # Calls to KS! need to be updated
-function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::objparams, saveAll:: Bool = false, verbose::Bool = false, order::Int64=2)  
+function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::objparams, saveAll:: Bool = false, verbose::Bool = false, order::Int64=2, stages=[])  
     N = params.N  
     Q = 1 #one initial data, specified in U0[:,1] (currently assumed to be real)
 
@@ -1927,7 +1927,7 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
     # it is up to the user to estimate the number of time steps
     dt ::Float64 = T/nsteps
 
-    gamma, stages = getgamma(order)
+    gamma, stages = getgamma(order, stages)
 
     if verbose
         println("Final time: ", T, ", number of time steps: " , nsteps , ", time step: " , dt )
