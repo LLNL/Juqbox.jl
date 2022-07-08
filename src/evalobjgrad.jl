@@ -1877,11 +1877,10 @@ end
 end
 
 # Calls to KS! need to be updated
-function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::objparams, saveAll:: Bool = false, verbose::Bool = false)  
+function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::objparams, saveAll:: Bool = false, verbose::Bool = false, order::Int64=2)  
     N = params.N  
     Q = 1 #one initial data, specified in U0[:,1] (currently assumed to be real)
 
-    order = 2
     Nguard = params.Nguard  
     T = params.T
     nsteps = params.nsteps
