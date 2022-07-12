@@ -1943,10 +1943,12 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
     vi   = zeros(Float64,Ntot,Q)
     vi05 = zeros(Float64,Ntot,Q)
 
-    usaver = zeros(Float64,Ntot,Q,nsteps+1)
-    usavei = zeros(Float64,Ntot,Q,nsteps+1)
-    usaver[:,:,1] = vr # the rotation to the lab frame is the identity at t=0
-    usavei[:,:,1] = -vi
+    if saveAll # Only allocate solution memory for entire timespan if necessary
+        usaver = zeros(Float64,Ntot,Q,nsteps+1)
+        usavei = zeros(Float64,Ntot,Q,nsteps+1)
+        usaver[:,:,1] = vr # the rotation to the lab frame is the identity at t=0
+        usavei[:,:,1] = -vi
+    end
 
     # Preallocate WHAT ABOUT SPARSE FORMAT!
     K0   = zeros(Float64,Ntot,Ntot)
@@ -1987,18 +1989,19 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
         end # Stromer-Verlet
         
         # rotated frame
-        usaver[:,:, step + 1] = vr
-        usavei[:,:, step + 1] = -vi
+        if saveAll
+            usaver[:,:, step + 1] = vr
+            usavei[:,:, step + 1] = -vi
+        end
 
     end #forward time stepping loop
 
     if verbose
-        nlast = 1 + nsteps
         println("Unitary test:")
         println(" Column   1 - Vnrm")
         Vnrm ::Float64 = 0.0
         for q in 1:Q
-            Vnrm = usaver[:,q,nlast]' * usaver[:,q,nlast] + usavei[:,q,nlast]' * usavei[:,q,nlast]
+            Vnrm = vr[:,q]' * vr[:,q] + vi[:,q]' * vi[:,q]
             Vnrm = sqrt(Vnrm)
             println(q, " | ", 1.0 - Vnrm)
         end
@@ -2009,7 +2012,7 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
     if saveAll
         return usaver + im*usavei
     else
-        return usaver[:,:,end] + im*usavei[:,:,end]
+        return vr - im*vi
     end
 
 end
