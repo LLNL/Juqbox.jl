@@ -99,7 +99,7 @@ nquad = 1
 startFromScratch = true
 Nfreq = 1
 ep_max = 0.00
-include("x-risk-neutral.jl")
+include("swap-02-risk-neutral.jl")
 if(freshOptim)
 
     # Perform noise-free optimization
@@ -164,7 +164,7 @@ optimization using the full specified range.
 nquad = 5
 Nfreq = 1
 ep_max = 0.02
-include("x-risk-neutral.jl")
+include("swap-02-risk-neutral.jl")
 if(freshOptim)
     
     # initial optimization to get initial guess for wider noise range
