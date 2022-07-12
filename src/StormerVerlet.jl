@@ -579,10 +579,16 @@ function getgamma(order,stages = [])
 	stages = 1
     gamma = [1]
   elseif order == 4 # 4th order Composition of Stromer-Verlet methods
-    stages=3
-    gamma = zeros(stages)
-    gamma[1] = gamma[3] = 1/(2 - 2^(1/3))
-    gamma[2] = -2^(1/3)*gamma[1]
+    if stages==3
+      gamma = zeros(stages)
+      gamma[1] = gamma[3] = 1/(2 - 2^(1/3))
+      gamma[2] = -2^(1/3)*gamma[1]
+    else
+      stages=5
+      gamma = zeros(stages)
+      gamma[1] = gamma[2] = gamma[4] = gamma[5] = 1/(4-4^(1/3))
+      gamma[3] = -4^(1/3)*gamma[1]
+    end
   elseif order == 6 # Yoshida (1990) 6th order, 7 stage method
     if stages==7
       gamma = zeros(stages)
@@ -591,7 +597,7 @@ function getgamma(order,stages = [])
       gamma[3] = gamma[5] = -1.17767998417887100694641568
       gamma[4] = 1.31518632068391121888424973
     else # Kahan + Li 6th order, 9 stage method
-      stages=9;
+      stages=9
       gamma = zeros(stages)
       gamma[1]= gamma[9]= 0.39216144400731413927925056
       gamma[2]= gamma[8]= 0.33259913678935943859974864
@@ -599,9 +605,32 @@ function getgamma(order,stages = [])
       gamma[4]= gamma[6]= 0.08221359629355080023149045
       gamma[5]= 0.79854399093482996339895035
     end
-   end
+  elseif order == 8
+    if stages == 15
+      gamma = zeros(stages)
+      gamma[1] = gamma[15] = 0.74167036435061295344822780
+      gamma[2] = gamma[14] = -0.40910082580003159399730010
+      gamma[3] = gamma[13] = 0.19075471029623837995387626
+      gamma[4] = gamma[12] = -0.57386247111608226665638773
+      gamma[5] = gamma[11] = 0.29906418130365592384446354
+      gamma[6] = gamma[10] = 0.33462491824529818378495798
+      gamma[7] = gamma[9]  = 0.31529309239676659663205666
+      gamma[8] = -0.79688793935291635401978884
+    else
+      stages = 17
+      gamma = zeros(stages)
+      gamma[1] = gamma[17] = 0.13020248308889008087881763
+      gamma[2] = gamma[16] = 0.56116298177510838456196441
+      gamma[3] = gamma[15] = -0.38947496264484728640807860
+      gamma[4] = gamma[14] = 0.15884190655515560089621075
+      gamma[5] = gamma[13] = -0.39590389413323757733623154
+      gamma[6] = gamma[12] = 0.18453964097831570709183254
+      gamma[7] = gamma[11] = 0.25837438768632204729397911
+      gamma[8] = gamma[10] = 0.29501172360931029887096624
+      gamma[9] = -0.60550853383003451169892108  
+  end
 
-   return gamma, stages
+  return gamma, stages
 end
 
 # Routine to advance the solution by one time step with a second order Magnus integrator. Note that 
