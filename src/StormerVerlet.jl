@@ -592,8 +592,8 @@ function getgamma(order,stages = [])
   elseif order == 6 # Yoshida (1990) 6th order, 7 stage method
     if stages==7
       gamma = zeros(stages)
-      gamma[2] = gamma[6] = 0.23557321335935813368479318
       gamma[1] = gamma[7] = 0.78451361047755726381949763
+      gamma[2] = gamma[6] = 0.23557321335935813368479318
       gamma[3] = gamma[5] = -1.17767998417887100694641568
       gamma[4] = 1.31518632068391121888424973
     else # Kahan + Li 6th order, 9 stage method
