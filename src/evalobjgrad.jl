@@ -1893,7 +1893,7 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
     Ncoupled = params.Ncoupled
     Nunc = params.Nunc
     Nfreq = params.Nfreq
-    Nsig = 2*Ncoupled + Nunc
+    Nsig = 2*(Ncoupled + Nunc)
 
     linear_solver = params.linear_solver    
 
@@ -1902,11 +1902,11 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
         error("pcof must have an even number of elements >= 6, not ", Psize)
     end
     if params.use_bcarrier
-        D1 = div(Psize, 2*Ncoupled*Nfreq) 
-        Psize = 2*D1*Ncoupled*Nfreq #
+        D1 = div(Psize, Nsig*Nfreq)  # 
+        Psize = D1*Nsig*Nfreq # active part of the parameter array
     else
-        D1 = div(Psize, 2*Ncoupled)
-        Psize = 2*D1*Ncoupled # active part of the parameter array
+        D1 = div(Psize, Nsig)
+        Psize = D1*Nsig # active part of the parameter array
     end
     
     tinv ::Float64 = 1.0/T
