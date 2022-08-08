@@ -1879,7 +1879,6 @@ end
 # Calls to KS! need to be updated
 function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::objparams, saveAll:: Bool = false, verbose::Bool = false, order::Int64=2, stages=[])  
     N = params.N  
-    Q = 1 #one initial data, specified in U0[:,1] (currently assumed to be real)
 
     Nguard = params.Nguard  
     T = params.T
@@ -1939,13 +1938,13 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
     # Note: Initial condition is supplied as an argument
 
     #real and imaginary part of initial condition
-    vr   = U0[:,Q:Q] # Store vr as a matrix with one column
-    vi   = zeros(Float64,Ntot,Q)
-    vi05 = zeros(Float64,Ntot,Q)
+    vr   = U0[:,:]
+    vi   = zeros(Float64,Ntot,N)
+    vi05 = zeros(Float64,Ntot,N)
 
     if saveAll # Only allocate solution memory for entire timespan if necessary
-        usaver = zeros(Float64,Ntot,Q,nsteps+1)
-        usavei = zeros(Float64,Ntot,Q,nsteps+1)
+        usaver = zeros(Float64,Ntot,N,nsteps+1)
+        usavei = zeros(Float64,Ntot,N,nsteps+1)
         usaver[:,:,1] = vr # the rotation to the lab frame is the identity at t=0
         usavei[:,:,1] = -vi
     end
@@ -1957,11 +1956,11 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
     S05  = zeros(Float64,Ntot,Ntot)
     K1   = zeros(Float64,Ntot,Ntot)
     S1   = zeros(Float64,Ntot,Ntot)
-    κ₁   = zeros(Float64,Ntot,Q)
-    κ₂   = zeros(Float64,Ntot,Q)
-    ℓ₁   = zeros(Float64,Ntot,Q)
-    ℓ₂   = zeros(Float64,Ntot,Q)
-    rhs   = zeros(Float64,Ntot,Q)
+    κ₁   = zeros(Float64,Ntot,N)
+    κ₂   = zeros(Float64,Ntot,N)
+    ℓ₁   = zeros(Float64,Ntot,N)
+    ℓ₂   = zeros(Float64,Ntot,N)
+    rhs   = zeros(Float64,Ntot,N)
 
     #initialize variables for time stepping
     t       ::Float64 = 0.0
@@ -2000,7 +1999,7 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
         println("Unitary test:")
         println(" Column   1 - Vnrm")
         Vnrm ::Float64 = 0.0
-        for q in 1:Q
+        for q in 1:N
             Vnrm = vr[:,q]' * vr[:,q] + vi[:,q]' * vi[:,q]
             Vnrm = sqrt(Vnrm)
             println(q, " | ", 1.0 - Vnrm)
