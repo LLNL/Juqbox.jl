@@ -538,6 +538,8 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, wa::Working_A
     #real and imaginary part of initial condition
     copy!(vr,params.Uinit)
     vi   .= 0.0
+
+    # initialize temporaries
     vi05 .= 0.0
     vr0  .= 0.0
 

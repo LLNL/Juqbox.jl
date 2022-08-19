@@ -404,8 +404,8 @@ Call IPOPT to  optimizize the control functions.
 function run_optimizer(prob:: IpoptProblem, pcof0:: Array{Float64, 1}, baseName:: String="")
     # takes at most max_iter >= 0 iterations. Set with addOption(prob, "max_iter", nIter)
 
-    # initial guess for IPOPT
-    prob.x = pcof0;
+    # initial guess for IPOPT; make a copy of pcof0 to avoid overwriting it
+    prob.x = copy(pcof0);
 
     # Ipopt solver
     println("*** Starting the optimization ***")
