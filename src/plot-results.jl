@@ -241,6 +241,10 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
        Plots.savefig(pl5, fftname)
        Plots.savefig(pl6, fftname2)
        println("Saved FFT of lab ctrl function on files '", fftname, "' and '", fftname2, "'");
+
+       enplotname = ctrlbasename * ".png"
+       Plots.savefig(plen, enplotname)
+       println("Saved energy level plot on file '", enplotname);
    end
 
     # final solution matrix
