@@ -53,5 +53,6 @@ include("ipopt_interface.jl")
 
 include("save_pcof.jl")
 
+include("ImplicitMidpoint.jl") # add in time-stepping functionality
 
 end # module
