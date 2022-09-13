@@ -114,6 +114,7 @@ mutable struct objparams
     #Linear solver object to solve linear system in timestepping
     linear_solver ::lsolver_object
 
+    objThreshold :: Float64
     traceInfidelityThreshold :: Float64
     lastTraceInfidelity :: Float64
     lastLeakIntegral :: Float64    
@@ -230,6 +231,7 @@ mutable struct objparams
 
         quiet = false
 
+        objThreshold = 0.0
         traceInfidelityThreshold = 0.0
         usingPriorCoeffs = false
         priorCoeffs = [] # zeros(0)
@@ -290,8 +292,8 @@ mutable struct objparams
              objFuncType,leak_lbound,leak_ubound,
              0.0,0.0,zeros(0),zeros(0),zeros(0),saveConvHist,
              zeros(0), zeros(0), zeros(0), zeros(0), 
-             linear_solver, traceInfidelityThreshold, 0.0, 0.0, usingPriorCoeffs,
-             priorCoeffs, quiet, Rfreq, false, []
+             linear_solver, objThreshold, traceInfidelityThreshold, 0.0, 0.0, 
+             usingPriorCoeffs, priorCoeffs, quiet, Rfreq, false, []
             )
 
     end
@@ -536,6 +538,8 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, wa::Working_A
     #real and imaginary part of initial condition
     copy!(vr,params.Uinit)
     vi   .= 0.0
+
+    # initialize temporaries
     vi05 .= 0.0
     vr0  .= 0.0
 
@@ -1893,6 +1897,8 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
     Nunc = params.Nunc
     Nfreq = params.Nfreq
     Nsig = 2*Ncoupled + Nunc
+
+    linear_solver = params.linear_solver    
 
     Psize = size(pcof,1) #must provide separate coefficients for the real and imaginary parts of the control fcn
     if Psize%2 != 0 || Psize < 6

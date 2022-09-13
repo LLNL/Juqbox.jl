@@ -226,7 +226,11 @@ function intermediate_par(
         push!(params.primaryHist, params.lastTraceInfidelity)
         push!(params.secondaryHist,  params.lastLeakIntegral)
     end
-    if params.lastTraceInfidelity < params.traceInfidelityThreshold
+    if obj_value < params.objThreshold
+        println("Stopping because objective value = ", obj_value,
+                " < threshold = ", params.objThreshold)        
+        return false
+    elseif params.lastTraceInfidelity < params.traceInfidelityThreshold
         println("Stopping because trace infidelity = ", params.lastTraceInfidelity,
                 " < threshold = ", params.traceInfidelityThreshold)        
         return false
@@ -400,8 +404,8 @@ Call IPOPT to  optimizize the control functions.
 function run_optimizer(prob:: IpoptProblem, pcof0:: Array{Float64, 1}, baseName:: String="")
     # takes at most max_iter >= 0 iterations. Set with addOption(prob, "max_iter", nIter)
 
-    # initial guess for IPOPT
-    prob.x = pcof0;
+    # initial guess for IPOPT; make a copy of pcof0 to avoid overwriting it
+    prob.x = copy(pcof0);
 
     # Ipopt solver
     println("*** Starting the optimization ***")
