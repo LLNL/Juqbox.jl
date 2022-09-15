@@ -46,7 +46,7 @@ and either be symmetric or skew-symmetric.
 - `leak_ubound::Float64 = 1.0e-3`  : The upper bound on the leakage inequality constraint (See examples/cnot2-leakieq-setup.jl )
 - `linear_solver::lsolver_object = lsolver_object()` : The linear solver object used to solve the implicit & adjoint system
 - `use_sparse::Bool = false`: (keyword) Set to true to sparsify all Hamiltonian matrices
-- `dVds::Array{Complex{Float64},2}`: (keyword) Matrix holding the matrix dV/ds of size Uinit[Ntot, Ness] (for continuation)
+- `dVds::Array{Complex{Float64},2}`: (keyword) Matrix holding the complex-valued matrix dV/ds of size Ntot x Ne (for continuation)
 """
 mutable struct objparams
     Nosc   ::Int64          # number of oscillators in the coupled quantum systems
