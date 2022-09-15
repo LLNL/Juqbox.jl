@@ -160,15 +160,13 @@ end
                       In::Array{Float64,N}, Ntot::Int64, rhs::Array{Float64,N},
                       linear_solver::lsolver_object) where N
 
-    # RHS = I +0.5h*H05*uv
+    
+    ## RHS = (I +0.5h*H05)*uv
  	rhs    .= uv
     mul!(rhs,H05,uv,0.5h,1)
 
 	# uv     .= (In .-  0.5*h.*H05)\rhs
-    linear_solver.solve(h,H05,rhs,uv_storage,uv) # The 2nd-to-last entry seems to just be for storage. Should match dimensions of 2nd entry times last entry
-
-    ## More straightforward method, but probably slower
-    #uv .= (In .- 0.5h.*H05)\((In .+ 0.5h.*H05)*uv)
+    linear_solver.solve(h,H05,rhs,uv_storage,uv)
 
 	t      = t + h
 	return t
