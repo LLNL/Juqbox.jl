@@ -66,7 +66,7 @@ function recreate_linear_solver_closure!(lsolver::lsolver_object)
     elseif lsolver.solver_id == NEUMANN_SOLVER
         lsolver.solve = (a,b,c,d,e) -> neumann!(a,b,c,d,e,lsolver.iter)
     elseif lsolver.solver_id == BUILTIN_SOLVER
-        lsolver.solve = (a,b,c,d,e) -> builtin_solve!(a,b,c,d)
+        lsolver.solve = (a,b,c,d,e) -> builtin_solve!(a,b,c,e)
     end
 
 end
@@ -149,5 +149,5 @@ For comparing other solvers with the built-in linear solver
 """
 @inline function builtin_solve!(h::Float64, S::Array{Float64,N}, B::Array{Float64,N},
                          X::Array{Float64,N}) where N
-    X .= (LinearAlgebra.I .- (0.5h.*S))\B
+    X .= (LinearAlgebra.I - (0.5h.*S))\B
 end
