@@ -1877,12 +1877,16 @@ end
 end
 
 # Calls to KS! need to be updated
-function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::objparams, saveAll:: Bool = false, verbose::Bool = false, order::Int64=2, stages=[])  
+function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::objparams; nsteps::Int64=0, saveEndOnly::Bool=false, saveEvery::Int64=1, verbose::Bool = false, order::Int64=2, stages=[])  
     N = params.N  
 
     Nguard = params.Nguard  
     T = params.T
-    nsteps = params.nsteps
+    # Use params' nsteps by default, but user can provide a specific value instead
+    if nsteps == 0
+        nsteps = params.nsteps
+    end
+
     H0 = params.Hconst
 
     Ntot = N + Nguard
@@ -1942,9 +1946,13 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
     vi   = zeros(Float64,Ntot,N)
     vi05 = zeros(Float64,Ntot,N)
 
-    if saveAll # Only allocate solution memory for entire timespan if necessary
-        usaver = zeros(Float64,Ntot,N,nsteps+1)
-        usavei = zeros(Float64,Ntot,N,nsteps+1)
+    if nsteps%saveEvery != 0
+        error("nsteps must be divisible by saveEvery; nsteps: $nsteps, saveEvery $saveEvery")
+    end
+
+    if !saveEndOnly # Only allocate solution memory for entire timespan if necessary
+        usaver = zeros(Float64, Ntot, N, nsteps÷saveEvery +1)
+        usavei = zeros(Float64, Ntot, N, nsteps÷saveEvery +1)
         usaver[:,:,1] = vr # the rotation to the lab frame is the identity at t=0
         usavei[:,:,1] = -vi
     end
@@ -1960,7 +1968,7 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
     κ₂   = zeros(Float64,Ntot,N)
     ℓ₁   = zeros(Float64,Ntot,N)
     ℓ₂   = zeros(Float64,Ntot,N)
-    rhs   = zeros(Float64,Ntot,N)
+    rhs  = zeros(Float64,Ntot,N)
 
     #initialize variables for time stepping
     t       ::Float64 = 0.0
@@ -1988,9 +1996,9 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
         end # Stromer-Verlet
         
         # rotated frame
-        if saveAll
-            usaver[:,:, step + 1] = vr
-            usavei[:,:, step + 1] = -vi
+        if (!saveEndOnly) && (step % saveEvery) == 0 
+            usaver[:,:, step÷saveEvery + 1] = vr
+            usavei[:,:, step÷saveEvery + 1] = -vi
         end
 
     end #forward time stepping loop
@@ -2008,10 +2016,10 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
 
     # return to calling routine
 
-    if saveAll
-        return usaver + im*usavei
-    else
+    if saveEndOnly
         return vr - im*vi
+    else
+        return usaver + im*usavei
     end
 
 end

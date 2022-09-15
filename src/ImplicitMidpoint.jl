@@ -1,10 +1,13 @@
-
-function eval_forward_IM(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::objparams, saveAll:: Bool = false, verbose::Bool = false, order::Int64=2, stages=[])  
+function eval_forward_IM(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::objparams; nsteps::Int64=0, saveEndOnly::Bool=false, saveEvery::Int64=1, verbose::Bool = false, order::Int64=2, stages=[])  
     N = params.N  
 
     Nguard = params.Nguard  
     T = params.T
-    nsteps = params.nsteps
+    # Use params' nsteps by default, but user can provide a specific value instead
+    if nsteps == 0
+        nsteps = params.nsteps
+    end
+
     H0 = params.Hconst
 
     Ntot = N + Nguard
@@ -65,12 +68,16 @@ function eval_forward_IM(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::
     #vi   = zeros(Float64,Ntot,N)
     #vi05 = zeros(Float64,Ntot,N)
     v_full = zeros(Float64,Ntot*2,N)
-    v_full[1:Ntot,:] .= U0[:,:]
+    v_full[1:Ntot,:] = U0[:,:]
     v_full_storage = zeros(Float64,Ntot*2,N)
 
-    if saveAll # Only allocate solution memory for entire timespan if necessary
-        usaver = zeros(Float64,Ntot,N,nsteps+1)
-        usavei = zeros(Float64,Ntot,N,nsteps+1)
+    if nsteps%saveEvery != 0
+        error("nsteps must be divisible by saveEvery; nsteps: $nsteps, saveEvery $saveEvery")
+    end
+
+    if !saveEndOnly # Only allocate solution memory for entire timespan if necessary
+        usaver = zeros(Float64, Ntot, N, nsteps÷saveEvery +1)
+        usavei = zeros(Float64, Ntot, N, nsteps÷saveEvery +1)
         usaver[:,:,1] = v_full[1:Ntot,:] # the rotation to the lab frame is the identity at t=0
         usavei[:,:,1] = -v_full[Ntot+1:end,:]
     end
@@ -126,9 +133,9 @@ function eval_forward_IM(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::
         end # Stromer-Verlet
         
         # rotated frame
-        if saveAll
-            usaver[:,:, step + 1] = v_full[1:Ntot,:] # the rotation to the lab frame is the identity at t=0
-            usavei[:,:, step + 1] = -v_full[Ntot+1:end,:]
+        if (!saveEndOnly) && (step % saveEvery) == 0 
+            usaver[:,:, step÷saveEvery + 1] = v_full[1:Ntot,:]
+            usavei[:,:, step÷saveEvery + 1] = -v_full[Ntot+1:end,:]
         end
 
     end #forward time stepping loop
@@ -146,10 +153,10 @@ function eval_forward_IM(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::
 
     # return to calling routine
 
-    if saveAll
-        return usaver + im*usavei
-    else
+    if saveEndOnly
         return v_full[1:Ntot,:] - im*v_full[Ntot+1:end,:]
+    else
+        return usaver + im*usavei
     end
 
 end
