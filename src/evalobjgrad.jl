@@ -164,6 +164,12 @@ mutable struct objparams
         @assert(Ncoupled==0 || Nunc== 0)
         @assert(length(Rfreq) >= Nctrl)
 
+        # Check size of Uinit, Utarget
+        tz = ( Ntot, N )
+        @assert( size(Uinit) == tz)
+        @assert( size(Utarget) == tz)
+        #println("Passed size compatibility tests")
+
         # Track symmetries of uncoupled Hamiltonian terms
         if Nunc > 0
             isSymm = BitArray(undef, Nunc)
@@ -296,8 +302,7 @@ mutable struct objparams
         else
             @assert(size(dVds) == size(Utarget))
         end
-        # tmp
-        println("dVds: ", dVds)
+
 
         new(
              Nosc, N, Nguard, Ne, Ng, Ne+Ng, T, nsteps, Uinit, real(Utarget), imag(Utarget), 
@@ -315,6 +320,7 @@ mutable struct objparams
     end
 
 end # mutable struct objparams
+
 
 # This struct holds all of the working arrays needed to call traceobjgrad. Preallocated for efficiency
 """
@@ -932,6 +938,25 @@ elseif evaladjoint
 else
     return objfv, primaryobjf, secondaryobjf
 end #if
+end
+
+"""
+    change_target!(params, new_Utarget)
+
+Update the unitary target in the objparams object. 
+ 
+# Arguments
+- `param::objparams`: Object holding the problem definition
+- `new_Utarget::Array{ComplexF64,2}`: New unitary target as a two-dimensional complex-valued array (matrix) of dimension Ntot x N
+"""
+function change_target!(params::objparams, new_Utarget::Array{ComplexF64,2} )
+    Ntot = params.N + params.Nguard
+    tz = ( Ntot, params.N )
+    # Check size of new_Utarget
+    @assert( size(new_Utarget) == tz)
+    #println("change_target: Passed size compatibility test")
+    params.Utarget_r = real(new_Utarget)
+    params.Utarget_i = imag(new_Utarget)
 end
 
 function setup_prior!(params::objparams, priorFile::String)

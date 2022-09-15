@@ -20,7 +20,7 @@ export plotunitary, plotspecified, evalctrl, plot_results, plot_energy, plot_fin
 export setup_ipopt_problem, Working_Arrays, estimate_Neumann!, setup_rotmatrices
 export run_optimizer, plot_conv_hist, wmatsetup
 export zero_start_end!, assign_thresholds, assign_thresholds_freq, assign_thresholds_ctrl_freq 
-export calculate_timestep, marginalize3
+export calculate_timestep, marginalize3, change_target!
 export save_pcof, read_pcof, juq2qis
 export lsolver_object
 
