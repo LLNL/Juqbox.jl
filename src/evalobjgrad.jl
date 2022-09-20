@@ -300,10 +300,11 @@ mutable struct objparams
         end
         
         if length(dVds) == 0
-            dVds = Utarget
+            my_dVds = copy(Utarget) # make a copy to be safe
             my_sv_type = 1
         else
             @assert(size(dVds) == size(Utarget))
+            my_dVds = dVds
             my_sv_type = 2
         end
 
@@ -318,7 +319,7 @@ mutable struct objparams
              zeros(0), zeros(0), zeros(0), zeros(0), 
              linear_solver, objThreshold, traceInfidelityThreshold, 0.0, 0.0, 
              usingPriorCoeffs, priorCoeffs, quiet, Rfreq, false, [],
-             real(dVds), imag(dVds), my_sv_type
+             real(my_dVds), imag(my_dVds), my_sv_type
             )
 
     end
@@ -741,13 +742,12 @@ if evaladjoint
 
     
     # println("traceobjgrad(): eval_adjoint: sv_type = ", params.sv_type) # tmp
-    if params.sv_type == 1
+    if params.sv_type == 1 || params.sv_type == 2 # regular case
         # println("scomplex #1 (vtarget)")
         scomplex0 = tracefidcomplex(vr, -vi, vtargetr, vtargeti)
-    elseif params.sv_type == 2
-        # println("scomplex #2 (dVds)")
+    elseif params.sv_type == 3 # term2 for d/ds(grad(G))
+        # println("scomplex #3 (dVds)")
         scomplex0 = tracefidcomplex(vr, -vi, dVds_r, dVds_i)
-    # else
     #     println("Unknown sv_type = ", params.sv_type)
     end
 
@@ -759,17 +759,17 @@ if evaladjoint
     # Set initial condition for adjoint variables
     # Note (vtargetr, vtargeti) needs to be changed to dV/ds for continuation applications
     # By default, dVds = vtarget
-    if params.sv_type == 1
+    if params.sv_type == 1 # regular case
         # println("init_adjoint #1 (dVds)")
         init_adjoint!(pFidType, params.globalPhase, N, scomplex0, lambdar, lambdar0, lambdar05, lambdai, lambdai0,
-                    dVds_r, dVds_i)
-    
-    elseif params.sv_type == 2
-        # println("init_adjoint #2 (vtarget)")
+                    vtargetr, vtargeti)
+    elseif params.sv_type == 2 # term1 for d/ds(grad(G))
+        # println("init_adjoint #2 (dVds)")
         init_adjoint!(pFidType, params.globalPhase, N, scomplex0, lambdar, lambdar0, lambdar05, lambdai, lambdai0,
-                    vtargetr, vtargeti)                      
-    # else
-    #     println("Unknown sv_type = ", params.sv_type)
+                    dVds_r, dVds_i)               
+    elseif params.sv_type == 3 # term2 for d/ds(grad(G))
+        init_adjoint!(pFidType, params.globalPhase, N, scomplex0, lambdar, lambdar0, lambdar05, lambdai, lambdai0,
+                    vtargetr, vtargeti)
     end
 
     #Initialize adjoint variables without forcing
@@ -978,8 +978,13 @@ function change_target!(params::objparams, new_Utarget::Array{ComplexF64,2} )
     # Check size of new_Utarget
     @assert( size(new_Utarget) == tz)
     #println("change_target: Passed size compatibility test")
-    params.Utarget_r = real(new_Utarget)
-    params.Utarget_i = imag(new_Utarget)
+    my_target = copy(new_Utarget) # make a copy to be safe
+    params.Utarget_r = real(my_target)
+    params.Utarget_i = imag(my_target)
+    if params.sv_type == 1
+        params.dVds_r = real(my_target)
+        params.dVds_i = imag(my_target)
+    end
 end
 
 """
@@ -989,10 +994,10 @@ For continuation only: update the sv_type in the objparams object.
  
 # Arguments
 - `param::objparams`: Object holding the problem definition
-- `new_sv_type:: Int64`: New value for sv_type. Must be 1 or 2
+- `new_sv_type:: Int64`: New value for sv_type. Must be 1, 2, or 3.
 """
 function set_adjoint_Sv_type!(params::objparams, new_sv_type::Int64 = 1)
-    @assert( new_sv_type == 1 || new_sv_type == 2)
+    @assert( new_sv_type == 1 || new_sv_type == 2 || new_sv_type == 3)
     #println("change_target: Passed size compatibility test")
     params.sv_type = new_sv_type
 end
@@ -1982,6 +1987,7 @@ end
 end
 
 # Calls to KS! need to be updated
+# AP: Currently not working properly (9/20/22)
 function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::objparams, saveAll:: Bool = false, verbose::Bool = false)  
     N = params.N  
     Q = 1 #one initial data, specified in U0[:,1] (currently assumed to be real)
@@ -2045,12 +2051,15 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
     # Note: Initial condition is supplied as an argument
 
     #real and imaginary part of initial condition
-    vr   = U0[:,Q:Q]
-    vi   = zeros(Float64,Ntot,Q)
-    vi05 = zeros(Float64,Ntot,Q)
+    # vr   = U0[:,Q:Q]
+    # vi   = zeros(Float64,Ntot,Q)
+    # vi05 = zeros(Float64,Ntot,Q)
+    vr   = U0[:,:]
+    vi   = zeros(Float64,Ntot,N)
+    vi05 = zeros(Float64,Ntot,N)
 
-    usaver = zeros(Float64,Ntot,Q,nsteps+1)
-    usavei = zeros(Float64,Ntot,Q,nsteps+1)
+    usaver = zeros(Float64,Ntot,N,nsteps+1)
+    usavei = zeros(Float64,Ntot,N,nsteps+1)
     usaver[:,:,1] = vr # the rotation to the lab frame is the identity at t=0
     usavei[:,:,1] = -vi
 
@@ -2061,11 +2070,11 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
     S05  = zeros(Float64,Ntot,Ntot)
     K1   = zeros(Float64,Ntot,Ntot)
     S1   = zeros(Float64,Ntot,Ntot)
-    κ₁   = zeros(Float64,Ntot,Q)
-    κ₂   = zeros(Float64,Ntot,Q)
-    ℓ₁   = zeros(Float64,Ntot,Q)
-    ℓ₂   = zeros(Float64,Ntot,Q)
-    rhs   = zeros(Float64,Ntot,Q)
+    κ₁   = zeros(Float64,Ntot,N)
+    κ₂   = zeros(Float64,Ntot,N)
+    ℓ₁   = zeros(Float64,Ntot,N)
+    ℓ₂   = zeros(Float64,Ntot,N)
+    rhs   = zeros(Float64,Ntot,N)
 
     #initialize variables for time stepping
     t       ::Float64 = 0.0
@@ -2103,7 +2112,7 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
         println("Unitary test:")
         println(" Column   1 - Vnrm")
         Vnrm ::Float64 = 0.0
-        for q in 1:Q
+        for q in 1:N
             Vnrm = usaver[:,q,nlast]' * usaver[:,q,nlast] + usavei[:,q,nlast]' * usavei[:,q,nlast]
             Vnrm = sqrt(Vnrm)
             println(q, " | ", 1.0 - Vnrm)
