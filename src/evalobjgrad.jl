@@ -135,6 +135,8 @@ mutable struct objparams
 
     dVds_r      ::Array{Float64,2}
     dVds_i      ::Array{Float64,2}
+
+    sv_type:: Int64
     
 # Regular arrays
     function objparams(Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64;
@@ -299,11 +301,13 @@ mutable struct objparams
         
         if length(dVds) == 0
             dVds = Utarget
+            my_sv_type = 1
         else
             @assert(size(dVds) == size(Utarget))
+            my_sv_type = 2
         end
 
-
+        # sv_type is used for continuation. Only change this if you know what you are doing
         new(
              Nosc, N, Nguard, Ne, Ng, Ne+Ng, T, nsteps, Uinit, real(Utarget), imag(Utarget), 
              use_bcarrier, Nfreq, Cfreq, kpar, tik0, Hconst, Hsym_ops1, 
@@ -314,7 +318,7 @@ mutable struct objparams
              zeros(0), zeros(0), zeros(0), zeros(0), 
              linear_solver, objThreshold, traceInfidelityThreshold, 0.0, 0.0, 
              usingPriorCoeffs, priorCoeffs, quiet, Rfreq, false, [],
-             real(dVds), imag(dVds)
+             real(dVds), imag(dVds), my_sv_type
             )
 
     end
@@ -735,7 +739,17 @@ if evaladjoint
     t = T
     dt = -dt
 
-    scomplex0 = tracefidcomplex(vr, -vi, vtargetr, vtargeti)
+    
+    # println("traceobjgrad(): eval_adjoint: sv_type = ", params.sv_type) # tmp
+    if params.sv_type == 1
+        # println("scomplex #1 (vtarget)")
+        scomplex0 = tracefidcomplex(vr, -vi, vtargetr, vtargeti)
+    elseif params.sv_type == 2
+        # println("scomplex #2 (dVds)")
+        scomplex0 = tracefidcomplex(vr, -vi, dVds_r, dVds_i)
+    # else
+    #     println("Unknown sv_type = ", params.sv_type)
+    end
 
     if pFidType == 1
         scomplex0 = exp(1im*params.globalPhase) - scomplex0
@@ -743,11 +757,20 @@ if evaladjoint
 
 
     # Set initial condition for adjoint variables
-    #init_adjoint!(pFidType, params.globalPhase, N, scomplex0, lambdar, lambdar0, lambdar05, lambdai, lambdai0,
-    #                vtargetr, vtargeti) 
-    # (vtargetr, vtargeti) needs to be changed to dV/ds for continuation applications
-    init_adjoint!(pFidType, params.globalPhase, N, scomplex0, lambdar, lambdar0, lambdar05, lambdai, lambdai0,
+    # Note (vtargetr, vtargeti) needs to be changed to dV/ds for continuation applications
+    # By default, dVds = vtarget
+    if params.sv_type == 1
+        # println("init_adjoint #1 (dVds)")
+        init_adjoint!(pFidType, params.globalPhase, N, scomplex0, lambdar, lambdar0, lambdar05, lambdai, lambdai0,
                     dVds_r, dVds_i)
+    
+    elseif params.sv_type == 2
+        # println("init_adjoint #2 (vtarget)")
+        init_adjoint!(pFidType, params.globalPhase, N, scomplex0, lambdar, lambdar0, lambdar05, lambdai, lambdai0,
+                    vtargetr, vtargeti)                      
+    # else
+    #     println("Unknown sv_type = ", params.sv_type)
+    end
 
     #Initialize adjoint variables without forcing
     if params.objFuncType != 1
@@ -957,6 +980,21 @@ function change_target!(params::objparams, new_Utarget::Array{ComplexF64,2} )
     #println("change_target: Passed size compatibility test")
     params.Utarget_r = real(new_Utarget)
     params.Utarget_i = imag(new_Utarget)
+end
+
+"""
+    set_adjoint_Sv_type!(params, new_sv_type)
+
+For continuation only: update the sv_type in the objparams object.  
+ 
+# Arguments
+- `param::objparams`: Object holding the problem definition
+- `new_sv_type:: Int64`: New value for sv_type. Must be 1 or 2
+"""
+function set_adjoint_Sv_type!(params::objparams, new_sv_type::Int64 = 1)
+    @assert( new_sv_type == 1 || new_sv_type == 2)
+    #println("change_target: Passed size compatibility test")
+    params.sv_type = new_sv_type
 end
 
 function setup_prior!(params::objparams, priorFile::String)
