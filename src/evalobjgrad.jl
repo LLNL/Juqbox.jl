@@ -1877,7 +1877,7 @@ end
 end
 
 # Calls to KS! need to be updated
-function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::objparams; nsteps::Int64=0, saveEndOnly::Bool=false, saveEvery::Int64=1, verbose::Bool = false, order::Int64=2, stages=[])  
+function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::objparams; nsteps::Int64=0, saveEndOnly::Bool=false, saveEvery::Int64=1, verbose::Bool = false, order::Int64=2, stages::Int64=0)  
     N = params.N  
 
     Nguard = params.Nguard  
@@ -1930,7 +1930,7 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
     # it is up to the user to estimate the number of time steps
     dt ::Float64 = T/nsteps
 
-    gamma, stages = getgamma(order, stages)
+    gamma, used_stages = getgamma(order, stages)
 
     if verbose
         println("Final time: ", T, ", number of time steps: " , nsteps , ", time step: " , dt )
@@ -1947,7 +1947,7 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
     vi05 = zeros(Float64,Ntot,N)
 
     if nsteps%saveEvery != 0
-        error("nsteps must be divisible by saveEvery; nsteps: $nsteps, saveEvery $saveEvery")
+        error("nsteps must be divisible by saveEvery. nsteps=$nsteps, saveEvery=$saveEvery")
     end
 
     if !saveEndOnly # Only allocate solution memory for entire timespan if necessary
@@ -1979,7 +1979,7 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
     for step in 1:nsteps
 
         # Störmer-Verlet
-        for q in 1:stages
+        for q in 1:used_stages
             
             # Update K and S matrices
             KS!(K0, S0, t, params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq)
