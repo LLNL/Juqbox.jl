@@ -574,19 +574,21 @@ function stepseparable(stepper::svparams,u,v,t,h)
 	return t, u, v
 end
 
-function getgamma(order::Int64,stages::Int64)
-    # Check if given order and stages are implemented, round to nearest valid values if not
+function getgamma(order::Int64, stages::Int64=0)
+    # Check if given order and stages are implemented, round stages to nearest valid value if not
     valid_orders = (2,4,6,8,10)
     valid_stages = ((1), (3,5), (7,9), (15, 17), (35))
+
     if !(order in valid_orders)
-        order_index = findmin(abs.(valid_orders .- order))[2]
-        used_order = valid_orders[order_index]
-        @warn "WARNING: invalid order $order specified for compositional method! Using closest valid order $used_order instead."
-    else
-        used_order = order
-        order_index = findfirst(x -> x==used_order, valid_orders)
+        throw(DomainError(order, "Provided order $order invalid. Please use one of the following values: $(valied_orders)."))
     end
-    if !(stages in valid_stages[order_index])
+    order_index = findfirst(x -> x==order, valid_orders)
+
+    # Default to highest stage variant if stages not provided
+    if stages == 0
+        used_stages = valid_stages[order_index][end]
+    # If stages provided but invalid, use nearest valid number of stages
+    elseif !(stages in valid_stages[order_index])
         stages_index = findmin(abs.(valid_stages[order_index] .- stages))[2]
         used_stages = valid_stages[order_index][stages_index]
         @warn "WARNING: invalid number of stages $stages specified for compositional method of order $(used_order)! Using closest valid number of stages $used_stages instead."
@@ -671,7 +673,7 @@ function getgamma(order::Int64,stages::Int64)
         end
     end
 
-    return gamma, used_order, used_stages
+    return gamma, used_stages
 end
 
 # Routine to advance the solution by one time step with a second order Magnus integrator. Note that 
