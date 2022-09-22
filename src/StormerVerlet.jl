@@ -606,7 +606,7 @@ function getgamma(order::Int64, stages::Int64=0)
     # Calculate gamma 
     if order == 2 # 2nd order basic Stormer-Verlet
         if used_stages == 1
-          gamma = [1.0]
+            gamma = [1.0]
         end
     elseif order == 4
         if used_stages==3 # 4th order Composition of Stormer-Verlet methods
