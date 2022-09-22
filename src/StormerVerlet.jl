@@ -578,34 +578,37 @@ end
 """
     gamma, used_stages = getgamma(order, stages)
 
-Obtain step size coefficients (gamma) for the composition method with the given order
-and number of stages. 
+Obtain step size coefficients (gamma) for the composition method with the given
+order and number of stages. 
 """
-function getgamma(order::Int64, stages::Int64)
+function getgamma(order::Int64, stages::Int64=0)
     # Check if given order and stages are implemented, round stages to nearest valid value if not
     valid_orders = (2,4,6,8,10)
     valid_stages = ((1), (3,5), (7,9), (15, 17), (35))
 
     if !(order in valid_orders)
-        throw(DomainError(order, "Provided order $order invalid. Please use one of the following values: $(valied_orders)."))
+        throw(DomainError(order, "Provided order $order invalid. Please use one of the following values: $(valid_orders)."))
     end
     order_index = findfirst(x -> x==order, valid_orders)
 
     # If stages provided but invalid, use nearest valid number of stages
-    if !(stages in valid_stages[order_index])
+    if stages == 0
+        used_stages = valid_stages[order_index][end]
+        #@warn "WARNING: Default value 0 provided for stages. Using $(used_stages)-stage, order $order method."
+    elseif !(stages in valid_stages[order_index])
         stages_index = findmin(abs.(valid_stages[order_index] .- stages))[2]
         used_stages = valid_stages[order_index][stages_index]
-        @warn "WARNING: invalid number of stages $stages specified for compositional method of order $(used_order)! Using closest valid number of stages $used_stages instead."
+        @warn "WARNING: invalid number of stages $stages specified for compositional method of order $(order)! Using closest valid number of stages $used_stages instead."
     else
         used_stages = stages
     end
 
     # Calculate gamma 
-    if used_order == 2 # 2nd order basic Stormer-Verlet
+    if order == 2 # 2nd order basic Stormer-Verlet
         if used_stages == 1
           gamma = [1.0]
         end
-    elseif used_order == 4
+    elseif order == 4
         if used_stages==3 # 4th order Composition of Stormer-Verlet methods
             gamma = zeros(used_stages)
             gamma[1] = gamma[3] = 1/(2 - 2^(1/3))
@@ -615,7 +618,7 @@ function getgamma(order::Int64, stages::Int64)
             gamma[1] = gamma[2] = gamma[4] = gamma[5] = 1/(4-4^(1/3))
             gamma[3] = -4^(1/3)*gamma[1]
         end
-    elseif used_order == 6
+    elseif order == 6
         if used_stages==7  # Yoshida (1990) 6th order, 7 stage method
             gamma = zeros(used_stages)
             gamma[1] = gamma[7] = 0.78451361047755726381949763
@@ -630,7 +633,7 @@ function getgamma(order::Int64, stages::Int64)
             gamma[4]= gamma[6]= 0.08221359629355080023149045
             gamma[5]= 0.79854399093482996339895035
         end
-    elseif used_order == 8
+    elseif order == 8
         if used_stages == 15
             gamma = zeros(used_stages)
             gamma[1] = gamma[15] = 0.74167036435061295344822780
@@ -653,7 +656,7 @@ function getgamma(order::Int64, stages::Int64)
             gamma[8] = gamma[10] = 0.29501172360931029887096624
             gamma[9] = -0.60550853383003451169892108  
         end
-    elseif used_order==10
+    elseif order==10
         if used_stages==35
             gamma = zeros(used_stages)
             gamma[1]  = gamma[35] = 0.07879572252168641926390768
@@ -680,21 +683,6 @@ function getgamma(order::Int64, stages::Int64)
     return gamma, used_stages
 end
 
-
-"""
-Alternative caller for getgamma using a default number of stages.
-"""
-function getgamma(order::Int64)
-    valid_orders = (2,4,6,8,10)
-    valid_stages = ((1), (3,5), (7,9), (15, 17), (35))
-    if !(order in valid_orders)
-        throw(DomainError(order, "Provided order $order invalid. Please use one of the following values: $(valied_orders)."))
-    end
-    order_index = findfirst(x -> x==order, valid_orders)
-    stages = valid_stages[order_index][end]
-    @warn "WARNING: stages not provided in getgamma, using $(stages)-stage, order $order method."
-    return getgamma(order, stages)
-end
 
 
 # Routine to advance the solution by one time step with a second order Magnus integrator. Note that 
