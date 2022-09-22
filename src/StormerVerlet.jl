@@ -574,7 +574,14 @@ function stepseparable(stepper::svparams,u,v,t,h)
 	return t, u, v
 end
 
-function getgamma(order::Int64, stages::Int64=0)
+
+"""
+    gamma, used_stages = getgamma(order, stages)
+
+Obtain step size coefficients (gamma) for the composition method with the given order
+and number of stages. 
+"""
+function getgamma(order::Int64, stages::Int64)
     # Check if given order and stages are implemented, round stages to nearest valid value if not
     valid_orders = (2,4,6,8,10)
     valid_stages = ((1), (3,5), (7,9), (15, 17), (35))
@@ -584,11 +591,8 @@ function getgamma(order::Int64, stages::Int64=0)
     end
     order_index = findfirst(x -> x==order, valid_orders)
 
-    # Default to highest stage variant if stages not provided
-    if stages == 0
-        used_stages = valid_stages[order_index][end]
     # If stages provided but invalid, use nearest valid number of stages
-    elseif !(stages in valid_stages[order_index])
+    if !(stages in valid_stages[order_index])
         stages_index = findmin(abs.(valid_stages[order_index] .- stages))[2]
         used_stages = valid_stages[order_index][stages_index]
         @warn "WARNING: invalid number of stages $stages specified for compositional method of order $(used_order)! Using closest valid number of stages $used_stages instead."
@@ -675,6 +679,23 @@ function getgamma(order::Int64, stages::Int64=0)
 
     return gamma, used_stages
 end
+
+
+"""
+Alternative caller for getgamma using a default number of stages.
+"""
+function getgamma(order::Int64)
+    valid_orders = (2,4,6,8,10)
+    valid_stages = ((1), (3,5), (7,9), (15, 17), (35))
+    if !(order in valid_orders)
+        throw(DomainError(order, "Provided order $order invalid. Please use one of the following values: $(valied_orders)."))
+    end
+    order_index = findfirst(x -> x==order, valid_orders)
+    stages = valid_stages[order_index][end]
+    @warn "WARNING: stages not provided in getgamma, using $(stages)-stage, order $order method."
+    return getgamma(order, stages)
+end
+
 
 # Routine to advance the solution by one time step with a second order Magnus integrator. Note that 
 # we use this in a very special case where we have an evolution matrix that is 
