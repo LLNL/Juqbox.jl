@@ -12,8 +12,9 @@
                         objFuncType=objFuncType,
                         leak_lbound=leak_lbound,
                         leak_ubound=leak_ubound,
-                        linear_solver = lsolver_object()
-                        use_sparse=use_sparse])
+                        linear_solver = lsolver_object(),
+                        use_sparse = use_sparse],
+                        dVds = dVds)
 
 Constructor for the mutable struct objparams. The sizes of the arrays in the argument list are based on
 `Ntot = prod(Ne + Ng)`, `Ness = prod(Ne)`, `Nosc = length(Ne) = length(Ng)`.
@@ -45,6 +46,7 @@ and either be symmetric or skew-symmetric.
 - `leak_ubound::Float64 = 1.0e-3`  : The upper bound on the leakage inequality constraint (See examples/cnot2-leakieq-setup.jl )
 - `linear_solver::lsolver_object = lsolver_object()` : The linear solver object used to solve the implicit & adjoint system
 - `use_sparse::Bool = false`: (keyword) Set to true to sparsify all Hamiltonian matrices
+- `dVds::Array{Complex{Float64},2}`: (keyword) Matrix holding the complex-valued matrix dV/ds of size Ntot x Ne (for continuation)
 """
 mutable struct objparams
     Nosc   ::Int64          # number of oscillators in the coupled quantum systems
@@ -57,7 +59,9 @@ mutable struct objparams
 
     nsteps       ::Int64    # Number of time steps
     Uinit        ::Array{Float64,2} # initial condition for each essential state: Should be a basis
-    Utarget      ::Array{Complex{Float64},2}
+    # Utarget      ::Array{Complex{Float64},2}
+    Utarget_r      ::Array{Float64,2}
+    Utarget_i      ::Array{Float64,2}
     use_bcarrier ::Bool
     Nfreq        ::Int64 # number of frequencies
     Cfreq        ::Array{Float64,2} # Carrier wave frequencies of dim Cfreq[seg,freq]
@@ -128,6 +132,11 @@ mutable struct objparams
 
     save_pcof_hist:: Bool
     pcof_hist:: Array{Vector{Float64},1}
+
+    dVds_r      ::Array{Float64,2}
+    dVds_i      ::Array{Float64,2}
+
+    sv_type:: Int64
     
 # Regular arrays
     function objparams(Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64;
@@ -140,7 +149,8 @@ mutable struct objparams
                        forb_weights:: Vector{Float64} = Float64[],
                        objFuncType:: Int64 = 1, leak_lbound:: Float64=-1.0e19, leak_ubound:: Float64=1.0e-3,
                        wmatScale::Float64 = 1.0, use_sparse::Bool = false, use_custom_forbidden::Bool = false,
-                       linear_solver::lsolver_object = lsolver_object(nrhs=prod(Ne)))
+                       linear_solver::lsolver_object = lsolver_object(nrhs=prod(Ne)),
+                       dVds::Array{ComplexF64,2}= Array{ComplexF64}(undef,0,0))
         pFidType = 2
         Nosc   = length(Ne)
         N      = prod(Ne)
@@ -155,6 +165,12 @@ mutable struct objparams
         
         @assert(Ncoupled==0 || Nunc== 0)
         @assert(length(Rfreq) >= Nctrl)
+
+        # Check size of Uinit, Utarget
+        tz = ( Ntot, N )
+        @assert( size(Uinit) == tz)
+        @assert( size(Utarget) == tz)
+        #println("Passed size compatibility tests")
 
         # Track symmetries of uncoupled Hamiltonian terms
         if Nunc > 0
@@ -283,9 +299,18 @@ mutable struct objparams
             Hunc_ops1 = Hunc_ops
         end
         
+        if length(dVds) == 0
+            my_dVds = copy(Utarget) # make a copy to be safe
+            my_sv_type = 1
+        else
+            @assert(size(dVds) == size(Utarget))
+            my_dVds = dVds
+            my_sv_type = 2
+        end
 
+        # sv_type is used for continuation. Only change this if you know what you are doing
         new(
-             Nosc, N, Nguard, Ne, Ng, Ne+Ng, T, nsteps, Uinit, Utarget, 
+             Nosc, N, Nguard, Ne, Ng, Ne+Ng, T, nsteps, Uinit, real(Utarget), imag(Utarget), 
              use_bcarrier, Nfreq, Cfreq, kpar, tik0, Hconst, Hsym_ops1, 
              Hanti_ops1, Hunc_ops1, Ncoupled, Nunc, isSymm, Ident, wmat, 
              forb_states,forb_weights,wmat_real,wmat_imag, pFidType, 0.0,
@@ -293,12 +318,14 @@ mutable struct objparams
              0.0,0.0,zeros(0),zeros(0),zeros(0),saveConvHist,
              zeros(0), zeros(0), zeros(0), zeros(0), 
              linear_solver, objThreshold, traceInfidelityThreshold, 0.0, 0.0, 
-             usingPriorCoeffs, priorCoeffs, quiet, Rfreq, false, []
+             usingPriorCoeffs, priorCoeffs, quiet, Rfreq, false, [],
+             real(my_dVds), imag(my_dVds), my_sv_type
             )
 
     end
 
 end # mutable struct objparams
+
 
 # This struct holds all of the working arrays needed to call traceobjgrad. Preallocated for efficiency
 """
@@ -321,8 +348,8 @@ mutable struct Working_Arrays
     S1  ::MyRealMatrix
 
     # Forward/Adjoint variables+stages
-    vtargetr    ::Array{Float64,2}
-    vtargeti    ::Array{Float64,2}
+    #vtargetr    ::Array{Float64,2} # moved to params
+    #vtargeti    ::Array{Float64,2}
     lambdar     ::Array{Float64,2}
     lambdar0    ::Array{Float64,2}
     lambdai     ::Array{Float64,2}
@@ -361,7 +388,8 @@ mutable struct Working_Arrays
         N = params.N
         Ntot = N + params.Nguard
 
-        K0,S0,K05,S05,K1,S1,vtargetr,vtargeti = KS_alloc(params)
+        # K0,S0,K05,S05,K1,S1,vtargetr,vtargeti = KS_alloc(params)
+        K0,S0,K05,S05,K1,S1 = KS_alloc(params)
         lambdar,lambdar0,lambdai,lambdai0,lambdar05,κ₁,κ₂,ℓ₁,ℓ₂,rhs,gr0,gi0,gr1,gi1,hr0,hi0,hi1,hr1,vr,vi,vi05,vr0,vfinalr,vfinali = time_step_alloc(Ntot,N)
         if params.pFidType == 3
             gr, gi, gradobjfadj, tr_adj = grad_alloc(nCoeff-1)
@@ -381,11 +409,16 @@ mutable struct Working_Arrays
             lambdai0_nfrc = zeros(0,0)
             lambdar05_nfrc= zeros(0,0)
         end
-        new(K0,S0,K05,S05,K1,S1,vtargetr,vtargeti,
+        # new(K0,S0,K05,S05,K1,S1,vtargetr,vtargeti,
+        #     lambdar,lambdar0,lambdai,lambdai0,lambdar05,
+        #     lambdar_nfrc,lambdar0_nfrc,lambdai_nfrc,lambdai0_nfrc,lambdar05_nfrc,
+        #     κ₁,κ₂,ℓ₁,ℓ₂,rhs,gr0,gi0,gr1,gi1,hr0,hi0,hi1,hr1,
+        #     vr,vi,vi05,vr0,vfinalr,vfinali,gr, gi, gradobjfadj, tr_adj)
+        new(K0, S0, K05, S05, K1, S1,
             lambdar,lambdar0,lambdai,lambdai0,lambdar05,
             lambdar_nfrc,lambdar0_nfrc,lambdai_nfrc,lambdai0_nfrc,lambdar05_nfrc,
             κ₁,κ₂,ℓ₁,ℓ₂,rhs,gr0,gi0,gr1,gi1,hr0,hi0,hi1,hr1,
-            vr,vi,vi05,vr0,vfinalr,vfinali,gr, gi, gradobjfadj, tr_adj)
+            vr, vi, vi05, vr0, vfinalr, vfinali, gr, gi, gradobjfadj, tr_adj)
     end
     
 end
@@ -409,7 +442,7 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, wa::Working_A
     Nguard = params.Nguard  
     T      = params.T
 
-    Utarget = params.Utarget
+    # Utarget = params.Utarget # Never used
 
     nsteps = params.nsteps
     tik0   = params.tik0
@@ -436,8 +469,17 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, wa::Working_A
     S05 = wa.S05
     K1 = wa.K1
     S1 = wa.S1
-    vtargetr = wa.vtargetr
-    vtargeti = wa.vtargeti
+    vtargetr = params.Utarget_r
+    vtargeti = params.Utarget_i
+    # vtargetr = wa.vtargetr
+    # vtargeti = wa.vtargeti
+
+    # New variables to accomodate continuation. By default dVds = Utarget
+    dVds_r = params.dVds_r
+    dVds_i = params.dVds_i
+    # tmp
+    # println("dVds")
+
     lambdar = wa.lambdar
     lambdar0 = wa.lambdar0
     lambdai = wa.lambdai
@@ -465,7 +507,7 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, wa::Working_A
     vi = wa.vi
     vi05 = wa.vi05
     vr0 = wa.vr0
-    vfinalr = wa.vfinalr
+    vfinalr = wa.vfinalr # temporary storage for final time-stepped solution
     vfinali = wa.vfinali
     gr = wa.gr
     gi = wa.gi
@@ -538,6 +580,8 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, wa::Working_A
     #real and imaginary part of initial condition
     copy!(vr,params.Uinit)
     vi   .= 0.0
+
+    # initialize temporaries
     vi05 .= 0.0
     vr0  .= 0.0
 
@@ -626,7 +670,8 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, wa::Working_A
                 forbalpha2 = tinv*penalf2grad(wi05, vi05, vr0, wr, wmat_imag)                
 
                 copy!(wr,wr1)
-                objf_alpha1 = objf_alpha1 + gamma[q]*dt*0.5*2.0*(forbalpha0 + forbalpha1 + forbalpha2)
+                # accumulate contribution from the leak term
+                objf_alpha1 = objf_alpha1 + gamma[q]*dt*0.5*2.0*(forbalpha0 + forbalpha1 + forbalpha2) 
 
             end  # evaladjoint && verbose
         end # Stromer-Verlet
@@ -652,7 +697,8 @@ secondaryobjf = objfv
 objfv = primaryobjf + secondaryobjf
 
 if evaladjoint && verbose
-    salpha1 = tracefidcomplex(wr, -wi, vtargetr, vtargeti)
+    # salpha1 = tracefidcomplex(wr, -wi, vtargetr, vtargeti)
+    salpha1 = tracefidcomplex(wr, -wi, dVds_r, dVds_i)
     scomplex1 = tracefidcomplex(vr, -vi, vtargetr, vtargeti)
     if pFidType==1
         primaryobjgrad = 2*real(conj( scomplex1 - exp(1im*params.globalPhase) )*salpha1)
@@ -694,7 +740,16 @@ if evaladjoint
     t = T
     dt = -dt
 
-    scomplex0 = tracefidcomplex(vr, -vi, vtargetr, vtargeti)
+    
+    # println("traceobjgrad(): eval_adjoint: sv_type = ", params.sv_type) # tmp
+    if params.sv_type == 1 || params.sv_type == 2 # regular case
+        # println("scomplex #1 (vtarget)")
+        scomplex0 = tracefidcomplex(vr, -vi, vtargetr, vtargeti)
+    elseif params.sv_type == 3 # term2 for d/ds(grad(G))
+        # println("scomplex #3 (dVds)")
+        scomplex0 = tracefidcomplex(vr, -vi, dVds_r, dVds_i)
+    #     println("Unknown sv_type = ", params.sv_type)
+    end
 
     if pFidType == 1
         scomplex0 = exp(1im*params.globalPhase) - scomplex0
@@ -702,8 +757,20 @@ if evaladjoint
 
 
     # Set initial condition for adjoint variables
-    init_adjoint!(pFidType, params.globalPhase, N, scomplex0, lambdar, lambdar0, lambdar05,lambdai, lambdai0,
+    # Note (vtargetr, vtargeti) needs to be changed to dV/ds for continuation applications
+    # By default, dVds = vtarget
+    if params.sv_type == 1 # regular case
+        # println("init_adjoint #1 (dVds)")
+        init_adjoint!(pFidType, params.globalPhase, N, scomplex0, lambdar, lambdar0, lambdar05, lambdai, lambdai0,
                     vtargetr, vtargeti)
+    elseif params.sv_type == 2 # term1 for d/ds(grad(G))
+        # println("init_adjoint #2 (dVds)")
+        init_adjoint!(pFidType, params.globalPhase, N, scomplex0, lambdar, lambdar0, lambdar05, lambdai, lambdai0,
+                    dVds_r, dVds_i)               
+    elseif params.sv_type == 3 # term2 for d/ds(grad(G))
+        init_adjoint!(pFidType, params.globalPhase, N, scomplex0, lambdar, lambdar0, lambdar05, lambdai, lambdai0,
+                    vtargetr, vtargeti)
+    end
 
     #Initialize adjoint variables without forcing
     if params.objFuncType != 1
@@ -749,10 +816,12 @@ if evaladjoint
 
             # evolve lambdar, lambdai
             temp = t0
-            @inbounds temp = step!(temp, lambdar, lambdai, lambdar05, dt*gamma[q], hr0, hi0, hr1, hi1, K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs,linear_solver)
+            @inbounds temp = step!(temp, lambdar, lambdai, lambdar05, dt*gamma[q], hr0, hi0, hr1, hi1, 
+                                    K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs,linear_solver)
 
             # Accumulate gradient
-            adjoint_grad_calc!(params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, vr0, vi05, vr, lambdar0, lambdar05, lambdai, lambdai0, t0, dt,splinepar, gr, gi, tr_adj) 
+            adjoint_grad_calc!(params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, vr0, vi05, vr, 
+                                lambdar0, lambdar05, lambdai, lambdai0, t0, dt,splinepar, gr, gi, tr_adj) 
             axpy!(gamma[q]*dt,tr_adj,gradobjfadj)
             
             # save for next stage
@@ -762,10 +831,12 @@ if evaladjoint
             #Do adjoint step to compute infidelity grad (without forcing)
             if params.objFuncType != 1
                 temp = t0
-                @inbounds temp = step_no_forcing!(temp, lambdar_nfrc, lambdai_nfrc, lambdar05_nfrc, dt*gamma[q], K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs,linear_solver)
+                @inbounds temp = step_no_forcing!(temp, lambdar_nfrc, lambdai_nfrc, lambdar05_nfrc, dt*gamma[q], 
+                                                K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs,linear_solver)
 
                 # Accumulate gradient
-                adjoint_grad_calc!(params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, vr0, vi05, vr, lambdar0_nfrc, lambdar05_nfrc, lambdai_nfrc, lambdai0_nfrc, t0, dt,splinepar, gr, gi, tr_adj) 
+                adjoint_grad_calc!(params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, vr0, vi05, vr, 
+                                    lambdar0_nfrc, lambdar05_nfrc, lambdai_nfrc, lambdai0_nfrc, t0, dt,splinepar, gr, gi, tr_adj) 
                 axpy!(gamma[q]*dt,tr_adj,infidelgrad)
                 
                 # save for next stage
@@ -890,6 +961,45 @@ elseif evaladjoint
 else
     return objfv, primaryobjf, secondaryobjf
 end #if
+end
+
+"""
+    change_target!(params, new_Utarget)
+
+Update the unitary target in the objparams object. 
+ 
+# Arguments
+- `param::objparams`: Object holding the problem definition
+- `new_Utarget::Array{ComplexF64,2}`: New unitary target as a two-dimensional complex-valued array (matrix) of dimension Ntot x N
+"""
+function change_target!(params::objparams, new_Utarget::Array{ComplexF64,2} )
+    Ntot = params.N + params.Nguard
+    tz = ( Ntot, params.N )
+    # Check size of new_Utarget
+    @assert( size(new_Utarget) == tz)
+    #println("change_target: Passed size compatibility test")
+    my_target = copy(new_Utarget) # make a copy to be safe
+    params.Utarget_r = real(my_target)
+    params.Utarget_i = imag(my_target)
+    if params.sv_type == 1
+        params.dVds_r = real(my_target)
+        params.dVds_i = imag(my_target)
+    end
+end
+
+"""
+    set_adjoint_Sv_type!(params, new_sv_type)
+
+For continuation only: update the sv_type in the objparams object.  
+ 
+# Arguments
+- `param::objparams`: Object holding the problem definition
+- `new_sv_type:: Int64`: New value for sv_type. Must be 1, 2, or 3.
+"""
+function set_adjoint_Sv_type!(params::objparams, new_sv_type::Int64 = 1)
+    @assert( new_sv_type == 1 || new_sv_type == 2 || new_sv_type == 3)
+    #println("change_target: Passed size compatibility test")
+    params.sv_type = new_sv_type
 end
 
 function setup_prior!(params::objparams, priorFile::String)
@@ -2250,9 +2360,10 @@ function KS_alloc(params)
         K1   = zeros(Float64,Ntot,Ntot)
         S1   = zeros(Float64,Ntot,Ntot)
     end
-    vtargetr = real(params.Utarget)
-    vtargeti = imag(params.Utarget)
-    return K0,S0,K05,S05,K1,S1,vtargetr,vtargeti
+    # vtargetr = real(params.Utarget)
+    # vtargeti = imag(params.Utarget)
+    #return K0,S0,K05,S05,K1,S1,vtargetr,vtargeti
+    return K0,S0,K05,S05,K1,S1
 end
 
 # Working arrays for timestepping
