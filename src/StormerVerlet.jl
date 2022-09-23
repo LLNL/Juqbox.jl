@@ -574,35 +574,135 @@ function stepseparable(stepper::svparams,u,v,t,h)
 	return t, u, v
 end
 
-function getgamma(order,stages = [])
- if order == 2	# 2nd order basic verlet
-	stages = 1
-    gamma = [1]
-  elseif order == 4 # 4th order Composition of Stromer-Verlet methods
-    stages=3
-    gamma = zeros(stages)
-    gamma[1] = gamma[3] = 1/(2 - 2^(1/3))
-    gamma[2] = -2^(1/3)*gamma[1]
-  elseif order == 6 # Yoshida (1990) 6th order, 7 stage method
-    if stages==7
-      gamma = zeros(stages)
-      gamma[2] = gamma[6] = 0.23557321335935813368479318
-      gamma[1] = gamma[7] = 0.78451361047755726381949763
-      gamma[3] = gamma[5] = -1.17767998417887100694641568
-      gamma[4] = 1.31518632068391121888424973
-    else # Kahan + Li 6th order, 9 stage method
-      stages=9;
-      gamma = zeros(stages)
-      gamma[1]= gamma[9]= 0.39216144400731413927925056
-      gamma[2]= gamma[8]= 0.33259913678935943859974864
-      gamma[3]= gamma[7]= -0.70624617255763935980996482
-      gamma[4]= gamma[6]= 0.08221359629355080023149045
-      gamma[5]= 0.79854399093482996339895035
-    end
-   end
 
-   return gamma, stages
+"""
+    gamma, used_stages = getgamma(order, stages)
+
+Obtain step size coefficients (gamma) for the composition method with the given
+order and number of stages. 
+
+Arguments:
+- order: The desired order of the compositional method. Should be 2, 4, 6, 8,
+or 10.
+- stages: The desired number of stages of the compositional method. Default
+value will be used if input is invalid. '0' is reserved for using a default
+number of stages.
+"""
+function getgamma(order::Int64, stages::Int64=0)
+    # Handle default case
+    if stages == 0
+        if order == 2
+            stages = 1
+        elseif order == 4
+            stages = 5
+        elseif order == 6
+            stages = 9
+        elseif order == 8
+            stages = 17
+        elseif order == 10
+            stages = 35
+        end
+    end
+
+    # Calculate gamma 
+    if order == 2 # 2nd order basic Stormer-Verlet
+        if stages != 1
+            @warn "WARNING: invalid number of stages $stages specified for compositional method of order $(order)! Defaulting to 1-stage method instead."
+            stages = 1
+        end
+        gamma = [1.0]
+    elseif order == 4
+        if stages == 3 # 4th order Composition of Stormer-Verlet methods
+            gamma = zeros(stages)
+            gamma[1] = gamma[3] = 1/(2 - 2^(1/3))
+            gamma[2] = -2^(1/3)*gamma[1]
+        else
+            if stages != 5
+                @warn "WARNING: invalid number of stages $stages specified for compositional method of order $(order)! Defaulting to 5-stage method instead."
+                stages = 5
+            end
+            gamma = zeros(stages)
+            gamma[1] = gamma[2] = gamma[4] = gamma[5] = 1/(4-4^(1/3))
+            gamma[3] = -4^(1/3)*gamma[1]
+        end
+    elseif order == 6
+        if stages == 7  # Yoshida (1990) 6th order, 7 stage method
+            gamma = zeros(stages)
+            gamma[1] = gamma[7] = 0.78451361047755726381949763
+            gamma[2] = gamma[6] = 0.23557321335935813368479318
+            gamma[3] = gamma[5] = -1.17767998417887100694641568
+            gamma[4] = 1.31518632068391121888424973
+        else # Kahan + Li 6th order, 9 stage method
+            if stages != 9
+                @warn "WARNING: invalid number of stages $stages specified for compositional method of order $(order)! Defaulting to 9-stage method instead."
+                stages = 9
+            end
+            gamma = zeros(stages)
+            gamma[1] = gamma[9]= 0.39216144400731413927925056
+            gamma[2] = gamma[8]= 0.33259913678935943859974864
+            gamma[3] = gamma[7]= -0.70624617255763935980996482
+            gamma[4] = gamma[6]= 0.08221359629355080023149045
+            gamma[5] = 0.79854399093482996339895035
+        end
+    elseif order == 8
+        if stages == 15
+            gamma = zeros(stages)
+            gamma[1] = gamma[15] = 0.74167036435061295344822780
+            gamma[2] = gamma[14] = -0.40910082580003159399730010
+            gamma[3] = gamma[13] = 0.19075471029623837995387626
+            gamma[4] = gamma[12] = -0.57386247111608226665638773
+            gamma[5] = gamma[11] = 0.29906418130365592384446354
+            gamma[6] = gamma[10] = 0.33462491824529818378495798
+            gamma[7] = gamma[9]  = 0.31529309239676659663205666
+            gamma[8] = -0.79688793935291635401978884
+        else
+            if stages != 17
+                @warn "WARNING: invalid number of stages $stages specified for compositional method of order $(order)! Defaulting to 17-stage method instead."
+                stages = 17
+            end
+            gamma = zeros(stages)
+            gamma[1] = gamma[17] = 0.13020248308889008087881763
+            gamma[2] = gamma[16] = 0.56116298177510838456196441
+            gamma[3] = gamma[15] = -0.38947496264484728640807860
+            gamma[4] = gamma[14] = 0.15884190655515560089621075
+            gamma[5] = gamma[13] = -0.39590389413323757733623154
+            gamma[6] = gamma[12] = 0.18453964097831570709183254
+            gamma[7] = gamma[11] = 0.25837438768632204729397911
+            gamma[8] = gamma[10] = 0.29501172360931029887096624
+            gamma[9] = -0.60550853383003451169892108  
+        end
+    elseif order == 10
+        if stages != 35
+            @warn "WARNING: invalid number of stages $stages specified for compositional method of order $(order)! Defaulting to 35-stage method instead."
+            stages = 35
+        end
+        gamma = zeros(stages)
+        gamma[1]  = gamma[35] = 0.07879572252168641926390768
+        gamma[2]  = gamma[34] = 0.31309610341510852776481247
+        gamma[3]  = gamma[33] = 0.02791838323507806610952027
+        gamma[4]  = gamma[32] = -0.22959284159390709415121340
+        gamma[5]  = gamma[31] = 0.13096206107716486317465686
+        gamma[6]  = gamma[30] = -0.26973340565451071434460973
+        gamma[7]  = gamma[29] = 0.07497334315589143566613711
+        gamma[8]  = gamma[28] = 0.11199342399981020488957508
+        gamma[9]  = gamma[27] = 0.36613344954622675119314812
+        gamma[10] = gamma[26] = -0.39910563013603589787862981
+        gamma[11] = gamma[25] = 0.10308739852747107731580277
+        gamma[12] = gamma[24] = 0.41143087395589023782070412
+        gamma[13] = gamma[23] = -0.00486636058313526176219566
+        gamma[14] = gamma[22] = -0.39203335370863990644808194
+        gamma[15] = gamma[21] = 0.05194250296244964703718290
+        gamma[16] = gamma[20] = 0.05066509075992449633587434
+        gamma[17] = gamma[19] = 0.04967437063972987905456880
+        gamma[18] = 0.04931773575959453791768001
+    else
+        throw(DomainError(order, "Provided order $order invalid. Please use 2, 4, 6, 8, or 10."))
+    end
+
+    return gamma, stages
 end
+
+
 
 # Routine to advance the solution by one time step with a second order Magnus integrator. Note that 
 # we use this in a very special case where we have an evolution matrix that is 

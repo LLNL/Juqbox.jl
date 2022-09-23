@@ -1987,15 +1987,16 @@ end
 end
 
 # Calls to KS! need to be updated
-# AP: Currently not working properly (9/20/22)
-function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::objparams, saveAll:: Bool = false, verbose::Bool = false)  
+function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::objparams; nsteps::Int64=0, saveEndOnly::Bool=false, saveEvery::Int64=1, verbose::Bool = false, order::Int64=2, stages::Int64=0)  
     N = params.N  
-    Q = 1 #one initial data, specified in U0[:,1] (currently assumed to be real)
 
-    order = 2
     Nguard = params.Nguard  
     T = params.T
-    nsteps = params.nsteps
+    # Use params' nsteps by default, but user can provide a specific value instead
+    if nsteps == 0
+        nsteps = params.nsteps
+    end
+
     H0 = params.Hconst
 
     Ntot = N + Nguard
@@ -2005,7 +2006,7 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
     Ncoupled = params.Ncoupled
     Nunc = params.Nunc
     Nfreq = params.Nfreq
-    Nsig = 2*Ncoupled + Nunc
+    Nsig = 2*(Ncoupled + Nunc)
 
     linear_solver = params.linear_solver    
 
@@ -2014,11 +2015,11 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
         error("pcof must have an even number of elements >= 6, not ", Psize)
     end
     if params.use_bcarrier
-        D1 = div(Psize, 2*Ncoupled*Nfreq) 
-        Psize = 2*D1*Ncoupled*Nfreq #
+        D1 = div(Psize, Nsig*Nfreq)  # 
+        Psize = D1*Nsig*Nfreq # active part of the parameter array
     else
-        D1 = div(Psize, 2*Ncoupled)
-        Psize = 2*D1*Ncoupled # active part of the parameter array
+        D1 = div(Psize, Nsig)
+        Psize = D1*Nsig # active part of the parameter array
     end
     
     tinv ::Float64 = 1.0/T
@@ -2039,7 +2040,7 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
     # it is up to the user to estimate the number of time steps
     dt ::Float64 = T/nsteps
 
-    gamma, stages = getgamma(order)
+    gamma, used_stages = getgamma(order, stages)
 
     if verbose
         println("Final time: ", T, ", number of time steps: " , nsteps , ", time step: " , dt )
@@ -2051,17 +2052,20 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
     # Note: Initial condition is supplied as an argument
 
     #real and imaginary part of initial condition
-    # vr   = U0[:,Q:Q]
-    # vi   = zeros(Float64,Ntot,Q)
-    # vi05 = zeros(Float64,Ntot,Q)
     vr   = U0[:,:]
     vi   = zeros(Float64,Ntot,N)
     vi05 = zeros(Float64,Ntot,N)
 
-    usaver = zeros(Float64,Ntot,N,nsteps+1)
-    usavei = zeros(Float64,Ntot,N,nsteps+1)
-    usaver[:,:,1] = vr # the rotation to the lab frame is the identity at t=0
-    usavei[:,:,1] = -vi
+    if nsteps%saveEvery != 0
+        error("nsteps must be divisible by saveEvery. nsteps=$nsteps, saveEvery=$saveEvery")
+    end
+
+    if !saveEndOnly # Only allocate solution memory for entire timespan if necessary
+        usaver = zeros(Float64, Ntot, N, nsteps÷saveEvery +1)
+        usavei = zeros(Float64, Ntot, N, nsteps÷saveEvery +1)
+        usaver[:,:,1] = vr # the rotation to the lab frame is the identity at t=0
+        usavei[:,:,1] = -vi
+    end
 
     # Preallocate WHAT ABOUT SPARSE FORMAT!
     K0   = zeros(Float64,Ntot,Ntot)
@@ -2074,7 +2078,7 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
     κ₂   = zeros(Float64,Ntot,N)
     ℓ₁   = zeros(Float64,Ntot,N)
     ℓ₂   = zeros(Float64,Ntot,N)
-    rhs   = zeros(Float64,Ntot,N)
+    rhs  = zeros(Float64,Ntot,N)
 
     #initialize variables for time stepping
     t       ::Float64 = 0.0
@@ -2085,7 +2089,7 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
     for step in 1:nsteps
 
         # Störmer-Verlet
-        for q in 1:stages
+        for q in 1:used_stages
             
             # Update K and S matrices
             KS!(K0, S0, t, params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq)
@@ -2102,18 +2106,19 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
         end # Stromer-Verlet
         
         # rotated frame
-        usaver[:,:, step + 1] = vr
-        usavei[:,:, step + 1] = -vi
+        if (!saveEndOnly) && (step % saveEvery) == 0 
+            usaver[:,:, step÷saveEvery + 1] = vr
+            usavei[:,:, step÷saveEvery + 1] = -vi
+        end
 
     end #forward time stepping loop
 
     if verbose
-        nlast = 1 + nsteps
         println("Unitary test:")
         println(" Column   1 - Vnrm")
         Vnrm ::Float64 = 0.0
         for q in 1:N
-            Vnrm = usaver[:,q,nlast]' * usaver[:,q,nlast] + usavei[:,q,nlast]' * usavei[:,q,nlast]
+            Vnrm = vr[:,q]' * vr[:,q] + vi[:,q]' * vi[:,q]
             Vnrm = sqrt(Vnrm)
             println(q, " | ", 1.0 - Vnrm)
         end
@@ -2121,10 +2126,10 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
 
     # return to calling routine
 
-    if saveAll
-        return usaver + im*usavei
+    if saveEndOnly
+        return vr - im*vi
     else
-        return usaver[:,:,end] + im*usavei[:,:,end]
+        return usaver + im*usavei
     end
 
 end

@@ -4,6 +4,7 @@ using LinearAlgebra
 
 const NEUMANN_SOLVER = 1
 const JACOBI_SOLVER  = 2
+const GAUSSIAN_ELIM_SOLVER = 3
 
 
 """
@@ -44,6 +45,10 @@ mutable struct lsolver_object
             solve = (a,b,c,d,e) -> neumann!(a,b,c,d,e,iter)
             solver_name = "Neumann"
             print_info = () -> println("*** Using linear solver: ", solver_name," with iter = ", iter)
+        elseif solver == GAUSSIAN_ELIM_SOLVER
+            solve = (a,b,c,d,e) -> gaussian_elim_solve!(a,b,c,d)
+            solver_name = "Built-in"
+            print_info = () -> println("*** Using linear solver: ", solver_name," with iter = ", iter)
         else
             error("Please specify a supported linear solver")
         end
@@ -60,6 +65,8 @@ function recreate_linear_solver_closure!(lsolver::lsolver_object)
         lsolver.solve = (a,b,c,d,e) -> jacobi!(a,b,c,d,e,lsolver.iter,lsolver.tol)
     elseif lsolver.solver_id == NEUMANN_SOLVER
         lsolver.solve = (a,b,c,d,e) -> neumann!(a,b,c,d,e,lsolver.iter)
+    elseif lsolver.solver_id == GAUSSIAN_ELIM_SOLVER
+        lsolver.solve = (a,b,c,d,e) -> gaussian_elim_solve!(a,b,c,e)
     end
 
 end
@@ -112,6 +119,7 @@ end
 		end
 	end
 	S .*= o_coeff
+    @warn "WARNING: reached maximum number of iterations ($iter) in Jacobi solver!"
 end
 
 
@@ -133,4 +141,14 @@ end
 		end
 	end
 	S .*= o_coeff
+    @warn "WARNING: reached maximum number of iterations ($iter) in Jacobi solver!"
+end
+
+"""
+For comparing other solvers with the built-in linear solver using Gaussian
+elimination.
+"""
+@inline function gaussian_elim_solve!(h::Float64, S::Array{Float64,N}, B::Array{Float64,N},
+                         X::Array{Float64,N}) where N
+    X .= (LinearAlgebra.I - (0.5h.*S))\B
 end
