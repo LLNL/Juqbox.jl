@@ -696,7 +696,7 @@ function getgamma(order::Int64, stages::Int64=0)
         gamma[17] = gamma[19] = 0.04967437063972987905456880
         gamma[18] = 0.04931773575959453791768001
     else
-        throw(DomainError(order, "Provided order $order invalid. Please use one of the following values: $(valid_orders)."))
+        throw(DomainError(order, "Provided order $order invalid. Please use 2, 4, 6, 8, or 10."))
     end
 
     return gamma, stages
