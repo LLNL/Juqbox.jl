@@ -45,8 +45,8 @@ mutable struct lsolver_object
             solve = (a,b,c,d,e) -> neumann!(a,b,c,d,e,iter)
             solver_name = "Neumann"
             print_info = () -> println("*** Using linear solver: ", solver_name," with iter = ", iter)
-        elseif solver == BUILTIN_SOLVER
-            solve = (a,b,c,d,e) -> builtin_solve!(a,b,c,d)
+        elseif solver == GAUSSIAN_ELIM_SOLVER
+            solve = (a,b,c,d,e) -> gaussian_elim_solve!(a,b,c,d)
             solver_name = "Built-in"
             print_info = () -> println("*** Using linear solver: ", solver_name," with iter = ", iter)
         else
@@ -65,8 +65,8 @@ function recreate_linear_solver_closure!(lsolver::lsolver_object)
         lsolver.solve = (a,b,c,d,e) -> jacobi!(a,b,c,d,e,lsolver.iter,lsolver.tol)
     elseif lsolver.solver_id == NEUMANN_SOLVER
         lsolver.solve = (a,b,c,d,e) -> neumann!(a,b,c,d,e,lsolver.iter)
-    elseif lsolver.solver_id == BUILTIN_SOLVER
-        lsolver.solve = (a,b,c,d,e) -> builtin_solve!(a,b,c,e)
+    elseif lsolver.solver_id == GAUSSIAN_ELIM_SOLVER
+        lsolver.solve = (a,b,c,d,e) -> gaussian_elim_solve!(a,b,c,e)
     end
 
 end
