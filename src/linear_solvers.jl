@@ -4,7 +4,7 @@ using LinearAlgebra
 
 const NEUMANN_SOLVER = 1
 const JACOBI_SOLVER  = 2
-const BUILTIN_SOLVER = 3
+const GAUSSIAN_ELIM_SOLVER = 3
 
 
 """
@@ -145,9 +145,10 @@ end
 end
 
 """
-For comparing other solvers with the built-in linear solver
+For comparing other solvers with the built-in linear solver using Gaussian
+elimination.
 """
-@inline function builtin_solve!(h::Float64, S::Array{Float64,N}, B::Array{Float64,N},
+@inline function gaussian_elim_solve!(h::Float64, S::Array{Float64,N}, B::Array{Float64,N},
                          X::Array{Float64,N}) where N
     X .= (LinearAlgebra.I - (0.5h.*S))\B
 end
