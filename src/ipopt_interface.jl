@@ -225,6 +225,7 @@ function intermediate_par(
         push!(params.dualInfidelityHist, inf_du)
         push!(params.primaryHist, params.lastTraceInfidelity)
         push!(params.secondaryHist,  params.lastLeakIntegral)
+        params.iter_count = iter_count
     end
     if obj_value < params.objThreshold
         println("Stopping because objective value = ", obj_value,
