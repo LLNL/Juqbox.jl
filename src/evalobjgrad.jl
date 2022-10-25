@@ -1987,7 +1987,8 @@ end
 end
 
 # Calls to KS! need to be updated
-function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::objparams; nsteps::Int64=0, saveEndOnly::Bool=false, saveEvery::Int64=1, verbose::Bool = false, order::Int64=2, stages::Int64=0)  
+function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::objparams; nsteps::Int64=0, 
+                        saveEndOnly::Bool=true, saveEvery::Int64=1, verbose::Bool = false, order::Int64=2, stages::Int64=0)  
     N = params.N  
 
     Nguard = params.Nguard  
