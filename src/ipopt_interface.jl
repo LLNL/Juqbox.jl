@@ -274,10 +274,10 @@ function setup_ipopt_problem(params:: Juqbox.objparams, wa::Working_Arrays, nCoe
 
 
     #Initialize the last fidelity and leak terms and gradients
-    params.last_pcof = zeros(nCoeff)
-    params.last_infidelity_grad = zeros(nCoeff)
+    params.last_pcof = 1e9.*rand(nCoeff)
+    params.last_infidelity_grad = 1e9.*rand(nCoeff)
     if params.objFuncType != 1 #Only allcoate for inequality opt...
-        params.last_leak_grad = zeros(nCoeff)        
+        params.last_leak_grad = 1e9.*rand(nCoeff)        
     end
 
     # callback functions need access to the params object
