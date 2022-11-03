@@ -311,7 +311,7 @@ vtarget = rot1*rot2*utarget
 U0 = Juqbox.initial_cond(Ne, Ng)
 
 #Build jacobi solver
-linear_solver = Juqbox.lsolver_object(solver=Juqbox.JACOBI_SOLVER,iter=100,tol=1e-15,nrhs=prod(Ne))
+linear_solver = Juqbox.lsolver_object(solver=Juqbox.JACOBI_SOLVER, max_iter=100, tol=1e-15, nrhs=prod(Ne))
 
 # assemble problem description for the optimization
 params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,

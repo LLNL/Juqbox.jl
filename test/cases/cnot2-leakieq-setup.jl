@@ -312,7 +312,7 @@ U0 = Juqbox.initial_cond(Ne, Ng)
 
 # assemble problem description for the optimization
 params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
-                          Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, use_sparse=use_sparse,objFuncType=3,leak_ubound=1.e-3)
+                          Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, use_sparse=use_sparse, objFuncType=3, leak_ubound=1.e-3)
 
 # overwrite default wmat with the old style
 params.wmat_real =  orig_wmatsetup(Ne, Ng)
