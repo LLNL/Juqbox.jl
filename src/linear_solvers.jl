@@ -108,6 +108,7 @@ end
 	coeff = -0.5*h
 	o_coeff = 1.0/coeff
 	S .*= coeff
+	err = 0.0
 	for j = 1:max_iter
 		LinearAlgebra.mul!(T,S,X)
 		T = B - T
@@ -130,6 +131,7 @@ end
 	coeff = -0.5*h
 	o_coeff = 1.0/coeff
 	S .*= coeff
+	err = 0.0
 	for j = 1:max_iter
 		LinearAlgebra.mul!(T,S,X)
 		T = B - T
@@ -141,7 +143,7 @@ end
 		end
 	end
 	S .*= o_coeff
-    @warn "WARNING: reached maximum number of iterations ($max_iter) in Jacobi solver!"
+    @warn "WARNING: Jacobi solver reached maximum number of iterations ($max_iter), final norm(residual) = $(err)"
 end
 
 """
