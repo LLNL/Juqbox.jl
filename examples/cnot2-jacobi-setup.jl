@@ -177,7 +177,7 @@ else
 end
 
 # create a linear solver object
-linear_solver = Juqbox.lsolver_object(solver=Juqbox.JACOBI_SOLVER,iter=100,tol=1e-12,nrhs=prod(Ne))
+linear_solver = Juqbox.lsolver_object(solver=Juqbox.JACOBI_SOLVER,max_iter=100,tol=1e-12,nrhs=prod(Ne))
 
 # assemble problem description for the optimization
 if eval_lab
