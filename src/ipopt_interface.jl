@@ -293,12 +293,21 @@ function setup_ipopt_problem(params:: Juqbox.objparams, wa::Working_Arrays, nCoe
                                       d_norm, regularization_size, alpha_du, alpha_pr, ls_trials, params)
 
     # setup the Ipopt data structure
-    nconst = params.objFuncType < 3 ? 0 : 1;
-    nEleJac = nconst > 0 ? nCoeff : 0;
-    nEleHess = 0;
-    g_L = nconst > 0 ? params.leak_lbound.*ones(nconst) : zeros(nconst);
-    g_U = nconst > 0 ? params.leak_ubound.*ones(nconst) : zeros(nconst);
-    
+    if params.objFuncType == 3
+        # treat the leakage as an inequality constraint
+        nconst = 1 # One constraint
+        nEleJac = nCoeff
+        nEleHess = 0
+        g_L = -2e19.*ones(nconst) # no lower bound needed because the leakage is always non-negative
+        g_U = params.leak_ubound.*ones(nconst)
+    else
+        nconst = 0
+        nEleJac = 0
+        nEleHess = 0
+        g_L = zeros(0);
+        g_U = zeros(0);
+    end
+
     #Create alias even if not used
     eval_g(pcof,g) = eval_g_par(pcof,g,params,wa,nodes,weights)
     eval_jac_g(pcof,rows,cols,jac_g) = eval_jac_g_par(pcof,rows,cols,jac_g,params,wa,nodes,weights)

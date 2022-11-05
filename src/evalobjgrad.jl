@@ -10,7 +10,6 @@
                         Hunc_ops=Hunc_ops,
                         wmatScale=wmatScale,
                         objFuncType=objFuncType,
-                        leak_lbound=leak_lbound,
                         leak_ubound=leak_ubound,
                         linear_solver = lsolver_object(),
                         use_sparse = use_sparse],
@@ -42,7 +41,6 @@ and either be symmetric or skew-symmetric.
 - `objFuncType::Int64 = 1`  # 1 = objective function include infidelity and leakage
                             # 2 = objective function only includes infidelity... no leakage in obj function or constraint
                             # 3 = objective function only includes infidelity; leakage treated as inequality constraint
-- `leak_lbound::Float64 = -1.0e19` : The lower bound on the leakage inequality constraint (typically -1e19)
 - `leak_ubound::Float64 = 1.0e-3`  : The upper bound on the leakage inequality constraint (See examples/cnot2-leakieq-setup.jl )
 - `linear_solver::lsolver_object = lsolver_object()` : The linear solver object used to solve the implicit & adjoint system
 - `use_sparse::Bool = false`: (keyword) Set to true to sparsify all Hamiltonian matrices
@@ -98,7 +96,6 @@ mutable struct objparams
     objFuncType ::Int64   # 1 = objective function include infidelity and leakage
                           # 2 = objective function only includes infidelity... no leakage in obj function or constraint
                           # 3 = objective function only includes infidelity; leakage treated as inequality constraint                            
-    leak_lbound ::Float64 # The lower bound on the leakage inequality constraint (typically -1e19)
     leak_ubound ::Float64 # The upper bound on the leakage inequality constraint
 
     #Store information from last computation
@@ -147,7 +144,7 @@ mutable struct objparams
                        Hunc_ops:: Array{Array{Float64,2},1} = Array{Float64,2}[],
                        forb_states:: Array{ComplexF64,2} = Array{ComplexF64}(undef,0,2),
                        forb_weights:: Vector{Float64} = Float64[],
-                       objFuncType:: Int64 = 1, leak_lbound:: Float64=-1.0e19, leak_ubound:: Float64=1.0e-3,
+                       objFuncType:: Int64 = 1, leak_ubound:: Float64=1.0e-3,
                        wmatScale::Float64 = 1.0, use_sparse::Bool = false, use_custom_forbidden::Bool = false,
                        linear_solver::lsolver_object = lsolver_object(nrhs=prod(Ne)),
                        dVds::Array{ComplexF64,2}= Array{ComplexF64}(undef,0,0))
@@ -313,8 +310,8 @@ mutable struct objparams
              Nosc, N, Nguard, Ne, Ng, Ne+Ng, T, nsteps, Uinit, real(Utarget), imag(Utarget), 
              use_bcarrier, Nfreq, Cfreq, kpar, tik0, Hconst, Hsym_ops1, 
              Hanti_ops1, Hunc_ops1, Ncoupled, Nunc, isSymm, Ident, wmat, 
-             forb_states,forb_weights,wmat_real,wmat_imag, pFidType, 0.0,
-             objFuncType,leak_lbound,leak_ubound,
+             forb_states, forb_weights, wmat_real, wmat_imag, pFidType, 0.0,
+             objFuncType, leak_ubound,
              0.0,0.0,zeros(0),zeros(0),zeros(0),saveConvHist,
              zeros(0), zeros(0), zeros(0), zeros(0), 
              linear_solver, objThreshold, traceInfidelityThreshold, 0.0, 0.0, 

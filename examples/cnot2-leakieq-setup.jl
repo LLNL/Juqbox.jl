@@ -177,6 +177,9 @@ else
     vtarget = rot1*rot2*utarget # target in the rotating frame
 end
 
+# create a linear solver object
+linear_solver = Juqbox.lsolver_object(solver=Juqbox.JACOBI_SOLVER,max_iter=100,tol=1e-12,nrhs=prod(Ne))
+
 # assemble problem description for the optimization
 # objFuncType=3 : impose leakage as an inequality constraint
 if eval_lab
@@ -184,7 +187,7 @@ if eval_lab
                               Hconst=H0, Hunc_ops=Hunc_ops, use_sparse=use_sparse,objFuncType=3,leak_ubound=1.e-3)
 else
     params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
-                              Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, use_sparse=use_sparse,objFuncType=3,leak_ubound=1.e-3)
+                              Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, linear_solver=linear_solver, use_sparse=use_sparse,objFuncType=3, leak_ubound=1.e-3)
 end
 
 params.linear_solver.print_info()
