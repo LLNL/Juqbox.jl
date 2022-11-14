@@ -23,6 +23,7 @@ export zero_start_end!, assign_thresholds, assign_thresholds_freq, assign_thresh
 export calculate_timestep, marginalize3, change_target!, set_adjoint_Sv_type!
 export save_pcof, read_pcof, juq2qis
 export lsolver_object
+export hamiltonians_one_sys, get_resonances, init_control_and_bounds
 
 # Julia versions prior to v"1.3.1" can't use LinearAlgebra's 5 argument mul!, routines
 # included here for backwards compatability
@@ -52,5 +53,7 @@ include("plot-results.jl")
 include("ipopt_interface.jl")
 
 include("save_pcof.jl")
+
+include("setup_problem.jl")
 
 end # module

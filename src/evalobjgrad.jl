@@ -1270,6 +1270,46 @@ end
 
 #------------------------------------------------------------
 """
+    zero_start_end!(Nctrl, Nfreq, D1, minCoeff, maxCoeff)
+
+Force the control functions to start and end at zero by setting zero bounds for the first two and last 
+two parameters in each B-spline segment.
+ 
+# Arguments
+- `Nctrl:: Int64`: Number of control Hamiltonians.
+- `Nfreq:: Int64`: Number of carrier frequencies.
+- `D1:: Int64`: Number of basis functions in each segment.
+- `minCoeff:: Vector{Float64}`: Lower parameter bounds to be modified
+- `maxCoeff:: Vector{Float64}`: Upper parameter bounds to be modified
+"""
+function zero_start_end!(Nctrl::Int64, Nfreq::Int64, D1:: Int64, minCoeff:: Array{Float64,1}, maxCoeff:: Array{Float64,1} )
+    @assert(D1 >= 5) # Need at least 5 parameters per B-spline segment
+    @assert(Nctrl >= 1)
+    @assert(Nfreq >= 1)
+
+#    @printf("Ncoupled = %d, Nfreq = %d, D1 = %d, nCoeff = %d\n", Ncoupled, Nfreq, D1, nCoeff)
+    for c in 1:Nctrl  # We assume that either Nunc = 0 or Ncoupled = 0
+        for f in 1:Nfreq
+            for q in 0:1
+                offset1 = 2*(c-1)*Nfreq*D1 + (f-1)*2*D1 + q*D1
+                # start
+                minCoeff[ offset1 + 1] = 0.0
+                minCoeff[ offset1 + 2] = 0.0
+                maxCoeff[ offset1 + 1] = 0.0
+                maxCoeff[ offset1 + 2] = 0.0
+                # end
+                offset2 = offset1+D1
+                minCoeff[ offset2-1] = 0.0
+                minCoeff[ offset2] = 0.0
+                maxCoeff[ offset2-1] = 0.0
+                maxCoeff[ offset2 ] = 0.0
+            end
+        end
+    end
+end
+
+#------------------------------------------------------------
+"""
     minCoeff, maxCoeff = assign_thresholds_ctrl_freq(params, D1, maxamp)
 
 Build vector of parameter min/max constraints that can depend on the control function and carrier wave frequency, 
