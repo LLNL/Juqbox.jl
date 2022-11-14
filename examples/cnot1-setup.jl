@@ -61,7 +61,7 @@ println("# time steps: ", nsteps)
 D1 = 10
 startFromScratch = true
 
-pcof0, minCoeff, maxCoeff = init_control_and_bounds(maxamp=maxamp, Nctrl=Nctrl, Nfreq=Nfreq, D1=D1, startFromScratch=startFromScratch, zeroCtrlBC=false)
+pcof0, minCoeff, maxCoeff = init_control_and_bounds(maxamp=maxamp, Nctrl=Nctrl, Nfreq=Nfreq, D1=D1, startFromScratch=startFromScratch, zeroCtrlBC=false, seed=2345)
 
 # Initial basis with guard levels
 U0 = initial_cond([N], [Nguard])
@@ -88,7 +88,9 @@ println("*** Settings ***")
 println("Number of coefficients per spline = ", D1, " Total number of control parameters = ", length(pcof0))
 println("Tikhonov coefficients: tik0 = ", params.tik0)
 
-wa = Juqbox.Working_Arrays(params, length(pcof0)) # stick this into setup_ipopt_problem
-prob = Juqbox.setup_ipopt_problem(params, wa, length(pcof0), minCoeff, maxCoeff, maxIter=maxIter, lbfgsMax=lbfgsMax, startFromScratch=startFromScratch)
+#wa = Juqbox.Working_Arrays(params, length(pcof0)) # stick this into setup_ipopt_problem
+oc_prob = Juqbox.ipopt_setup(params, length(pcof0), minCoeff, maxCoeff, maxIter=maxIter, lbfgsMax=lbfgsMax, startFromScratch=startFromScratch)
 
+println()
+println("Ipopt setup and params object stored in 'oc_prob'")
 println("Initial coefficient vector stored in 'pcof0'")

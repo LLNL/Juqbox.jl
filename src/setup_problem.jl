@@ -228,13 +228,17 @@ end
 
 
 # initial parameter guess
-function init_control_and_bounds(;maxamp::Vector{Float64}, Nctrl::Int64, Nfreq::Int64, D1::Int64 = 10, startFromScratch::Bool = true, startFile::String = "pcof-file.jld2", zeroCtrlBC::Bool = true)
+function init_control_and_bounds(;maxamp::Vector{Float64}, Nctrl::Int64, Nfreq::Int64, D1::Int64 = 10, startFromScratch::Bool = true, startFile::String = "pcof-file.jld2", zeroCtrlBC::Bool = true, seed::Int64 = -1)
     if zeroCtrlBC
         @assert(D1 >= 5) # D1 smaller than 5 does not work with zero start & end conditions
     else
         @assert(D1 >=3)
     end
     
+    if seed >= 0
+        Random.seed!(seed)
+    end
+
     nCoeff = 2*Nctrl*Nfreq*D1 # factor '2' is for sin/cos
 
     maxpar = maximum(maxamp)

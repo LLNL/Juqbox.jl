@@ -21,8 +21,7 @@
 
 
 
-function eval_f_g_grad!(pcof::Vector{Float64},params:: Juqbox.objparams, wa::Working_Arrays,
-                       nodes::AbstractArray=[0.0], weights::AbstractArray=[1.0], compute_adjoint::Bool=true)
+function eval_f_g_grad!(pcof::Vector{Float64}, params:: Juqbox.objparams, nodes::AbstractArray=[0.0], weights::AbstractArray=[1.0], compute_adjoint::Bool=true)
 
     params.last_pcof .= pcof
     params.last_infidelity = 0.0
@@ -44,7 +43,7 @@ function eval_f_g_grad!(pcof::Vector{Float64},params:: Juqbox.objparams, wa::Wor
         end
 
         if compute_adjoint
-            _, totalgrad, primaryobjf, secondaryobjf, traceInfidelity, infidelitygrad, leakgrad = Juqbox.traceobjgrad(pcof,params,wa,false,compute_adjoint)
+            _, totalgrad, primaryobjf, secondaryobjf, traceInfidelity, infidelitygrad, leakgrad = Juqbox.traceobjgrad(pcof, params, false, compute_adjoint)
             for j in 1:length(infidelitygrad)
                 params.last_infidelity_grad[j] += infidelitygrad[j]*weights[i]
             end
@@ -52,7 +51,7 @@ function eval_f_g_grad!(pcof::Vector{Float64},params:: Juqbox.objparams, wa::Wor
                 params.last_leak_grad[j] += leakgrad[j]*weights[i]
             end
         else
-            _, primaryobjf, secondaryobjf = Juqbox.traceobjgrad(pcof,params,wa,false,compute_adjoint)
+            _, primaryobjf, secondaryobjf = Juqbox.traceobjgrad(pcof, params, false, compute_adjoint)
         end
 
         params.last_infidelity += primaryobjf[1]*weights[i]
@@ -72,18 +71,17 @@ end
 
 # setup callback functions for Ipopt
 
-# function eval_f_par(pcof::Vector{Float64},x_new:: Bool, params:: Juqbox.objparams, wa::Working_Arrays,
+# function eval_f_par(pcof::Vector{Float64},x_new:: Bool, params:: Juqbox.objparams,
 #                     nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
-function eval_f_par(pcof::Vector{Float64}, params:: Juqbox.objparams, wa::Working_Arrays,
+function eval_f_par(pcof::Vector{Float64}, params:: Juqbox.objparams,
     nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
-
 
     #Return last stored
     # if x_new 
     pnorm =norm(pcof .- params.last_pcof)     
     if pnorm > 1.0e-15
         compute_adjoint = true
-        eval_f_g_grad!(pcof,params,wa,nodes,weights,compute_adjoint)        
+        eval_f_g_grad!(pcof, params, nodes, weights, compute_adjoint)        
     end
 
     if params.objFuncType == 1
@@ -99,9 +97,9 @@ function eval_f_par(pcof::Vector{Float64}, params:: Juqbox.objparams, wa::Workin
   end
 
 
-# function eval_g_par(pcof::Vector{Float64},x_new:: Bool,g::Vector{Float64},params:: Juqbox.objparams, wa::Working_Arrays,
+# function eval_g_par(pcof::Vector{Float64},x_new:: Bool,g::Vector{Float64},params:: Juqbox.objparams,
 #                     nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
-function eval_g_par(pcof::Vector{Float64},g::Vector{Float64},params:: Juqbox.objparams, wa::Working_Arrays,
+function eval_g_par(pcof::Vector{Float64}, g::Vector{Float64}, params:: Juqbox.objparams,
     nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
 
     #Return last stored
@@ -109,7 +107,7 @@ function eval_g_par(pcof::Vector{Float64},g::Vector{Float64},params:: Juqbox.obj
     pnorm =norm(pcof .- params.last_pcof) 
     if pnorm > 1.0e-15
         compute_adjoint = true
-        eval_f_g_grad!(pcof,params,wa,nodes,weights,compute_adjoint)
+        eval_f_g_grad!(pcof, params, nodes, weights, compute_adjoint)
     end
     
     g[1] = params.last_leak
@@ -119,17 +117,18 @@ end
 
 
 
-# function eval_grad_f_par(pcof::Vector{Float64},x_new:: Bool, grad_f::Vector{Float64}, params:: Juqbox.objparams, wa::Working_Arrays,
-#                         nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
-function eval_grad_f_par(pcof::Vector{Float64}, grad_f::Vector{Float64}, params:: Juqbox.objparams, wa::Working_Arrays,
+# function eval_grad_f_par(pcof::Vector{Float64},x_new:: Bool, grad_f::Vector{Float64}, params:: Juqbox.objparams, nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
+function eval_grad_f_par(pcof::Vector{Float64}, grad_f::Vector{Float64}, params:: Juqbox.objparams,
     nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
     
+    wa = params.wa
+
     #Return last stored
     # if x_new 
     pnorm =norm(pcof .- params.last_pcof) 
     if pnorm > 1.0e-15
         compute_adjoint = true
-        eval_f_g_grad!(pcof,params,wa,nodes,weights,compute_adjoint)
+        eval_f_g_grad!(pcof, params, nodes, weights, compute_adjoint)
     end
 
     #When params.objFuncType == 1, this stores the total grad
@@ -138,7 +137,7 @@ function eval_grad_f_par(pcof::Vector{Float64}, grad_f::Vector{Float64}, params:
     # Add in Tikhonov regularization gradient term
     wa.gr .= 0.0
     Juqbox.tikhonov_grad!(pcof, params, wa.gr)  
-    axpy!(1.0,wa.gr,grad_f)
+    axpy!(1.0, wa.gr, grad_f)
 
 
     # Save intermediate parameter vectors
@@ -149,9 +148,8 @@ end
 
 
 # function eval_jac_g_par(pcof::Vector{Float64},x_new:: Bool, rows::Vector{Int32}, cols::Vector{Int32}, jac_g::Union{Nothing,Vector{Float64}},
-#                         params:: Juqbox.objparams, wa::Working_Arrays, nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
-function eval_jac_g_par(pcof::Vector{Float64}, rows::Vector{Int32}, cols::Vector{Int32}, jac_g::Union{Nothing,Vector{Float64}},
-    params:: Juqbox.objparams, wa::Working_Arrays, nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
+#                         params:: Juqbox.objparams, nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
+function eval_jac_g_par(pcof::Vector{Float64}, rows::Vector{Int32}, cols::Vector{Int32}, jac_g::Union{Nothing,Vector{Float64}}, params:: Juqbox.objparams, nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
 
     if jac_g === nothing 
         if length(rows)>0
@@ -168,7 +166,7 @@ function eval_jac_g_par(pcof::Vector{Float64}, rows::Vector{Int32}, cols::Vector
         pnorm =norm(pcof .- params.last_pcof) 
         if pnorm > 1.0e-15
             compute_adjoint = true    
-            eval_f_g_grad!(pcof,params,wa,nodes,weights,compute_adjoint)    
+            eval_f_g_grad!(pcof, params, nodes, weights, compute_adjoint)    
             return
         end
 
@@ -240,7 +238,7 @@ function intermediate_par(
 end
 
 """
-    prob = setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff; maxIter=50, 
+    prob = ipopt_setup(params, nCoeff, minCoeff, maxCoeff; maxIter=50, 
                             lbfgsMax=10, startFromScratch=true, ipTol=1e-5, acceptTol=1e-5, acceptIter=15,
                             nodes=[0.0], weights=[1.0])
 
@@ -251,7 +249,6 @@ where the fundamental frequency is random.
 
 # Arguments
 - `params:: objparams`: Struct with problem definition
-- `wa::Working_Arrays`: Struct containing preallocated working arrays
 - `nCoeff:: Int64`: Number of parameters in optimization
 - `minCoeff:: Array{Float64, 1}`: Minimum allowable value for each parameter
 - `maxCoeff:: Array{Float64, 1}`: Maximum allowable value for each parameter
@@ -264,155 +261,157 @@ where the fundamental frequency is random.
 - `nodes:: Array{Float64, 1}`: Risk-neutral opt: User specified quadrature nodes on the interval [-ϵ,ϵ] for some ϵ (keyword arg)
 - `weights:: Array{Float64, 1}`: Risk-neutral opt: User specified quadrature weights on the interval [-ϵ,ϵ] for some ϵ (keyword arg)
 """
-function setup_ipopt_problem(params:: Juqbox.objparams, wa::Working_Arrays, nCoeff:: Int64, minCoeff:: Array{Float64, 1}, maxCoeff:: Array{Float64, 1};
-                             maxIter:: Int64=50, lbfgsMax:: Int64=10, 
-                             startFromScratch:: Bool=true, ipTol:: Float64=1e-5, 
-                             acceptTol:: Float64=1e-5, acceptIter:: Int64=15,
-                             nodes::AbstractArray=[0.0], 
-                             weights::AbstractArray=[1.0],
-                             jacob_approx::String="exact")
+mutable struct ipopt_setup
+    ipopt_ptr:: IpoptProblem
+    params:: objparams
 
+    # inner constructor
+    function ipopt_setup(params:: Juqbox.objparams, nCoeff:: Int64, minCoeff:: Array{Float64, 1}, maxCoeff:: Array{Float64, 1}; maxIter:: Int64=50, lbfgsMax:: Int64=10, startFromScratch:: Bool=true, ipTol:: Float64=1e-5, acceptTol:: Float64=1e-5, acceptIter:: Int64=15, nodes::AbstractArray=[0.0], weights::AbstractArray=[1.0], jacob_approx::String="exact")
 
-    #Initialize the last fidelity and leak terms and gradients
-    params.last_pcof = 1e9.*rand(nCoeff)
-    params.last_infidelity_grad = 1e9.*rand(nCoeff)
-    if params.objFuncType != 1 #Only allcoate for inequality opt...
-        params.last_leak_grad = 1e9.*rand(nCoeff)        
-    end
+        # setup the working_arrays object, holding temporary arrays
+        params.wa = working_arrays(params.N, params.N+params.Nguard, params.Hconst, params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, params.isSymm, params.pFidType, params.objFuncType, nCoeff)
 
-    # callback functions need access to the params object
-    eval_f(pcof) = eval_f_par(pcof,params, wa, nodes, weights)
-    eval_grad_f(pcof, grad_f) = eval_grad_f_par(pcof,grad_f, params, wa, nodes, weights)
-
-    #Comment out to use xnew with later version of ipopt
-    # eval_f(pcof,x_new) = eval_f_par(pcof, x_new,params, wa, nodes, weights)
-    # eval_grad_f(pcof,x_new, grad_f) = eval_grad_f_par(pcof,x_new, grad_f, params, wa, nodes, weights)
-    intermediate(alg_mod, iter_count, obj_value, inf_pr, inf_du, mu,
-                 d_norm, regularization_size, alpha_du, alpha_pr, ls_trials) =
-                     intermediate_par(alg_mod, iter_count, obj_value, inf_pr, inf_du, mu,
-                                      d_norm, regularization_size, alpha_du, alpha_pr, ls_trials, params)
-
-    # setup the Ipopt data structure
-    if params.objFuncType == 3
-        # treat the leakage as an inequality constraint
-        nconst = 1 # One constraint
-        nEleJac = nCoeff
-        nEleHess = 0
-        g_L = -2e19.*ones(nconst) # no lower bound needed because the leakage is always non-negative
-        g_U = params.leak_ubound.*ones(nconst)
-    else
-        nconst = 0
-        nEleJac = 0
-        nEleHess = 0
-        g_L = zeros(0);
-        g_U = zeros(0);
-    end
-
-    #Create alias even if not used
-    eval_g(pcof,g) = eval_g_par(pcof,g,params,wa,nodes,weights)
-    eval_jac_g(pcof,rows,cols,jac_g) = eval_jac_g_par(pcof,rows,cols,jac_g,params,wa,nodes,weights)
-    # eval_g(pcof,x_new,g) = eval_g_par(pcof,x_new,g,params,wa,nodes,weights)
-    # eval_jac_g(pcof,x_new,rows,cols,jac_g) = eval_jac_g_par(pcof,x_new,rows,cols,jac_g,params,wa,nodes,weights)
-
-
-    # tmp
-    #    println("setup_ipopt_problem: nCoeff = ", nCoeff, " length(minCoeff) = ", length(minCoeff))
-    if @isdefined createProblem
-        prob = createProblem( nCoeff, minCoeff, maxCoeff, nconst, g_L, g_U, nEleJac, nEleHess, eval_f, eval_g, eval_grad_f, eval_jac_g);
-    else
-        # prob = CreateIpoptProblem( nCoeff, minCoeff, maxCoeff, nconst, g_L, g_U, nEleJac, nEleHess, eval_f, eval_g, eval_grad_f, eval_jac_g,eval_h,expose_xnew=true);
-        prob = CreateIpoptProblem( nCoeff, minCoeff, maxCoeff, nconst, g_L, g_U, nEleJac, nEleHess, eval_f, eval_g, eval_grad_f, eval_jac_g,eval_h);
-    end
-
-    if @isdefined addOption
-        addOption( prob, "hessian_approximation", "limited-memory");
-        addOption( prob, "limited_memory_max_history", lbfgsMax);
-        addOption( prob, "max_iter", maxIter);
-        addOption( prob, "tol", ipTol);
-        addOption( prob, "acceptable_tol", acceptTol);
-        addOption( prob, "acceptable_iter", acceptIter);
-        addOption( prob, "jacobian_approximation", jacob_approx);
-        # addOption( prob, "derivative_test", "first-order");
-        # addOption( prob, "derivative_test_tol", 0.0001);
-        
-        if !startFromScratch # enable warm start of Ipopt
-            addOption( prob, "warm_start_init_point", "yes")
-            # addOption( prob, "mu_init", 1e-6) # not sure how to set this parameter
-            # addOption( prob, "nlp_scaling_method", "none") # what about scaling?
-            #
-            # the following settings prevent the initial parameters to be pushed away from their bounds
-            addOption( prob, "warm_start_bound_push", 1e-16)
-            addOption( prob, "warm_start_bound_frac", 1e-16)
-            addOption( prob, "warm_start_slack_bound_frac", 1e-16)
-            addOption( prob, "warm_start_slack_bound_push", 1e-16)
-
-            if !params.quiet
-                println("Ipopt: Enabling warm start option")
-            end
+        #Initialize the last fidelity and leak terms and gradients
+        params.last_pcof = 1e9.*rand(nCoeff)
+        params.last_infidelity_grad = 1e9.*rand(nCoeff)
+        if params.objFuncType != 1 #Only allcoate for inequality opt...
+            params.last_leak_grad = 1e9.*rand(nCoeff)        
         end
-    else
-        AddIpoptStrOption( prob, "hessian_approximation", "limited-memory");
-        AddIpoptIntOption( prob, "limited_memory_max_history", lbfgsMax);
-        AddIpoptIntOption( prob, "max_iter", maxIter);
-        AddIpoptNumOption( prob, "tol", ipTol);
-        AddIpoptNumOption( prob, "acceptable_tol", acceptTol);
-        AddIpoptIntOption( prob, "acceptable_iter", acceptIter);
-        AddIpoptStrOption( prob, "jacobian_approximation", jacob_approx);
-        # AddIpoptStrOption( prob, "derivative_test", "first-order");
-        # AddIpoptNumOption( prob, "derivative_test_tol", 1.0e-4);
-        # AddIpoptNumOption( prob, "derivative_test_perturbation", 1.0e-8);
-        
-        
 
-        if !startFromScratch # enable warm start of Ipopt
-            AddIpoptStrOption( prob, "warm_start_init_point", "yes")
-            # AddIpoptNumOption( prob, "mu_init", 1e-6) # not sure how to set this parameter
-            # AddIpoptStrOption( prob, "nlp_scaling_method", "none") # what about scaling?
-            #
-            # the following settings prevent the initial parameters to be pushed away from their bounds
-            AddIpoptNumOption( prob, "warm_start_bound_push", 1e-16)
-            AddIpoptNumOption( prob, "warm_start_bound_frac", 1e-16)
-            AddIpoptNumOption( prob, "warm_start_slack_bound_frac", 1e-16)
-            AddIpoptNumOption( prob, "warm_start_slack_bound_push", 1e-16)
+        # callback functions need access to the params object
+        eval_f(pcof) = eval_f_par(pcof, params, nodes, weights)
+        eval_grad_f(pcof, grad_f) = eval_grad_f_par(pcof,grad_f, params, nodes, weights)
 
-            if !params.quiet
-                println("Ipopt: Enabling warm start option")
+        #Comment out to use xnew with later version of ipopt
+        # eval_f(pcof,x_new) = eval_f_par(pcof, x_new,params, nodes, weights)
+        # eval_grad_f(pcof,x_new, grad_f) = eval_grad_f_par(pcof,x_new, grad_f, params, nodes, weights)
+        intermediate(alg_mod, iter_count, obj_value, inf_pr, inf_du, mu,
+                    d_norm, regularization_size, alpha_du, alpha_pr, ls_trials) =
+                        intermediate_par(alg_mod, iter_count, obj_value, inf_pr, inf_du, mu,
+                                        d_norm, regularization_size, alpha_du, alpha_pr, ls_trials, params)
+
+        # setup the Ipopt data structure
+        if params.objFuncType == 3
+            # treat the leakage as an inequality constraint
+            nconst = 1 # One constraint
+            nEleJac = nCoeff
+            nEleHess = 0
+            g_L = -2e19.*ones(nconst) # no lower bound needed because the leakage is always non-negative
+            g_U = params.leak_ubound.*ones(nconst)
+        else
+            nconst = 0
+            nEleJac = 0
+            nEleHess = 0
+            g_L = zeros(0);
+            g_U = zeros(0);
+        end
+
+        #Create alias even if not used
+        eval_g(pcof,g) = eval_g_par(pcof, g, params, nodes, weights)
+        eval_jac_g(pcof,rows,cols,jac_g) = eval_jac_g_par(pcof, rows, cols, jac_g, params,nodes, weights)
+        # eval_g(pcof,x_new,g) = eval_g_par(pcof,x_new,g,params,nodes,weights)
+        # eval_jac_g(pcof,x_new,rows,cols,jac_g) = eval_jac_g_par(pcof,x_new,rows,cols,jac_g,params,nodes,weights)
+
+
+        # tmp
+        #    println("setup_ipopt_problem: nCoeff = ", nCoeff, " length(minCoeff) = ", length(minCoeff))
+        if @isdefined createProblem
+            prob = createProblem( nCoeff, minCoeff, maxCoeff, nconst, g_L, g_U, nEleJac, nEleHess, eval_f, eval_g, eval_grad_f, eval_jac_g);
+        else
+            # prob = CreateIpoptProblem( nCoeff, minCoeff, maxCoeff, nconst, g_L, g_U, nEleJac, nEleHess, eval_f, eval_g, eval_grad_f, eval_jac_g,eval_h,expose_xnew=true);
+            prob = CreateIpoptProblem( nCoeff, minCoeff, maxCoeff, nconst, g_L, g_U, nEleJac, nEleHess, eval_f, eval_g, eval_grad_f, eval_jac_g,eval_h);
+        end
+
+        if @isdefined addOption
+            addOption( prob, "hessian_approximation", "limited-memory");
+            addOption( prob, "limited_memory_max_history", lbfgsMax);
+            addOption( prob, "max_iter", maxIter);
+            addOption( prob, "tol", ipTol);
+            addOption( prob, "acceptable_tol", acceptTol);
+            addOption( prob, "acceptable_iter", acceptIter);
+            addOption( prob, "jacobian_approximation", jacob_approx);
+            # addOption( prob, "derivative_test", "first-order");
+            # addOption( prob, "derivative_test_tol", 0.0001);
+            
+            if !startFromScratch # enable warm start of Ipopt
+                addOption( prob, "warm_start_init_point", "yes")
+                # addOption( prob, "mu_init", 1e-6) # not sure how to set this parameter
+                # addOption( prob, "nlp_scaling_method", "none") # what about scaling?
+                #
+                # the following settings prevent the initial parameters to be pushed away from their bounds
+                addOption( prob, "warm_start_bound_push", 1e-16)
+                addOption( prob, "warm_start_bound_frac", 1e-16)
+                addOption( prob, "warm_start_slack_bound_frac", 1e-16)
+                addOption( prob, "warm_start_slack_bound_push", 1e-16)
+
+                if !params.quiet
+                    println("Ipopt: Enabling warm start option")
+                end
             end
-        end        
-    end
+        else
+            AddIpoptStrOption( prob, "hessian_approximation", "limited-memory");
+            AddIpoptIntOption( prob, "limited_memory_max_history", lbfgsMax);
+            AddIpoptIntOption( prob, "max_iter", maxIter);
+            AddIpoptNumOption( prob, "tol", ipTol);
+            AddIpoptNumOption( prob, "acceptable_tol", acceptTol);
+            AddIpoptIntOption( prob, "acceptable_iter", acceptIter);
+            AddIpoptStrOption( prob, "jacobian_approximation", jacob_approx);
+            # AddIpoptStrOption( prob, "derivative_test", "first-order");
+            # AddIpoptNumOption( prob, "derivative_test_tol", 1.0e-4);
+            # AddIpoptNumOption( prob, "derivative_test_perturbation", 1.0e-8);
+            
+            
 
-    # intermediate callback function
-    if @isdefined setIntermediateCallback
-        setIntermediateCallback(prob, intermediate)
-    else 
-        SetIntermediateCallback(prob,intermediate)
-    end
+            if !startFromScratch # enable warm start of Ipopt
+                AddIpoptStrOption( prob, "warm_start_init_point", "yes")
+                # AddIpoptNumOption( prob, "mu_init", 1e-6) # not sure how to set this parameter
+                # AddIpoptStrOption( prob, "nlp_scaling_method", "none") # what about scaling?
+                #
+                # the following settings prevent the initial parameters to be pushed away from their bounds
+                AddIpoptNumOption( prob, "warm_start_bound_push", 1e-16)
+                AddIpoptNumOption( prob, "warm_start_bound_frac", 1e-16)
+                AddIpoptNumOption( prob, "warm_start_slack_bound_frac", 1e-16)
+                AddIpoptNumOption( prob, "warm_start_slack_bound_push", 1e-16)
 
-# output some of the settings
-    if !params.quiet
-        println("Ipopt parameters: max # iterations = ", maxIter)
-        println("Ipopt parameters: max history L-BFGS = ", lbfgsMax)
-        println("Ipopt parameters: tol = ", ipTol)
-        println("Ipopt parameters: atol = ", acceptTol)
-        println("Ipopt parameters: accept # iter = ", acceptIter)
-    end
-    
-    return prob
-end
+                if !params.quiet
+                    println("Ipopt: Enabling warm start option")
+                end
+            end        
+        end
+
+        # intermediate callback function
+        if @isdefined setIntermediateCallback
+            setIntermediateCallback(prob, intermediate)
+        else 
+            SetIntermediateCallback(prob, intermediate)
+        end
+
+    # output some of the settings
+        if !params.quiet
+            println("Ipopt parameters: max # iterations = ", maxIter)
+            println("Ipopt parameters: max history L-BFGS = ", lbfgsMax)
+            println("Ipopt parameters: tol = ", ipTol)
+            println("Ipopt parameters: atol = ", acceptTol)
+            println("Ipopt parameters: accept # iter = ", acceptIter)
+        end
+        
+        new(prob, params)
+    end # inner constructor
+end # mutable struct
 
 """
-    pcof = run_optimizer(prob, pcof0 [, baseName:: String=""])
+    pcof = run_optimizer(ip_prob, pcof0 [, baseName:: String=""])
 
 Call IPOPT to  optimizize the control functions.
 
 # Arguments
-- `prob:: IpoptProblem`: Struct containing Ipopt parameters callback functions
+- `ip_prob:: ipopt_problem`: Struct containing Ipopt callback functions and problem specification
 - `pcof0:: Array{Float64, 1}`: Initial guess for the parameter values
 - `baseName:: String`: Name of file for saving the optimized parameters; extension ".jld2" is appended
 """
-function run_optimizer(prob:: IpoptProblem, pcof0:: Array{Float64, 1}, baseName:: String="")
-    # takes at most max_iter >= 0 iterations. Set with addOption(prob, "max_iter", nIter)
-
+function run_optimizer(ip_prob:: ipopt_setup, pcof0:: Array{Float64, 1}, baseName:: String="")
+    # get the IpoptProblem pointer from ip_prob
+    prob = ip_prob.ipopt_ptr
     # initial guess for IPOPT; make a copy of pcof0 to avoid overwriting it
     prob.x = copy(pcof0);
 

@@ -1,3 +1,101 @@
+# The working_arrays struct holds all of the working arrays needed to call traceobjgrad. Preallocated for efficiency
+"""
+    wa = working_arrays(N:: Int64, Ntot:: Int64, Hconst::MyRealMatrix, Hsym_ops::Vector{MyRealMatrix}, Hanti_ops::Vector{MyRealMatrix}, Hunc_ops::Vector{MyRealMatrix}, isSymm::BitArray{1}, nCoeff::Int64)
+
+Constructor for the mutable struct working_arrays containing preallocated temporary storage for time stepping.
+
+ 
+# Arguments
+- `param:: objparams`: Struct with problem definition
+- `nCoeff:: Int64`: Number of parameters in optimization
+"""
+mutable struct working_arrays
+    # Hamiltonian matrices
+    K0  ::MyRealMatrix
+    K05 ::MyRealMatrix
+    K1  ::MyRealMatrix
+    S0  ::MyRealMatrix
+    S05 ::MyRealMatrix
+    S1  ::MyRealMatrix
+
+    # Forward/Adjoint variables+stages
+    #vtargetr    ::Array{Float64,2} # moved to params
+    #vtargeti    ::Array{Float64,2}
+    lambdar     ::Array{Float64,2}
+    lambdar0    ::Array{Float64,2}
+    lambdai     ::Array{Float64,2}
+    lambdai0    ::Array{Float64,2}
+    lambdar05   ::Array{Float64,2}
+    lambdar_nfrc  ::Array{Float64,2}
+    lambdar0_nfrc ::Array{Float64,2}
+    lambdai_nfrc  ::Array{Float64,2}
+    lambdai0_nfrc ::Array{Float64,2}
+    lambdar05_nfrc::Array{Float64,2}
+    κ₁          ::Array{Float64,2}
+    κ₂          ::Array{Float64,2}
+    ℓ₁          ::Array{Float64,2}
+    ℓ₂          ::Array{Float64,2}
+    rhs         ::Array{Float64,2}
+    gr0         ::Array{Float64,2}
+    gi0         ::Array{Float64,2}
+    gr1         ::Array{Float64,2}
+    gi1         ::Array{Float64,2}
+    hr0         ::Array{Float64,2}
+    hi0         ::Array{Float64,2}
+    hi1         ::Array{Float64,2}
+    hr1         ::Array{Float64,2}
+    vr          ::Array{Float64,2}
+    vi          ::Array{Float64,2}
+    vi05        ::Array{Float64,2}
+    vr0         ::Array{Float64,2}
+    vfinalr     ::Array{Float64,2}
+    vfinali     ::Array{Float64,2}
+    gr          ::Array{Float64,1}
+    gi          ::Array{Float64,1}
+    gradobjfadj ::Array{Float64,1}
+    tr_adj      ::Array{Float64,1}
+
+    function working_arrays(N:: Int64, Ntot:: Int64, Hconst::MyRealMatrix, Hsym_ops::Vector{MyRealMatrix}, Hanti_ops::Vector{MyRealMatrix}, Hunc_ops::Vector{MyRealMatrix}, isSymm::BitArray{1}, pFidType::Int64, objFuncType::Int64, nCoeff::Int64)
+        #N = params.N
+        #Ntot = N + params.Nguard
+
+        # K0,S0,K05,S05,K1,S1,vtargetr,vtargeti = KS_alloc(params)
+        # ks_alloc(Ntot:: Int64, Hconst::MyRealMatrix, Hsym_ops::Vector{MyRealMatrix}, Hanti_ops::Vector{MyRealMatrix}, Hunc_ops::Vector{MyRealMatrix}, isSymm::BitArray{1})
+        K0, S0, K05, S05, K1, S1 = ks_alloc(Ntot, Hconst, Hsym_ops, Hanti_ops, Hunc_ops, isSymm)
+
+        lambdar,lambdar0,lambdai,lambdai0,lambdar05,κ₁,κ₂,ℓ₁,ℓ₂,rhs,gr0,gi0,gr1,gi1,hr0,hi0,hi1,hr1,vr,vi,vi05,vr0,vfinalr,vfinali = time_step_alloc(Ntot,N)
+        if pFidType == 3
+            gr, gi, gradobjfadj, tr_adj = grad_alloc(nCoeff-1)
+        else
+            gr, gi, gradobjfadj, tr_adj = grad_alloc(nCoeff)
+        end
+        if objFuncType != 1
+            lambdar_nfrc  = zeros(Float64,size(lambdar))
+            lambdar0_nfrc = zeros(Float64,size(lambdar0))
+            lambdai_nfrc  = zeros(Float64,size(lambdai))
+            lambdai0_nfrc = zeros(Float64,size(lambdai0))
+            lambdar05_nfrc= zeros(Float64,size(lambdar05))
+        else
+            lambdar_nfrc  = zeros(0,0)
+            lambdar0_nfrc = zeros(0,0)
+            lambdai_nfrc  = zeros(0,0)
+            lambdai0_nfrc = zeros(0,0)
+            lambdar05_nfrc= zeros(0,0)
+        end
+        # new(K0,S0,K05,S05,K1,S1,vtargetr,vtargeti,
+        #     lambdar,lambdar0,lambdai,lambdai0,lambdar05,
+        #     lambdar_nfrc,lambdar0_nfrc,lambdai_nfrc,lambdai0_nfrc,lambdar05_nfrc,
+        #     κ₁,κ₂,ℓ₁,ℓ₂,rhs,gr0,gi0,gr1,gi1,hr0,hi0,hi1,hr1,
+        #     vr,vi,vi05,vr0,vfinalr,vfinali,gr, gi, gradobjfadj, tr_adj)
+        new(K0, S0, K05, S05, K1, S1,
+            lambdar,lambdar0,lambdai,lambdai0,lambdar05,
+            lambdar_nfrc,lambdar0_nfrc,lambdai_nfrc,lambdai0_nfrc,lambdar05_nfrc,
+            κ₁,κ₂,ℓ₁,ℓ₂,rhs,gr0,gi0,gr1,gi1,hr0,hi0,hi1,hr1,
+            vr, vi, vi05, vr0, vfinalr, vfinali, gr, gi, gradobjfadj, tr_adj)
+    end
+    
+end
+
 """
     params = objparams(Ne, Ng, T, Nsteps;
                         Uinit=Uinit, 
@@ -134,6 +232,9 @@ mutable struct objparams
     dVds_i      ::Array{Float64,2}
 
     sv_type:: Int64
+
+    # temporary storage for time stepping, to be allocated later (by setup_ipopt_problem)
+    wa:: working_arrays
     
 # Regular arrays
     function objparams(Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64;
@@ -324,102 +425,6 @@ mutable struct objparams
 end # mutable struct objparams
 
 
-# This struct holds all of the working arrays needed to call traceobjgrad. Preallocated for efficiency
-"""
-    wa = Working_Arrays(params::objparams, nCoeff::Int64)
-
-Constructor for the mutable struct Working_Arrays containing preallocated working arrays.
-
- 
-# Arguments
-- `param:: objparams`: Struct with problem definition
-- `nCoeff:: Int64`: Number of parameters in optimization
-"""
-mutable struct Working_Arrays
-    # Hamiltonian matrices
-    K0  ::MyRealMatrix
-    K05 ::MyRealMatrix
-    K1  ::MyRealMatrix
-    S0  ::MyRealMatrix
-    S05 ::MyRealMatrix
-    S1  ::MyRealMatrix
-
-    # Forward/Adjoint variables+stages
-    #vtargetr    ::Array{Float64,2} # moved to params
-    #vtargeti    ::Array{Float64,2}
-    lambdar     ::Array{Float64,2}
-    lambdar0    ::Array{Float64,2}
-    lambdai     ::Array{Float64,2}
-    lambdai0    ::Array{Float64,2}
-    lambdar05   ::Array{Float64,2}
-    lambdar_nfrc  ::Array{Float64,2}
-    lambdar0_nfrc ::Array{Float64,2}
-    lambdai_nfrc  ::Array{Float64,2}
-    lambdai0_nfrc ::Array{Float64,2}
-    lambdar05_nfrc::Array{Float64,2}
-    κ₁          ::Array{Float64,2}
-    κ₂          ::Array{Float64,2}
-    ℓ₁          ::Array{Float64,2}
-    ℓ₂          ::Array{Float64,2}
-    rhs         ::Array{Float64,2}
-    gr0         ::Array{Float64,2}
-    gi0         ::Array{Float64,2}
-    gr1         ::Array{Float64,2}
-    gi1         ::Array{Float64,2}
-    hr0         ::Array{Float64,2}
-    hi0         ::Array{Float64,2}
-    hi1         ::Array{Float64,2}
-    hr1         ::Array{Float64,2}
-    vr          ::Array{Float64,2}
-    vi          ::Array{Float64,2}
-    vi05        ::Array{Float64,2}
-    vr0         ::Array{Float64,2}
-    vfinalr     ::Array{Float64,2}
-    vfinali     ::Array{Float64,2}
-    gr          ::Array{Float64,1}
-    gi          ::Array{Float64,1}
-    gradobjfadj ::Array{Float64,1}
-    tr_adj      ::Array{Float64,1}
-
-    function Working_Arrays(params::objparams, nCoeff::Int64)
-        N = params.N
-        Ntot = N + params.Nguard
-
-        # K0,S0,K05,S05,K1,S1,vtargetr,vtargeti = KS_alloc(params)
-        K0,S0,K05,S05,K1,S1 = KS_alloc(params)
-        lambdar,lambdar0,lambdai,lambdai0,lambdar05,κ₁,κ₂,ℓ₁,ℓ₂,rhs,gr0,gi0,gr1,gi1,hr0,hi0,hi1,hr1,vr,vi,vi05,vr0,vfinalr,vfinali = time_step_alloc(Ntot,N)
-        if params.pFidType == 3
-            gr, gi, gradobjfadj, tr_adj = grad_alloc(nCoeff-1)
-        else
-            gr, gi, gradobjfadj, tr_adj = grad_alloc(nCoeff)
-        end
-        if params.objFuncType != 1
-            lambdar_nfrc  = zeros(Float64,size(lambdar))
-            lambdar0_nfrc = zeros(Float64,size(lambdar0))
-            lambdai_nfrc  = zeros(Float64,size(lambdai))
-            lambdai0_nfrc = zeros(Float64,size(lambdai0))
-            lambdar05_nfrc= zeros(Float64,size(lambdar05))
-        else
-            lambdar_nfrc  = zeros(0,0)
-            lambdar0_nfrc = zeros(0,0)
-            lambdai_nfrc  = zeros(0,0)
-            lambdai0_nfrc = zeros(0,0)
-            lambdar05_nfrc= zeros(0,0)
-        end
-        # new(K0,S0,K05,S05,K1,S1,vtargetr,vtargeti,
-        #     lambdar,lambdar0,lambdai,lambdai0,lambdar05,
-        #     lambdar_nfrc,lambdar0_nfrc,lambdai_nfrc,lambdai0_nfrc,lambdar05_nfrc,
-        #     κ₁,κ₂,ℓ₁,ℓ₂,rhs,gr0,gi0,gr1,gi1,hr0,hi0,hi1,hr1,
-        #     vr,vi,vi05,vr0,vfinalr,vfinali,gr, gi, gradobjfadj, tr_adj)
-        new(K0, S0, K05, S05, K1, S1,
-            lambdar,lambdar0,lambdai,lambdai0,lambdar05,
-            lambdar_nfrc,lambdar0_nfrc,lambdai_nfrc,lambdai0_nfrc,lambdar05_nfrc,
-            κ₁,κ₂,ℓ₁,ℓ₂,rhs,gr0,gi0,gr1,gi1,hr0,hi0,hi1,hr1,
-            vr, vi, vi05, vr0, vfinalr, vfinali, gr, gi, gradobjfadj, tr_adj)
-    end
-    
-end
-
 """
     objf = traceobjgrad(pcof0, params, wa[, verbose = false, evaladjoint = true])
 
@@ -433,7 +438,8 @@ function and/or gradient.
 - `verbose::Bool = false`: Run simulation with additional terminal output and store state history.
 - `evaladjoint::Bool = true`: Solve the adjoint equation and calculate the gradient of the objective function.
 """
-function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, wa::Working_Arrays, verbose::Bool = false, evaladjoint::Bool = true)
+function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, verbose::Bool = false, evaladjoint::Bool = true)
+    wa = params.wa
     order  = 2
     N      = params.N    
     Nguard = params.Nguard  
@@ -2368,22 +2374,60 @@ function calculate_timestep(T::Float64, H0::AbstractArray, Hunc_ops::AbstractArr
     return nsteps
 end
 
-# Preallocate K and S matrices
-function KS_alloc(params)
-    Ntot = prod(params.Nt)
+# Preallocate K and S matrices (not used anymore)
+# function KS_alloc(params)
+#     Ntot = prod(params.Nt)
+#     # establish the non-zero pattern for sparse storage
+#     if typeof(params.Hconst) == SparseMatrixCSC{Float64, Int64}
+#         K0 = copy(params.Hconst)
+#         S0 = spzeros(size(params.Hconst,1),size(params.Hconst,2))
+#         for q=1:params.Ncoupled
+#             K0 += params.Hsym_ops[q]
+#             S0 += params.Hanti_ops[q]
+#         end
+#         for q=1:params.Nunc
+#             if(params.isSymm[q])
+#                 K0 = K0 + params.Hunc_ops[q]
+#             else
+#                 S0 = S0 + params.Hunc_ops[q]
+#             end
+#         end
+#         K05 = copy(K0)
+#         K1  = copy(K0)
+#         S05 = copy(S0)
+#         S1  = copy(S0)
+#     else
+#         K0   = zeros(Float64,Ntot,Ntot)
+#         S0   = zeros(Float64,Ntot,Ntot)
+#         K05  = zeros(Float64,Ntot,Ntot)
+#         S05  = zeros(Float64,Ntot,Ntot)
+#         K1   = zeros(Float64,Ntot,Ntot)
+#         S1   = zeros(Float64,Ntot,Ntot)
+#     end
+#     # vtargetr = real(params.Utarget)
+#     # vtargeti = imag(params.Utarget)
+#     #return K0,S0,K05,S05,K1,S1,vtargetr,vtargeti
+#     return K0,S0,K05,S05,K1,S1
+# end
+
+# Preallocate K and S matrices, not relying on params
+function ks_alloc(Ntot:: Int64, Hconst::MyRealMatrix, Hsym_ops::Vector{MyRealMatrix}, Hanti_ops::Vector{MyRealMatrix}, Hunc_ops::Vector{MyRealMatrix}, isSymm::BitArray{1})
+    # Ntot = prod(params.Nt)
     # establish the non-zero pattern for sparse storage
-    if typeof(params.Hconst) == SparseMatrixCSC{Float64, Int64}
-        K0 = copy(params.Hconst)
-        S0 = spzeros(size(params.Hconst,1),size(params.Hconst,2))
-        for q=1:params.Ncoupled
+    if typeof(Hconst) == SparseMatrixCSC{Float64, Int64}
+        K0 = copy(Hconst)
+        S0 = spzeros(size(Hconst,1),size(Hconst,2))
+        Ncoupled = length(Hsym_ops)
+        for q=1:Ncoupled
             K0 += params.Hsym_ops[q]
             S0 += params.Hanti_ops[q]
         end
-        for q=1:params.Nunc
-            if(params.isSymm[q])
-                K0 = K0 + params.Hunc_ops[q]
+        Nunc = length(Hunc_ops)
+        for q=1:Nunc
+            if(isSymm[q])
+                K0 = K0 + Hunc_ops[q]
             else
-                S0 = S0 + params.Hunc_ops[q]
+                S0 = S0 + Hunc_ops[q]
             end
         end
         K05 = copy(K0)
@@ -2405,7 +2449,7 @@ function KS_alloc(params)
 end
 
 # Working arrays for timestepping
-function time_step_alloc(Ntot::Int64,N::Int64)
+function time_step_alloc(Ntot::Int64, N::Int64)
     lambdar   = zeros(Float64,Ntot,N) 
     lambdar0  = zeros(Float64,Ntot,N) 
     lambdai   = zeros(Float64,Ntot,N) 

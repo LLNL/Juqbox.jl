@@ -46,11 +46,11 @@ WeightMatrix = Union{Array{Float64,2}, Diagonal{Float64, Vector{Float64}}}
 
 include("evalobjgrad.jl")
 
+include("ipopt_interface.jl")
+
 include("plotstatectrl.jl")
 
 include("plot-results.jl")
-
-include("ipopt_interface.jl")
 
 include("save_pcof.jl")
 
