@@ -10,9 +10,7 @@ Create array of plot objects that can be visualized by, e.g., `display(pl[1])`.
 - `savefiles::Bool`: Default: `false`.Set to `true` to save plots on files with automatically generated filenames
 - `samplerate:: Int64`: Default: `32` samples per unit time (ns). Sample rate for generating plots.
 """
-function plot_results(ip_prob::ipopt_setup, pcof::Array{Float64,1}; casename::String = "test", savefiles::Bool = false, samplerate:: Int64 = 32)
-    
-    params = ip_prob.params
+function plot_results(params::objparams, pcof::Array{Float64,1}; casename::String = "test", savefiles::Bool = false, samplerate:: Int64 = 32)
 
     # Set default font sizes
     fnt = Plots.font("Helvetica", 12)

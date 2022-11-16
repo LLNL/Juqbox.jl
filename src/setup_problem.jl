@@ -231,7 +231,7 @@ function init_control(params::objparams; maxrand::Float64, nCoeff::Int64, startF
     return pcof0
 end
 
-function control_bounds(params::objparams; maxamp::Vector{Float64}, nCoeff::Int64, zeroCtrlBC::Bool = true)
+function control_bounds(params::objparams, maxamp::Vector{Float64}, nCoeff::Int64, zeroCtrlBC::Bool)
     Nctrl  = size(params.Cfreq,1)
     Nfreq  = size(params.Cfreq,2)
 

@@ -80,24 +80,12 @@ maxrand = 0.05*maxctrl/Nfreq  # amplitude of the random control vector
 pcof0 = init_control(params, maxrand=maxrand, nCoeff=nCoeff, seed=2345)
 
 # same ctrl threshold for all frequencies
-maxamp = maxctrl/Nfreq .* ones(Nfreq)
-minCoeff, maxCoeff = control_bounds(params, maxamp=maxamp, nCoeff=length(pcof0), zeroCtrlBC=false)
-
-# Ipopt  parameters
-maxIter = 80 # 0  # optional argument
-lbfgsMax = 250 # optional argument
+maxAmp = maxctrl/Nfreq .* ones(Nfreq)
 
 println("*** Settings ***")
 println("Number of coefficients per spline = ", D1, " Total number of control parameters = ", length(pcof0))
 println("Tikhonov coefficients: tik0 = ", params.tik0)
-
-# Stefanie's feedback:
-# Move ipopt_setup() into run_optimizer to expose the dependencies on params, pcof0.
-# Instead of specifying minCoeff and maxCoeff, just specify maxamp and optionally zeroCtrlBC
-# It would look like this:
-# pcof = run_optimizer(params, pcof0, maxamp, zeroCtrlBC=true)
-oc_prob = Juqbox.ipopt_setup(params, length(pcof0), minCoeff, maxCoeff, maxIter=maxIter, lbfgsMax=lbfgsMax, startFromScratch=true)
-
 println()
-println("Ipopt setup and params object stored in 'oc_prob'")
-println("Initial coefficient vector stored in 'pcof0'")
+println("Problem setup (Hamiltonian, carrier freq's, time-stepper, etc) is stored in 'params' object")
+println("Initial coefficient vector is stored in 'pcof0' vector")
+println("Max control amplitudes is stored in 'maxAmp' vector")

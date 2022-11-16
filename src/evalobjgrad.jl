@@ -169,9 +169,9 @@ mutable struct objparams
     Hconst ::MyRealMatrix     # time-independent part of the Hamiltonian (assumed symmetric)
    
     # Control Hamiltonians
-    Hsym_ops  ::Array{MyRealMatrix,1}   # Symmetric control Hamiltonians
-    Hanti_ops ::Array{MyRealMatrix,1}   # Anti-symmetric control Hamiltonians
-    Hunc_ops  ::Array{MyRealMatrix,1}   # Uncoupled control Hamiltonians
+    Hsym_ops  ::Vector{MyRealMatrix}   # Symmetric control Hamiltonians
+    Hanti_ops ::Vector{MyRealMatrix}   # Anti-symmetric control Hamiltonians
+    Hunc_ops  ::Vector{MyRealMatrix}   # Uncoupled control Hamiltonians
 
     Ncoupled :: Int64 # Number of coupled Hamiltonians.
     Nunc     :: Int64 # Number of uncoupled Hamiltonians.
@@ -2241,13 +2241,50 @@ Estimate the number of time steps needed for the simulation, for the case withou
  
 # Arguments
 - `T:: Float64`: Final simulation
-- `H0::Array{Float64,2}`: Time-independent part of the Hamiltonian matrix
-- `Hsym_ops:: Array{Float64,2}`: Array of symmetric control Hamiltonians
-- `Hanti_ops:: Array{Float64,2}`: Array of symmetric control Hamiltonians
-- `maxpar:: Array{Float64,1}`: Maximum parameter value for each subsystem
+- `H0:: Matrix{Float64}`: Time-independent part of the Hamiltonian matrix
+- `Hsym_ops:: Vector{Matrix{Float64}}`: Array of symmetric control Hamiltonians
+- `Hanti_ops:: Vector{Matrix{Float64}}`: Array of symmetric control Hamiltonians
+- `maxpar:: Vector{Float64}`: Maximum parameter value for each subsystem
 - `Pmin:: Int64`: Number of time steps per shortest period (assuming a slowly varying Hamiltonian).
 """
-function calculate_timestep(T::Float64, H0::AbstractArray,Hsym_ops::AbstractArray,Hanti_ops::AbstractArray, maxpar::Array{Float64,1}, Pmin::Int64 = 40)
+function calculate_timestep(T::Float64, H0::Matrix{Float64}, Hsym_ops::Vector{Matrix{Float64}},Hanti_ops::Vector{Matrix{Float64}}, maxpar::Vector{Float64}, Pmin::Int64 = 40)
+    K1 = copy(H0) 
+    Ncoupled = length(Hsym_ops)
+
+    # Coupled control Hamiltonians
+    for i = 1:Ncoupled
+        K1 = K1 + maxpar[i].*Hsym_ops[i] + 1im*maxpar[i].*Hanti_ops[i]
+    end
+
+    # Estimate time step
+    lamb = eigvals(Array(K1))
+    maxeig = maximum(abs.(lamb)) 
+    mineig = minimum(abs.(lamb)) 
+
+    samplerate1 = maxeig*Pmin/(2*pi)
+    nsteps = ceil(Int64, T*samplerate1)
+
+    # NOTE: The above estimate does not account for quickly varying signals or a large number of splines.  
+    # Double check at least 2-3 points per spline to resolve control function.
+
+    return nsteps
+end
+
+# for sparse matrix format
+"""
+    nsteps = calculate_timestep(T, H0, Hsym_ops, Hanti_ops, maxpar [, Pmin = 40])
+
+Estimate the number of time steps needed for the simulation, for the case without uncoupled controls.
+ 
+# Arguments
+- `T:: Float64`: Final simulation
+- `H0:: SparseMatrixCSC{Float64,Int64}`: Time-independent part of the Hamiltonian matrix
+- `Hsym_ops:: Vector{SparseMatrixCSC{Float64,Int64}}`: Array of symmetric control Hamiltonians
+- `Hanti_ops:: Vector{SparseMatrixCSC{Float64,Int64}}`: Array of symmetric control Hamiltonians
+- `maxpar:: Vector{Float64}`: Maximum parameter value for each subsystem
+- `Pmin:: Int64`: Number of time steps per shortest period (assuming a slowly varying Hamiltonian).
+"""
+function calculate_timestep(T::Float64, H0::SparseMatrixCSC{Float64,Int64}, Hsym_ops::Vector{SparseMatrixCSC{Float64,Int64}},Hanti_ops::Vector{SparseMatrixCSC{Float64,Int64}}, maxpar::Vector{Float64}, Pmin::Int64 = 40)
     K1 = copy(H0) 
     Ncoupled = length(Hsym_ops)
 
@@ -2278,16 +2315,15 @@ Estimate the number of time steps needed for the simulation, when there are unco
  
 # Arguments
 - `T:: Float64`: Final simulation
-- `H0::Array{Float64,2}`: Time-independent part of the Hamiltonian matrix
-- `Hsym_ops:: Array{Float64,2}`: Array of symmetric control Hamiltonians
-- `Hanti_ops:: Array{Float64,2}`: Array of symmetric control Hamiltonians
-- `Hunc_ops:: Array{Float64,2}`: Array of uncoupled control Hamiltonians
-- `maxpar:: Array{Float64,1}`: Maximum parameter value for each coupled control
-- `max_flux:: Array{Float64,1}`: Maximum parameter value for each uncoupled control
+- `H0::Matrix{Float64}`: Time-independent part of the Hamiltonian matrix
+- `Hsym_ops:: Vector{Matrix{Float64}}`: Array of symmetric control Hamiltonians
+- `Hanti_ops:: Vector{Matrix{Float64}}`: Array of symmetric control Hamiltonians
+- `Hunc_ops:: Vector{Matrix{Float64}}`: Array of uncoupled control Hamiltonians
+- `maxpar:: Vector{Float64}`: Maximum parameter value for each coupled control
+- `max_flux:: Vector{Float64}`: Maximum parameter value for each uncoupled control
 - `Pmin:: Int64`: Number of time steps per shortest period (assuming a slowly varying Hamiltonian).
 """
-function calculate_timestep(T::Float64, H0::AbstractArray,Hsym_ops::AbstractArray,Hanti_ops::AbstractArray,
-                            Hunc_ops::AbstractArray,maxpar::Array{Float64,1},max_flux::Array{Float64,1}, Pmin::Int64 = 40)
+function calculate_timestep(T::Float64, H0::Matrix{Float64}, Hsym_ops::Vector{Matrix{Float64}},Hanti_ops::Vector{Matrix{Float64}}, Hunc_ops::Vector{Matrix{Float64}}, maxpar::Vector{Float64},max_flux::Vector{Float64}, Pmin::Int64 = 40)
     K1 = copy(H0) 
     Ncoupled = length(Hsym_ops)
     Nunc = length(Hunc_ops)
@@ -2335,12 +2371,12 @@ Estimate the number of time steps needed for an accurate simulation, when there 
  
 # Arguments
 - `T:: Float64`: Final simulation
-- `H0::Array{Float64,2}`: Time-independent part of the Hamiltonian matrix
-- `Hunc_ops:: Array{Float64,2}`: Array of uncoupled control Hamiltonians
-- `max_unc:: Array{Float64,1}`: Maximum parameter value for each subsystem (uncoupled)
+- `H0:: Matrix{Float64}`: Time-independent part of the Hamiltonian matrix
+- `Hunc_ops:: Vector{Matrix{Float64}}`: Array of uncoupled control Hamiltonians
+- `max_unc:: Vector{Float64}`: Maximum parameter value for each subsystem (uncoupled)
 - `Pmin:: Int64`: Sample rate for accuracy (assuming a slowly varying Hamiltonian)
 """
-function calculate_timestep(T::Float64, H0::AbstractArray, Hunc_ops::AbstractArray, max_unc::Array{Float64,1}, Pmin::Int64 = 40)
+function calculate_timestep(T::Float64, H0::Matrix{Float64}, Hunc_ops::Vector{Matrix{Float64}}, max_unc::Vector{Float64}, Pmin::Int64 = 40)
     K1 = copy(H0) 
     Nunc = length(Hunc_ops)
 
