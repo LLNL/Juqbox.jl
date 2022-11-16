@@ -50,7 +50,7 @@ maxctrl = 0.001*2*pi * 8.5 #  8.5 MHz
 
 T = 100.0 # Duration of gate
 # Estimate time step
-nsteps = calculate_timestep(T, H0, Hsym_ops, Hanti_ops, [maxctrl])
+nsteps = calculate_timestep(T, H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, maxCop=[maxctrl], Pmin=40)
 println("Duration T = ", T, " # time steps: ", nsteps)
 
 # Initial basis with guard levels
