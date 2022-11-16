@@ -28,7 +28,6 @@ Base.show(io::IO, f::Float64) = @printf(io, "%20.13e", f)
 
 using Juqbox # quantum control module
 
-Nosc = 1 # Number of coupled sub-systems = oscillators
 N = 4 # Number of essential energy levels
 Nguard = 2 # Number of extra guard levels
 Ntot = N + Nguard # Total number of energy levels
@@ -48,20 +47,11 @@ Nfreq = size(om, 2)
 println("Nctrl = ", Nctrl, " Nfreq = ", Nfreq)
 
 maxctrl = 0.001*2*pi * 8.5 #  8.5 MHz
-# same ctrl threshold for all frequencies
-maxamp = zeros(Nfreq)
-maxamp .= maxctrl/Nfreq
 
 T = 100.0 # Duration of gate
 # Estimate time step
 nsteps = calculate_timestep(T, H0, Hsym_ops, Hanti_ops, [maxctrl])
-println("# time steps: ", nsteps)
-
-# number of B-splines per ctrl/freq/real-imag
-D1 = 10
-startFromScratch = true
-
-pcof0, minCoeff, maxCoeff = init_control_and_bounds(maxamp=maxamp, Nctrl=Nctrl, Nfreq=Nfreq, D1=D1, startFromScratch=startFromScratch, zeroCtrlBC=false, seed=2345)
+println("Duration T = ", T, " # time steps: ", nsteps)
 
 # Initial basis with guard levels
 U0 = initial_cond([N], [Nguard])
@@ -75,10 +65,23 @@ gate_cnot[4,3] = 1.0
 
 # Initial basis with guard levels
 U0 = initial_cond([N], [Nguard])
-
 utarget = U0 * gate_cnot # Add zero rows for the guard levels
 
-params = Juqbox.objparams([N], [Nguard], T, nsteps, Uinit=U0, Utarget=utarget, Cfreq=om, Rfreq=rot_freq, Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops)
+# create a linear solver object
+linear_solver = Juqbox.lsolver_object(solver=Juqbox.JACOBI_SOLVER,max_iter=100,tol=1e-12,nrhs=N)
+
+params = Juqbox.objparams([N], [Nguard], T, nsteps, Uinit=U0, Utarget=utarget, Cfreq=om, Rfreq=rot_freq, Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, linear_solver=linear_solver)
+
+# number of B-splines per ctrl/freq/real-imag
+D1 = 10
+nCoeff = 2*D1*Nctrl*Nfreq
+
+maxrand = 0.05*maxctrl/Nfreq  # amplitude of the random control vector
+pcof0 = init_control(params, maxrand=maxrand, nCoeff=nCoeff, seed=2345)
+
+# same ctrl threshold for all frequencies
+maxamp = maxctrl/Nfreq .* ones(Nfreq)
+minCoeff, maxCoeff = control_bounds(params, maxamp=maxamp, nCoeff=length(pcof0), zeroCtrlBC=false)
 
 # Ipopt  parameters
 maxIter = 80 # 0  # optional argument
@@ -88,8 +91,12 @@ println("*** Settings ***")
 println("Number of coefficients per spline = ", D1, " Total number of control parameters = ", length(pcof0))
 println("Tikhonov coefficients: tik0 = ", params.tik0)
 
-#wa = Juqbox.Working_Arrays(params, length(pcof0)) # stick this into setup_ipopt_problem
-oc_prob = Juqbox.ipopt_setup(params, length(pcof0), minCoeff, maxCoeff, maxIter=maxIter, lbfgsMax=lbfgsMax, startFromScratch=startFromScratch)
+# Stefanie's feedback:
+# Move ipopt_setup() into run_optimizer to expose the dependencies on params, pcof0.
+# Instead of specifying minCoeff and maxCoeff, just specify maxamp and optionally zeroCtrlBC
+# It would look like this:
+# pcof = run_optimizer(params, pcof0, maxamp, zeroCtrlBC=true)
+oc_prob = Juqbox.ipopt_setup(params, length(pcof0), minCoeff, maxCoeff, maxIter=maxIter, lbfgsMax=lbfgsMax, startFromScratch=true)
 
 println()
 println("Ipopt setup and params object stored in 'oc_prob'")

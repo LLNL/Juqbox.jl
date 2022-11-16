@@ -39,37 +39,11 @@ function hamiltonians_one_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, freq0
     return H0, Hsym_ops, Hanti_ops, rot_freq
 end
 
-# # Set the number of splines for control parameterization and carrier waves
-# Nfreq = 3 # number of carrier frequencies
-# Nctrl = length(Hsym_ops) # Here, Nctrl = 1
 
-# # Set the carrier wave frequencies
-# # om = zeros(Nctrl, Nfreq)
-# # om[1:Nctrl,1] .= 2.0*pi * (fa - rot_freq[1])
-# # om[1:Nctrl,2] .= 2.0*pi * (fa + xa - rot_freq[1]) # Note: xa is negative
-# # om[1:Nctrl,3] .= 2.0*pi * (fa + 2*xa - rot_freq[1])
-
-# thres = 0.1 
-# om = get_resonances([Ne], [Nguard], H0, Hsym_ops, thres)
-
-# println("Carrier frequencies (rot frame) [GHz]: ", om[1,:]./(2*pi))
-# println("Carrier frequencies (lab frame) [GHz]: ", om[1,:]./(2*pi) .+ rot_freq[1])
-
-# # print basic setup
-# println("*** Settings ***")
-# println("System Hamiltonian coefficients [GHz]: (fa, xa) =  ", [fa, xa])
-# println("Total number of states, Ntot = ", Ntot, 
-#         " Total number of guard states, Nguard = ", Nguard)
-# println("Using B-spline basis functions with carrier wave, # freq = ", Nfreq)
-# for q=1:Nfreq
-#         println("Carrier frequency: ", om[q]/(2*pi), " GHz")
-# end
-
-
-
-function setup_two_sys(Ne::Vector{Int64}, Ng::Vector{Int64}, f::Vector{Float64}, xi::Vector{Float64}, couple_coeff::Float64, couple_type::Int64)
+function hamiltonians_two_sys(;Ne::Vector{Int64}, Ng::Vector{Int64}, freq01::Vector{Float64}, anharm::Vector{Float64}, rfreq::Float64,couple_coeff::Float64, couple_type::Int64, verbose::Bool = true)
     @assert(length(Ne) == 2)
     @assert(length(Ng) == 2)
+    @assert(couple_type == 1 || couple_type == 2)
 
     Nt = Ne + Ng
     N = prod(Ne); # Total number of nonpenalized energy levels
@@ -79,21 +53,15 @@ function setup_two_sys(Ne::Vector{Int64}, Ng::Vector{Int64}, f::Vector{Float64},
     Nt1 = Ne[1] + Ng[1]
     Nt2 = Ne[2] + Ng[2]
 
-
     # frequencies (in GHz, will be multiplied by 2*pi to get angular frequencies 
     # in the Hamiltonian matrix)
-    # fa = 4.914
-    # fb = 5.114 
-    # x1 = 0.33
-    # x2 = 0.33
-    fa = f[1]
-    fb = f[2]
-    x1 = xi[1]
-    x2 = xi[2]
-
+    fa = freq01[1]
+    fb = freq01[2]
+    x1 = anharm[1]
+    x2 = anharm[2]
 
     # rotational frequencies
-    favg = 0.5*(fa + fb)
+    favg = rfreq
     rot_freq = [favg, favg] 
 
     # detuning
@@ -129,128 +97,150 @@ function setup_two_sys(Ne::Vector{Int64}, Ng::Vector{Int64}, f::Vector{Float64},
     # couple_type = 2 # 1: cross-Kerr, 2: Jaynes-Cummings
     # jc = 0.0038 # JC coupling coeff [GHz]
     if couple_type == 1
-        Hcouple = - couple_coeff*(N1*N2)
+        Hcouple = couple_coeff*(N1*N2)
     elseif couple_type == 2
         Hcouple = couple_coeff*(kron(a2', a1) + kron(a2, a1'))
     end
     jc = couple_coeff
 
     # System Hamiltonian
-    H0 = 2*pi*(  da*N1 - x1/2*(N1*N1-N1) + db*N2 - x2/2*(N2*N2-N2) +Hcouple )
+    H0 = 2*pi*(  da*N1 + 0.5*x1*(N1*N1-N1) + db*N2 + 0.5*x2*(N2*N2-N2) + Hcouple )
     H0 = Array(H0)
-
-    nrows = size(H0,1)
-    ncols = size(H0,2)
-
-    # Calculate diagonalizing transformation of the system Hamiltonian
-    H0_evals, Utrans = eigen_and_reorder(H0)
-    
-    use_diagonal_H0 = true # false
-    if use_diagonal_H0 # transformation to diagonalize H0
-
-        H0 = Utrans'*H0*Utrans # use the transformed (diagonal) system Hamiltonian
-
-        # transform the control Hamiltonians
-        amat = Utrans'*(amat)*Utrans
-        adag = Utrans'*(adag)*Utrans
-        bmat = Utrans'*(bmat)*Utrans
-        bdag = Utrans'*(bdag)*Utrans
-
-        println("\n U'*(a+adag)*U:")
-        for i in 1:nrows
-            for j in 1:ncols
-                @printf("%+5.3f ", amat[i,j]+adag[i,j])
-            end
-            @printf("\n")
-        end
-
-        println("\n U'*(b+bdag)*U:")
-        for i in 1:nrows
-            for j in 1:ncols
-                @printf("%+5.3f ", bmat[i,j]+bdag[i,j])
-            end
-            @printf("\n")
-        end
-
-    end # end diagonalizing the Hamiltonian
 
     # set up control hamiltonians
     Hsym_ops =[ amat+adag, bmat+bdag ]
     Hanti_ops=[ amat-adag, bmat-bdag ]
 
-    # scale the eigenvalues of H0
-    #ka_delta = H0_eigen.values[perm[:]]./(2*pi) # re-ordered eigenvalues to match order of the eigenvectors
-    ka_delta = H0_evals./(2*pi) # re-ordered eigenvalues to match order of the eigenvectors
-    println("Hdelta-eigenvals/(2*pi):")
-    println(ka_delta)
-
-    # transition frequencies
-    da_dr = ka_delta[2] - ka_delta[1] # |01> to |00> and vice versa
-    db_dr = ka_delta[Nt[2]+1] - ka_delta[1] # |10> to |00> and vice versa
-
-    println("da_dr: ", da_dr, " [GHz] da - jc^2/f_rot: ", da - jc^2/rot_freq[1])
-    println("db_dr: ", db_dr, " [GHz] db + jc^2/f_rot: ", db + jc^2/rot_freq[2])
-
-    Nfreq = 3 # number of carrier frequencies
-    Nctrl = length(Hsym_ops) # Here, Nctrl = 2
-
-    om = zeros(Nctrl, Nfreq) # Allocate space for the carrier wave frequencies
-    # freq 1
-    om[1,1] = 2*pi*(da_dr)
-    om[2,1] = 2*pi*(db_dr)
-    # freq 2
-    if Nfreq >= 2
-        om[1,2] = 2*pi*(db_dr) 
-        om[2,2] = 2*pi*(da_dr)
+    if verbose
+        println("*** Two coupled quantum systems setup ***")
+        println("System Hamiltonian frequencies [GHz]: f01 = ", freq01, " rot. freq = ", rfreq)
+        println("Anharmonicity = ", anharm, " coupling coeff = ", couple_coeff, " coupling type = ", (couple_type==1) ? "X-Kerr" : "J-C" )
+        println("Number of essential states = ", Ne, " Number of guard states = ", Ng)
+        println("Hamiltonians are of size ", Ntot, " by ", Ntot)
     end
-    # freq 3 (dressed anharmonicity)
-    if Nfreq >= 3
-        om[1,3] = 2*pi*(ka_delta[3] - ka_delta[2]) # |02> to |01> and vice-versa 
-        om[2,3] = 2*pi*(ka_delta[2*Nt[2]+1] - ka_delta[Nt[2]+1]) # |20> to |10> and vice-versa
-    end
+    return H0, Hsym_ops, Hanti_ops, rot_freq
+end
 
-    println("Prev. carrier frequencies (lab frame) 1st ctrl Hamiltonian [GHz]: ", rot_freq[1] .+ om[1,:]./(2*pi))
-    println("Prev. carrier frequencies (lab frame) 2nd ctrl Hamiltonian [GHz]: ", rot_freq[2] .+ om[2,:]./(2*pi))
+# For 2 systems, where and when do we optionally transform the Hamiltonians such that the 
+# system Hamiltonian becomes diagonal???
+
+    # nrows = size(H0,1)
+    # ncols = size(H0,2)
+
+    # # Calculate diagonalizing transformation of the system Hamiltonian
+    # H0_evals, Utrans = eigen_and_reorder(H0)
+    
+    # use_diagonal_H0 = true # false
+    # if use_diagonal_H0 # transformation to diagonalize H0
+
+    #     H0 = Utrans'*H0*Utrans # use the transformed (diagonal) system Hamiltonian
+
+    #     # transform the control Hamiltonians
+    #     amat = Utrans'*(amat)*Utrans
+    #     adag = Utrans'*(adag)*Utrans
+    #     bmat = Utrans'*(bmat)*Utrans
+    #     bdag = Utrans'*(bdag)*Utrans
+
+    #     println("\n U'*(a+adag)*U:")
+    #     for i in 1:nrows
+    #         for j in 1:ncols
+    #             @printf("%+5.3f ", amat[i,j]+adag[i,j])
+    #         end
+    #         @printf("\n")
+    #     end
+
+    #     println("\n U'*(b+bdag)*U:")
+    #     for i in 1:nrows
+    #         for j in 1:ncols
+    #             @printf("%+5.3f ", bmat[i,j]+bdag[i,j])
+    #         end
+    #         @printf("\n")
+    #     end
+
+    # end # end diagonalizing the Hamiltonian
+
+    # # scale the eigenvalues of H0
+    # #ka_delta = H0_eigen.values[perm[:]]./(2*pi) # re-ordered eigenvalues to match order of the eigenvectors
+    # ka_delta = H0_evals./(2*pi) # re-ordered eigenvalues to match order of the eigenvectors
+    # println("Hdelta-eigenvals/(2*pi):")
+    # println(ka_delta)
+
+    # # transition frequencies
+    # da_dr = ka_delta[2] - ka_delta[1] # |01> to |00> and vice versa
+    # db_dr = ka_delta[Nt[2]+1] - ka_delta[1] # |10> to |00> and vice versa
+
+    # println("da_dr: ", da_dr, " [GHz] da - jc^2/f_rot: ", da - jc^2/rot_freq[1])
+    # println("db_dr: ", db_dr, " [GHz] db + jc^2/f_rot: ", db + jc^2/rot_freq[2])
+
+    # Nfreq = 3 # number of carrier frequencies
+    # Nctrl = length(Hsym_ops) # Here, Nctrl = 2
+
+    # om = zeros(Nctrl, Nfreq) # Allocate space for the carrier wave frequencies
+    # # freq 1
+    # om[1,1] = 2*pi*(da_dr)
+    # om[2,1] = 2*pi*(db_dr)
+    # # freq 2
+    # if Nfreq >= 2
+    #     om[1,2] = 2*pi*(db_dr) 
+    #     om[2,2] = 2*pi*(da_dr)
+    # end
+    # # freq 3 (dressed anharmonicity)
+    # if Nfreq >= 3
+    #     om[1,3] = 2*pi*(ka_delta[3] - ka_delta[2]) # |02> to |01> and vice-versa 
+    #     om[2,3] = 2*pi*(ka_delta[2*Nt[2]+1] - ka_delta[Nt[2]+1]) # |20> to |10> and vice-versa
+    # end
+
+    # println("Prev. carrier frequencies (lab frame) 1st ctrl Hamiltonian [GHz]: ", rot_freq[1] .+ om[1,:]./(2*pi))
+    # println("Prev. carrier frequencies (lab frame) 2nd ctrl Hamiltonian [GHz]: ", rot_freq[2] .+ om[2,:]./(2*pi))
 
 
     #thres = 0.9998 # cut such that two carrier frequencies are used
-    thres = 0.9  # cut such that four carrier frequencies are used
-    om = get_resonances(Ne, Ng, H0, Hsym_ops, thres)
+    # thres = 0.9  # cut such that four carrier frequencies are used
+    # om = get_resonances(Ne, Ng, H0, Hsym_ops, thres)
 
-    println("Carrier frequencies (lab frame) 1st ctrl Hamiltonian [GHz]: ", rot_freq[1] .+ om[1,:]./(2*pi))
-    println("Carrier frequencies (lab frame) 2nd ctrl Hamiltonian [GHz]: ", rot_freq[2] .+ om[2,:]./(2*pi))
+    # println("Carrier frequencies (lab frame) 1st ctrl Hamiltonian [GHz]: ", rot_freq[1] .+ om[1,:]./(2*pi))
+    # println("Carrier frequencies (lab frame) 2nd ctrl Hamiltonian [GHz]: ", rot_freq[2] .+ om[2,:]./(2*pi))
     
-    println("Carrier frequencies (rot frame) 1st ctrl Hamiltonian [GHz]: ", om[1,:]./(2*pi))
-    println("Carrier frequencies (rot frame) 2nd ctrl Hamiltonian [GHz]: ", om[2,:]./(2*pi))
-
-    return H0, Hsym_ops, Hanti_ops, om, rot_freq
-end
-
+    # println("Carrier frequencies (rot frame) 1st ctrl Hamiltonian [GHz]: ", om[1,:]./(2*pi))
+    # println("Carrier frequencies (rot frame) 2nd ctrl Hamiltonian [GHz]: ", om[2,:]./(2*pi))
 
 # initial parameter guess
-function init_control_and_bounds(;maxamp::Vector{Float64}, Nctrl::Int64, Nfreq::Int64, D1::Int64 = 10, startFromScratch::Bool = true, startFile::String = "pcof-file.jld2", zeroCtrlBC::Bool = true, seed::Int64 = -1)
-    if zeroCtrlBC
-        @assert(D1 >= 5) # D1 smaller than 5 does not work with zero start & end conditions
-    else
-        @assert(D1 >=3)
-    end
-    
+function init_control(params::objparams; maxrand::Float64, nCoeff::Int64, startFile::String = "", seed::Int64 = -1)
+    Nctrl = size(params.Cfreq,1)
+    Nfreq = size(params.Cfreq,2)
+
+    D1 = div(nCoeff, 2*Nctrl*Nfreq)
+
     if seed >= 0
         Random.seed!(seed)
     end
 
     nCoeff = 2*Nctrl*Nfreq*D1 # factor '2' is for sin/cos
 
-    maxpar = maximum(maxamp)
-    # initial parameter guess
-    if startFromScratch
-        pcof0 = maxpar*0.01 * rand(nCoeff)
-        println("*** Starting from random pcof with amplitude ", maxpar*0.01)
-    else
+    # initial parameter guess: from file or random guess?
+    if length(startFile) > 0
         # use if you want to read the initial coefficients from file
         pcof0 = vec(readdlm(startFile)) # change to jld2?
         println("*** Starting from B-spline coefficients in file: ", startFile)
         @assert(nCoeff == length(pcof0))
+    else
+        pcof0 = maxrand * 2 .* (rand(nCoeff) .- 0.5)
+        println("*** Starting from random pcof with amplitude ", maxrand)
+    end
+
+    return pcof0
+end
+
+function control_bounds(params::objparams; maxamp::Vector{Float64}, nCoeff::Int64, zeroCtrlBC::Bool = true)
+    Nctrl  = size(params.Cfreq,1)
+    Nfreq  = size(params.Cfreq,2)
+
+    D1 = div(nCoeff, 2*Nctrl*Nfreq)
+
+    if zeroCtrlBC
+        @assert(D1 >= 5) # D1 smaller than 5 does not work with zero start & end conditions
+    else
+        @assert(D1 >=3)
     end
 
     # min and max coefficient values
@@ -260,9 +250,9 @@ function init_control_and_bounds(;maxamp::Vector{Float64}, Nctrl::Int64, Nfreq::
         zero_start_end!(Nctrl, Nfreq, D1, minCoeff, maxCoeff) # maxCoeff stores the bounds for the controls amplitudes (zero at the boundary)
     end
 
-    println("Number of coefficients per spline = ", D1, " Total number of parameters = ", nCoeff)
+    println("control_bounds: Number of coefficients per spline = ", D1, " Total number of parameters = ", nCoeff)
 
-    return pcof0, minCoeff, maxCoeff
+    return minCoeff, maxCoeff
 end
 
 

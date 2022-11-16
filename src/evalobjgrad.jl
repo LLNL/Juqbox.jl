@@ -250,7 +250,7 @@ mutable struct objparams
                        linear_solver::lsolver_object = lsolver_object(nrhs=prod(Ne)),
                        dVds::Array{ComplexF64,2}= Array{ComplexF64}(undef,0,0))
         pFidType = 2
-        Nosc   = length(Ne)
+        Nosc   = length(Ne) # number of subsystems
         N      = prod(Ne)
         Ntot   = prod(Ne+Ng)
         Nguard = Ntot-N
