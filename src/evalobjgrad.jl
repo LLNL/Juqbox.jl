@@ -137,6 +137,9 @@ mutable struct objparams
     dVds_i      ::Array{Float64,2}
 
     sv_type:: Int64
+
+    interactionPic:: Bool
+    diagHconst::Vector{Float64}
     
 # Regular arrays
     function objparams(Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64;
@@ -308,6 +311,9 @@ mutable struct objparams
             my_sv_type = 2
         end
 
+        # Store diagonal Hconst for interaction picture
+        diagHconst = diag(Hconst)
+
         # sv_type is used for continuation. Only change this if you know what you are doing
         new(
              Nosc, N, Nguard, Ne, Ng, Ne+Ng, T, nsteps, Uinit, real(Utarget), imag(Utarget), 
@@ -319,7 +325,7 @@ mutable struct objparams
              zeros(0), zeros(0), zeros(0), zeros(0), 
              linear_solver, objThreshold, traceInfidelityThreshold, 0.0, 0.0, 
              usingPriorCoeffs, priorCoeffs, quiet, Rfreq, false, [],
-             real(my_dVds), imag(my_dVds), my_sv_type
+             real(my_dVds), imag(my_dVds), my_sv_type, false, diagHconst
             )
 
     end
@@ -624,6 +630,10 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, wa::Working_A
     step  :: Int64 = 0
     objfv ::Float64 = 0.0
 
+    # Sanity check for interaction picture: Only works on diagonal Hsys
+    if params.interactionPic 
+        @assert(norm(params.Hconst - Diagonal(params.diagHconst)) < 1e-14)
+    end
 
     # Forward time stepping loop
     for step in 1:nsteps
@@ -636,9 +646,9 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, wa::Working_A
             
             # Update K and S matrices
             # general case
-            KS!(K0, S0, t, params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq) 
-            KS!(K05, S05, t + 0.5*dt*gamma[q], params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq) 
-            KS!(K1, S1, t + dt*gamma[q], params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq) 
+            KS!(K0, S0, t, params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq, params.diagHconst, params.interactionPic) 
+            KS!(K05, S05, t + 0.5*dt*gamma[q], params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq, params.diagHconst, params.interactionPic) 
+            KS!(K1, S1, t + dt*gamma[q], params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq, params.diagHconst, params.interactionPic) 
             
             # Take a step forward and accumulate weight matrix integral. Note the √2 multiplier is to account
             # for the midpoint rule in the numerical integration of the imaginary part of the signal.
@@ -797,9 +807,9 @@ if evaladjoint
             # Since t is negative we have that K0 is K^{n+1}, K05 = K^{n-1/2}, 
             # K1 = K^{n} and similarly for S.
             # general case
-            KS!(K0, S0, t, params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq) 
-            KS!(K05, S05, t + 0.5*dt*gamma[q], params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq) 
-            KS!(K1, S1, t + dt*gamma[q], params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq) 
+            KS!(K0, S0, t, params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq, params.diagHconst, params.interactionPic) 
+            KS!(K05, S05, t + 0.5*dt*gamma[q], params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq, params.diagHconst, params.interactionPic) 
+            KS!(K1, S1, t + dt*gamma[q], params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq, params.diagHconst, params.interactionPic ) 
 
 
             # Integrate state variables backwards in time one step
@@ -1683,26 +1693,47 @@ end
 
 
 function KS!(K::Array{Float64,N}, S::Array{Float64,N}, t::Float64, Hsym_ops::Array{MyRealMatrix,1}, Hanti_ops::Array{MyRealMatrix, 1},
-             Hunc_ops::Array{MyRealMatrix, 1}, Nunc::Int64, isSymm::BitArray{1}, splinepar::BsplineParams, H0::Array{Float64,N}, Rfreq::Array{Float64,1}) where N
+             Hunc_ops::Array{MyRealMatrix, 1}, Nunc::Int64, isSymm::BitArray{1}, splinepar::BsplineParams, H0::Array{Float64,N}, Rfreq::Array{Float64,1}, diagHconst::Vector{Float64}, interactionPic=false) where N
 
     # Isn't the H0 matrix always 2-dimensional? Why do we need to declare it as N-dimensional? 
 
     Ncoupled = splinepar.Ncoupled
 
-    copy!(K,H0)
+    # copy!(K,H0)    # K = H0
+    K .= 0.0
     S .= 0.0
     for q=1:Ncoupled # Assumes that Hanti_ops has the same length as Hsym_ops
         qs = (q-1)*2
         qa = qs+1
         pt = controlfunc(t,splinepar, qs)
         qt = controlfunc(t,splinepar, qa)
-        axpy!(pt,Hsym_ops[q],K)
-        axpy!(qt,Hanti_ops[q],S)
+        axpy!(pt,Hsym_ops[q],K)      # K = p*Hsym
+        axpy!(qt,Hanti_ops[q],S)     # S = q*Hantisym
+    end
+    # If interaction picture: Scale elements of Hcontrol 
+    if interactionPic
+        for i in 1:size(H0)[1] 
+            for j in 1:size(H0)[1]
+                cosij = cos(t*(diagHconst[i] - diagHconst[j]))
+                sinij = sin(t*(diagHconst[i] - diagHconst[j]))
+                
+                knew = K[i,j]*cosij - S[i,j]*sinij
+                snew = K[i,j]*sinij + S[i,j]*cosij
+
+                K[i,j] = knew
+                S[i,j] = snew
+            end
+        end
+    else
+        # Add system Hamiltonian
+        axpy!(1.0, H0, K)    # K = H0 + p*Hsym
     end
 
 #    offset = 2*Ncoupled-1
     offset = 2*Ncoupled
     for q=1:splinepar.Nunc  # Will not work for splineparams object
+        # WIll not work for interaction picture
+        @assert(!interactionPic)
         qs = offset + (q-1)*2
         qa = qs+1
         pt = controlfunc(t,splinepar, qs)
@@ -1721,7 +1752,12 @@ end
 
 # Sparse version
 @inline function KS!(K::SparseMatrixCSC{Float64,Int64}, S::SparseMatrixCSC{Float64,Int64}, t::Float64, Hsym_ops::Array{MyRealMatrix,1}, Hanti_ops::Array{MyRealMatrix, 1},
-             Hunc_ops::Array{MyRealMatrix, 1}, Nunc::Int64, isSymm::BitArray{1}, splinepar::BsplineParams, H0::SparseMatrixCSC{Float64,Int64}, Rfreq::Array{Float64,1})
+             Hunc_ops::Array{MyRealMatrix, 1}, Nunc::Int64, isSymm::BitArray{1}, splinepar::BsplineParams, H0::SparseMatrixCSC{Float64,Int64}, Rfreq::Array{Float64,1}, diagHconst::Vector{Float64}, interactionPic::Bool)
+
+    if interactionPic
+        println("Can't run interaction picture in sparse mode.")
+        @assert(false)
+    end
     
     Ncoupled = splinepar.Ncoupled
     K.nzval .= 0.0
@@ -2085,7 +2121,13 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
     t       ::Float64 = 0.0
     step    :: Int64 = 0
 
-    KS!(K0, S0, t, params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq) 
+
+    # Sanity check for interaction picture: Only works on diagonal Hsys
+    if params.interactionPic 
+        @assert(norm(params.Hconst - Diagonal(diagHconst)) < 1e-14)
+    end
+
+    KS!(K0, S0, t, params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq, params.diagHconst, params.interactionPic) 
     # Forward time stepping loop
     for step in 1:nsteps
 
@@ -2093,9 +2135,9 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
         for q in 1:used_stages
             
             # Update K and S matrices
-            KS!(K0, S0, t, params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq)
-            KS!(K05, S05, t + 0.5*dt*gamma[q], params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq)
-            KS!(K1, S1, t + dt*gamma[q], params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq)
+            KS!(K0, S0, t, params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq, params.diagHconst, params.interactionPic)
+            KS!(K05, S05, t + 0.5*dt*gamma[q], params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq, params.diagHconst, params.interactionPic)
+            KS!(K1, S1, t + dt*gamma[q], params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq, params.diagHconst, params.interactionPic)
 
             # Take a step forward and accumulate weight matrix integral. Note the √2 multiplier is to account
             # for the midpoint rule in the numerical integration of the imaginary part of the signal.
