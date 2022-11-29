@@ -831,7 +831,7 @@ if evaladjoint
 
             # Accumulate gradient
             adjoint_grad_calc!(params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, vr0, vi05, vr, 
-                                lambdar0, lambdar05, lambdai, lambdai0, t0, dt,splinepar, gr, gi, tr_adj) 
+                                lambdar0, lambdar05, lambdai, lambdai0, t0, dt,splinepar, gr, gi, tr_adj, params.diagHconst, params.interactionPic) 
             axpy!(gamma[q]*dt,tr_adj,gradobjfadj)
             
             # save for next stage
@@ -846,7 +846,7 @@ if evaladjoint
 
                 # Accumulate gradient
                 adjoint_grad_calc!(params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, vr0, vi05, vr, 
-                                    lambdar0_nfrc, lambdar05_nfrc, lambdai_nfrc, lambdai0_nfrc, t0, dt,splinepar, gr, gi, tr_adj) 
+                                    lambdar0_nfrc, lambdar05_nfrc, lambdai_nfrc, lambdai0_nfrc, t0, dt,splinepar, gr, gi, tr_adj, params.diagHconst, params.interactionPic) 
                 axpy!(gamma[q]*dt,tr_adj,infidelgrad)
                 
                 # save for next stage
@@ -1953,59 +1953,138 @@ end
                                    Hunc_ops::Array{MyRealMatrix, 1}, Nunc::Int64, isSymm::BitArray{1}, vr0::Array{Float64,N},
                                    vi05::Array{Float64,N}, vr::Array{Float64,N}, lambdar0::Array{Float64,N}, lambdar05::Array{Float64,N},
                                    lambdai::Array{Float64,N}, lambdai0::Array{Float64,N}, t0::Float64, dt::Float64, 
-                                   splinepar::BsplineParams,gr::Array{Float64,1}, gi::Array{Float64,1}, grad_step::Array{Float64,1}) where N
+                                   splinepar::BsplineParams,gr::Array{Float64,1}, gi::Array{Float64,1}, grad_step::Array{Float64,1}, diagHconst::Vector{Float64}, interactionPic=false) where N
 
     # # NEW ordering: p-func are even, q-func are odd. p1(t) goes with Hsym_ops[1], q1(t) with Hanti_ops[1], etc
     Ncoupled = length(Hsym_ops)
     Npar = splinepar.Ncoeff # get the number of parameters = size of the gradient, from the spline object
-    grad_step .= 0.0
+    grad_step .= 0.0 
 
-    for q=1:Ncoupled
-        qs = (q-1)*2
-        qa = qs+1
-        controlfuncgrad!(t0, splinepar, qs, gr)
-        controlfuncgrad!(t0, splinepar, qa, gi)
+    if !interactionPic 
+        for q=1:Ncoupled
+            qs = (q-1)*2
+            qa = qs+1
 
-        # grad_step .= grad_step .- adjoint_trace_operator!(vr0,Hanti_ops[q],lambdar05)*gi
-        trace_tmp = adjoint_trace_operator!(vr0,Hanti_ops[q],lambdar05)
-        axpy!(-trace_tmp, gi, grad_step)
-        trace_tmp = adjoint_trace_operator!(vi05,Hsym_ops[q],lambdar05)
-        # grad_step .= grad_step .- trace_tmp*gr
-        axpy!(-trace_tmp, gr, grad_step)
+            #####  t0
 
+            controlfuncgrad!(t0, splinepar, qs, gr)   #gr = dp(t)/dpcof_q
+            controlfuncgrad!(t0, splinepar, qa, gi)   #gi = dq(t)/dpcof_q
 
-        controlfuncgrad!(t0+dt, splinepar, qs, gr)
-        controlfuncgrad!(t0+dt, splinepar, qa, gi)
-        # grad_step .= grad_step .- adjoint_trace_operator!(vr,Hanti_ops[q],lambdar05)*gi # fuse with first call to adadjoint_trace_operator?
-        # grad_step .= grad_step .- trace_tmp*gr
-        axpy!(-trace_tmp, gr, grad_step)
-        trace_tmp = adjoint_trace_operator!(vr,Hanti_ops[q],lambdar05)
-        # grad_step .= grad_step .- adjoint_trace_operator!(vr,Hanti_ops[q],lambdar05)*gi # fuse with first call to adadjoint_trace_operator?
-        axpy!(-trace_tmp, gi, grad_step)
+            trace_tmp = adjoint_trace_operator!(vr0,Hanti_ops[q],lambdar05)
+            axpy!(-trace_tmp, gi, grad_step)
+            trace_tmp = adjoint_trace_operator!(vi05,Hsym_ops[q],lambdar05)
+            axpy!(-trace_tmp, gr, grad_step)
 
 
-        controlfuncgrad!(t0+0.5*dt, splinepar, qs, gr)
-        controlfuncgrad!(t0+0.5*dt, splinepar, qa, gi)
-        # grad_step .= grad_step .+ adjoint_trace_operator!(vr,Hsym_ops[q],lambdai)*gr
-        trace_tmp = adjoint_trace_operator!(vr,Hsym_ops[q],lambdai)
-        axpy!(trace_tmp, gr, grad_step)
+            #####  t0+dt
 
-        # grad_step .= grad_step .+ adjoint_trace_operator!(vr0,Hsym_ops[q],lambdai0)*gr
-        trace_tmp = adjoint_trace_operator!(vr0,Hsym_ops[q],lambdai0)
-        axpy!(trace_tmp, gr, grad_step)
+            controlfuncgrad!(t0+dt, splinepar, qs, gr)
+            controlfuncgrad!(t0+dt, splinepar, qa, gi)
+            # trace_tmp = adjoint_trace_operator!(vi05,Hsym_ops[q],lambdar05) # from above
+            axpy!(-trace_tmp, gr, grad_step)
+            trace_tmp = adjoint_trace_operator!(vr,Hanti_ops[q],lambdar05)
+            axpy!(-trace_tmp, gi, grad_step)
 
-        # grad_step .= grad_step .- adjoint_trace_operator!(vi05,Hanti_ops[q],lambdai)*gi
-        trace_tmp = adjoint_trace_operator!(vi05,Hanti_ops[q],lambdai)
-        axpy!(-trace_tmp, gi, grad_step)
+            #####  t0+1/2dt
 
-        # grad_step .= grad_step .- adjoint_trace_operator!(vi05,Hanti_ops[q],lambdai0)*gi
-        trace_tmp = adjoint_trace_operator!(vi05,Hanti_ops[q],lambdai0)
-        axpy!(-trace_tmp, gi, grad_step)
+            controlfuncgrad!(t0+0.5*dt, splinepar, qs, gr)
+            controlfuncgrad!(t0+0.5*dt, splinepar, qa, gi)
+
+            trace_tmp = adjoint_trace_operator!(vr,Hsym_ops[q],lambdai)
+            axpy!(trace_tmp, gr, grad_step)
+            trace_tmp = adjoint_trace_operator!(vr0,Hsym_ops[q],lambdai0)
+            axpy!(trace_tmp, gr, grad_step)
+            trace_tmp = adjoint_trace_operator!(vi05,Hanti_ops[q],lambdai)
+            axpy!(-trace_tmp, gi, grad_step)
+            trace_tmp = adjoint_trace_operator!(vi05,Hanti_ops[q],lambdai0)
+            axpy!(-trace_tmp, gi, grad_step)
+        end
+    else # interaction picture
+        for q=1:Ncoupled
+            qs = (q-1)*2
+            qa = qs+1
+
+            #####  t0
+
+            Ds = Diagonal(sin.(t0.*diagHconst))
+            Dc = Diagonal(cos.(t0.*diagHconst))
+            
+            dSdp = Ds*Hsym_ops[q]*Dc - Dc*Hsym_ops[q]*Ds
+            dSdq = Dc*Hanti_ops[q]*Dc + Ds*Hanti_ops[q]*Ds
+            dKdp = Ds*Hsym_ops[q]*Ds + Dc*Hsym_ops[q]*Dc
+            dKdq = Dc*Hanti_ops[q]*Ds - Ds*Hanti_ops[q]*Dc
+
+            controlfuncgrad!(t0, splinepar, qs, gr)   #gr = dp(t)/dpcof_q
+            controlfuncgrad!(t0, splinepar, qa, gi)   #gi = dq(t)/dpcof_q
+
+            trace_tmp = adjoint_trace_operator!(vr0,dSdp,lambdar05)
+            axpy!(-trace_tmp, gr, grad_step)
+            trace_tmp = adjoint_trace_operator!(vr0,dSdq,lambdar05)
+            axpy!(-trace_tmp, gi, grad_step)
+            trace_tmp = adjoint_trace_operator!(vi05,dKdp,lambdar05)
+            axpy!(-trace_tmp, gr, grad_step)
+            trace_tmp = adjoint_trace_operator!(vi05,dKdq,lambdar05)
+            axpy!(-trace_tmp, gi, grad_step)
+
+            #####  t0+dt
+            Ds = Diagonal(sin.((t0+dt).*diagHconst))
+            Dc = Diagonal(cos.((t0+dt).*diagHconst))
+            
+            dSdp = Ds*Hsym_ops[q]*Dc - Dc*Hsym_ops[q]*Ds
+            dSdq = Dc*Hanti_ops[q]*Dc + Ds*Hanti_ops[q]*Ds
+            dKdp = Ds*Hsym_ops[q]*Ds + Dc*Hsym_ops[q]*Dc
+            dKdq = Dc*Hanti_ops[q]*Ds - Ds*Hanti_ops[q]*Dc
+
+            controlfuncgrad!(t0+dt, splinepar, qs, gr)
+            controlfuncgrad!(t0+dt, splinepar, qa, gi)
+
+            trace_tmp = adjoint_trace_operator!(vi05,dKdp,lambdar05)
+            axpy!(-trace_tmp, gr, grad_step)
+            trace_tmp = adjoint_trace_operator!(vi05,dKdq,lambdar05)
+            axpy!(-trace_tmp, gi, grad_step)
+            trace_tmp = adjoint_trace_operator!(vr,dSdp,lambdar05)
+            axpy!(-trace_tmp, gr, grad_step)
+            trace_tmp = adjoint_trace_operator!(vr,dSdq,lambdar05)
+            axpy!(-trace_tmp, gi, grad_step)
+
+            #####  t0+1/2dt
+            Ds = Diagonal(sin.((t0+0.5*dt).*diagHconst))
+            Dc = Diagonal(cos.((t0+0.5*dt).*diagHconst))
+            
+            dSdp = Ds*Hsym_ops[q]*Dc - Dc*Hsym_ops[q]*Ds
+            dSdq = Dc*Hanti_ops[q]*Dc + Ds*Hanti_ops[q]*Ds
+            dKdp = Ds*Hsym_ops[q]*Ds + Dc*Hsym_ops[q]*Dc
+            dKdq = Dc*Hanti_ops[q]*Ds - Ds*Hanti_ops[q]*Dc
+
+            controlfuncgrad!(t0+0.5*dt, splinepar, qs, gr)
+            controlfuncgrad!(t0+0.5*dt, splinepar, qa, gi)
+
+            trace_tmp = adjoint_trace_operator!(vr,dKdp,lambdai)
+            axpy!(trace_tmp, gr, grad_step)
+            trace_tmp = adjoint_trace_operator!(vr,dKdq,lambdai)
+            axpy!(trace_tmp, gi, grad_step)
+
+            trace_tmp = adjoint_trace_operator!(vr0,dKdp,lambdai0)
+            axpy!(trace_tmp, gr, grad_step)
+            trace_tmp = adjoint_trace_operator!(vr0,dKdq,lambdai0)
+            axpy!(trace_tmp, gi, grad_step)
+
+            trace_tmp = adjoint_trace_operator!(vi05,dSdp,lambdai)
+            axpy!(-trace_tmp, gr, grad_step)
+            trace_tmp = adjoint_trace_operator!(vi05,dSdq,lambdai)
+            axpy!(-trace_tmp, gi, grad_step)
+
+            trace_tmp = adjoint_trace_operator!(vi05,dSdp,lambdai0)
+            axpy!(-trace_tmp, gr, grad_step)
+            trace_tmp = adjoint_trace_operator!(vi05,dSdq,lambdai0)
+            axpy!(-trace_tmp, gi, grad_step)
+        end
     end
 
     # Collect contribution from uncoupled control functions
     offset = 2*Ncoupled-1
     for q=1:Nunc
+        @assert(!interactionPic)    # not implemented.
         qu = offset+q
         if(isSymm[q])
             controlfuncgrad!(t0, splinepar, qu, gr)
