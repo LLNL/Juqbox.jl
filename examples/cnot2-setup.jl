@@ -35,11 +35,6 @@ Base.show(io::IO, f::Float64) = @printf(io, "%20.13e", f)
 
 using Juqbox # quantum control module
 
-eval_lab = false # true
-println("Setup for ", eval_lab ? "lab frame evaluation" : "rotating frame optimization")
-
-Nctrl = 2 # Number of control Hamiltonians
-
 Ne1 = 2 # essential energy levels per oscillator 
 Ne2 = 2
 Ng1 = 2 # 0 # Osc-1, number of guard states
@@ -47,25 +42,32 @@ Ng2 = 2 # 0 # Osc-2, number of guard states
 
 Ne = [Ne1, Ne2]
 Ng = [Ng1, Ng2]
+Nt = Ne + Ng
 
-N = Ne1*Ne2; # Total number of nonpenalized energy levels
-Ntot = (Ne1+Ng1)*(Ne2+Ng2)
+N = prod(Ne) # Total number of nonpenalized energy levels
+Ntot = prod(Nt) # Total number of all energy levels
 Nguard = Ntot - N # total number of guard states
-
-Nt1 = Ne1 + Ng1
-Nt2 = Ne2 + Ng2
-
-Tmax = 50.0 # Duration of gate
 
 # frequencies (in GHz, will be multiplied by 2*pi to get angular frequencies in the Hamiltonian matrix)
 fa = 4.10595    # official
 fb = 4.81526   # official
 favg = 0.5*(fa+fb)
-rot_freq = [fa, fb] # rotational frequencies
+
 #rot_freq = [favg, favg] # rotational frequencies
-x1 = 2* 0.1099  # official
-x2 = 2* 0.1126   # official
-x12 = 0.1 # Artificially large to allow fast coupling. Actual value: 1e-6 
+x1 = -2* 0.1099  # official
+x2 = -2* 0.1126   # official
+x12 = -0.1 # Artificially large to allow fast coupling. Actual value: 1e-6 
+couple_type = 1 # cross-Kerr
+# form the Hamiltonian matrices
+H0, Hsym_ops, Hanti_ops, rot_freq = hamiltonians_two_sys(Ne=Ne, Ng=Ng, freq01=[fa, fb], anharm=[x1, x2], rfreq=favg, couple_coeff=x12, couple_type=couple_type)
+
+println("Intentional exit")
+@assert(false)
+
+# CONSIDER TRANSFORMATION OF THE HAMILTONIANS WHILE
+# COMPUTING THE CARRIER FREQUENCIES
+
+Tmax = 50.0 # Duration of gate
   
 # construct the lowering and raising matricies: amat, bmat
 
