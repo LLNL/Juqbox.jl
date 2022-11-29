@@ -1707,23 +1707,41 @@ function KS!(K::Array{Float64,N}, S::Array{Float64,N}, t::Float64, Hsym_ops::Arr
         qa = qs+1
         pt = controlfunc(t,splinepar, qs)
         qt = controlfunc(t,splinepar, qa)
-        axpy!(pt,Hsym_ops[q],K)      # K = p*Hsym
-        axpy!(qt,Hanti_ops[q],S)     # S = q*Hantisym
+        axpy!(pt,Hsym_ops[q],K)      # K := K + pt*Hsym
+        axpy!(qt,Hanti_ops[q],S)     # S := S + qt*Hantisym
     end
     # If interaction picture: Scale elements of Hcontrol 
     if interactionPic
-        for i in 1:size(H0)[1] 
-            for j in 1:size(H0)[1]
-                cosij = cos(t*(diagHconst[i] - diagHconst[j]))
-                sinij = sin(t*(diagHconst[i] - diagHconst[j]))
+        # Ka = zeros(size(H0))
+        # Sa = zeros(size(H0))
+        # for i in 1:size(H0,1) 
+        #     for j in 1:size(H0,2)
+        #         cosij = cos(t*(diagHconst[i] - diagHconst[j]))
+        #         sinij = sin(t*(diagHconst[i] - diagHconst[j]))
                 
-                knew = K[i,j]*cosij - S[i,j]*sinij
-                snew = K[i,j]*sinij + S[i,j]*cosij
+        #         knew = K[i,j]*cosij - S[i,j]*sinij
+        #         snew = K[i,j]*sinij + S[i,j]*cosij
 
-                K[i,j] = knew
-                S[i,j] = snew
-            end
-        end
+        #         Ka[i,j] = knew
+        #         Sa[i,j] = snew
+        #     end
+        # end
+        # K .= Ka
+        # S .= Sa
+
+        Ds = Diagonal(sin.(t.*diagHconst))
+        Dc = Diagonal(cos.(t.*diagHconst))
+        tmp1 = K*Ds - S*Dc
+        tmp2 = K*Dc + S*Ds
+        K .= Ds*tmp1 + Dc*tmp2 # the .= forces an element-wise copy
+        S .= Ds*tmp2 - Dc*tmp1 
+        
+        # # compare
+        # println("Ka:", Ka)
+        # println(" K:", K)
+        # println("Sa:", Sa)
+        # println(" S:", S)
+        # println("t = ", t, " norm(K-Ka): ", norm(K-Ka), " norm(S-Sa): ", norm(S-Sa))
     else
         # Add system Hamiltonian
         axpy!(1.0, H0, K)    # K = H0 + p*Hsym
