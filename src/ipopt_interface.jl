@@ -221,8 +221,8 @@ function intermediate_par(
     params:: Juqbox.objparams)
 
     # Adaptive tikhonov scaling
+    mytik = obj_value - params.lastTraceInfidelity - params.lastLeakIntegral
     if params.adapt_tik0
-       mytik = obj_value - params.lastTraceInfidelity - params.lastLeakIntegral
        if params.lastTraceInfidelity < 0.1*mytik
          params.tik0 *= 0.5
        end
