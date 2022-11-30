@@ -67,6 +67,7 @@ mutable struct objparams
     Cfreq        ::Array{Float64,2} # Carrier wave frequencies of dim Cfreq[seg,freq]
     kpar         ::Int64   # element of gradient to test
     tik0         ::Float64
+    adapt_tik0   ::Bool
 #    tik1         ::Float64
 
     # Drift Hamiltonian
@@ -193,6 +194,7 @@ mutable struct objparams
         
         # Set default Tikhonov parameter
         tik0 = 0.01
+        adapt_tik0 = false
 
         # By default, test the first parameter for gradient correctness
         kpar = 1
@@ -317,7 +319,7 @@ mutable struct objparams
         # sv_type is used for continuation. Only change this if you know what you are doing
         new(
              Nosc, N, Nguard, Ne, Ng, Ne+Ng, T, nsteps, Uinit, real(Utarget), imag(Utarget), 
-             use_bcarrier, Nfreq, Cfreq, kpar, tik0, Hconst, Hsym_ops1, 
+             use_bcarrier, Nfreq, Cfreq, kpar, tik0, adapt_tik0, Hconst, Hsym_ops1, 
              Hanti_ops1, Hunc_ops1, Ncoupled, Nunc, isSymm, Ident, wmat, 
              forb_states,forb_weights,wmat_real,wmat_imag, pFidType, 0.0,
              objFuncType,leak_lbound,leak_ubound,

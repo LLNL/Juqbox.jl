@@ -219,7 +219,17 @@ function intermediate_par(
     alpha_du::Float64, alpha_pr::Float64,
     ls_trials::Union{Int32,Int64},
     params:: Juqbox.objparams)
-  # ...
+
+    # Adaptive tikhonov scaling
+    if params.adapt_tik0
+       mytik = obj_value - params.lastTraceInfidelity - params.lastLeakIntegral
+       if params.lastTraceInfidelity < 0.1*mytik
+         params.tik0 *= 0.5
+       end
+       mytik = obj_value - params.lastTraceInfidelity - params.lastLeakIntegral
+    end
+    println("Infidelity = , ", params.lastTraceInfidelity, " gamma=", params.tik0, ", gamma||alpha|| = ", mytik)
+  
     if params.saveConvHist 
         push!(params.objHist, obj_value)
         push!(params.dualInfidelityHist, inf_du)
