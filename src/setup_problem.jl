@@ -40,18 +40,18 @@ function hamiltonians_one_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, freq0
 end
 
 
-function hamiltonians_two_sys(;Ne::Vector{Int64}, Ng::Vector{Int64}, freq01::Vector{Float64}, anharm::Vector{Float64}, rfreq::Float64,couple_coeff::Float64, couple_type::Int64, verbose::Bool = true)
-    @assert(length(Ne) == 2)
-    @assert(length(Ng) == 2)
+function hamiltonians_two_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, freq01::Vector{Float64}, anharm::Vector{Float64}, f_rot::Float64,couple_coeff::Float64, couple_type::Int64, msb_order::Bool = true, verbose::Bool = true)
+    @assert(length(Ness) == 2)
+    @assert(length(Nguard) == 2)
     @assert(couple_type == 1 || couple_type == 2)
 
-    Nt = Ne + Ng
-    N = prod(Ne); # Total number of nonpenalized energy levels
+    Nt = Ness + Nguard
+    N = prod(Ness); # Total number of nonpenalized energy levels
     Ntot = prod(Nt)
-    Nguard = Ntot - N # total number of guard states
+    #Nguard = Ntot - N # total number of guard states
 
-    Nt1 = Ne[1] + Ng[1]
-    Nt2 = Ne[2] + Ng[2]
+    Nt1 = Ness[1] + Nguard[1]
+    Nt2 = Ness[2] + Nguard[2]
 
     # frequencies (in GHz, will be multiplied by 2*pi to get angular frequencies 
     # in the Hamiltonian matrix)
@@ -61,48 +61,67 @@ function hamiltonians_two_sys(;Ne::Vector{Int64}, Ng::Vector{Int64}, freq01::Vec
     x2 = anharm[2]
 
     # rotational frequencies
-    favg = rfreq
+    favg = f_rot
     rot_freq = [favg, favg] 
 
     # detuning
     da = fa - favg
     db = fb - favg
 
-    # Note: The ket psi = ji> = e_j kron e_i.
-    # We order the elements in the vector psi such that i varies the fastest with i in [1,Nt1] and j in [1,Nt2]
-    # The matrix amat = (I kron a1) acts on alpha in psi = (beta kron alpha)
-    # The matrix bmat = (a2 kron I) acts on beta in psi = (beta kron alpha)
     a1 = Array(Bidiagonal(zeros(Nt1),sqrt.(collect(1:Nt1-1)),:U))
     a2 = Array(Bidiagonal(zeros(Nt2),sqrt.(collect(1:Nt2-1)),:U))
 
     I1 = Array{Float64, 2}(I, Nt1, Nt1)
     I2 = Array{Float64, 2}(I, Nt2, Nt2)
 
-    # create the a, a^\dag, b and b^\dag vectors
-    amat = Array(kron(I2, a1))
-    bmat = Array(kron(a2, I1))
-
-    adag = Array(transpose(amat))
-    bdag = Array(transpose(bmat))
-
     # number ops
     num1 = Diagonal(collect(0:Nt1-1))
     num2 = Diagonal(collect(0:Nt2-1))
 
-    # number operators
-    N1 = Diagonal(kron(I2, num1) )
-    N2 = Diagonal(kron(num2, I1) )
+    if msb_order
+        # MSB ordering: Let the elements in the state vector 
+        # psi = a_{ji} (e_j kron e_i), for j in [1,Nt2] and i in [1,Nt1]
+        # We order the elements in the vector psi such that i varies the fastest 
+        # The matrix (I kron a1) acts on alpha in psi = (beta kron alpha)
+        # The matrix (a2 kron I) acts on beta in psi = (beta kron alpha)
 
-    # Coupling Hamiltonian
-    # couple_type = 2 # 1: cross-Kerr, 2: Jaynes-Cummings
-    # jc = 0.0038 # JC coupling coeff [GHz]
-    if couple_type == 1
-        Hcouple = couple_coeff*(N1*N2)
-    elseif couple_type == 2
-        Hcouple = couple_coeff*(kron(a2', a1) + kron(a2, a1'))
+        # create the a, a^\dag, b and b^\dag vectors
+        amat = Array(kron(I2, a1))
+        bmat = Array(kron(a2, I1))
+
+        adag = Array(transpose(amat))
+        bdag = Array(transpose(bmat))
+
+
+        # number operators
+        N1 = Diagonal(kron(I2, num1) )
+        N2 = Diagonal(kron(num2, I1) )
+
+        # Coupling Hamiltonian: couple_type = 2 # 1: cross-Kerr, 2: Jaynes-Cummings
+        if couple_type == 1
+            Hcouple = couple_coeff*(N1*N2)
+        elseif couple_type == 2
+            Hcouple = couple_coeff*(kron(a2', a1) + kron(a2, a1'))
+        end
+    else
+        # LSB ordering: qubit 1 varies the slowest and qubit 2 varies the fastest in the state vector
+        amat = Array(kron(a1, I2))
+        bmat = Array(kron(I1, a2))
+
+        adag = Array(transpose(amat))
+        bdag = Array(transpose(bmat))
+
+        # number operators
+        N1 = Diagonal(kron(num1, I2) )
+        N2 = Diagonal(kron(I1, num2) )
+
+        # Coupling Hamiltonian: couple_type = 2 # 1: cross-Kerr, 2: Jaynes-Cummings
+        if couple_type == 1
+            Hcouple = couple_coeff*(N1*N2)
+        elseif couple_type == 2
+            Hcouple = couple_coeff*(kron(a1, a2') + kron(a1', a2))
+        end
     end
-    jc = couple_coeff
-
     # System Hamiltonian
     H0 = 2*pi*(  da*N1 + 0.5*x1*(N1*N1-N1) + db*N2 + 0.5*x2*(N2*N2-N2) + Hcouple )
     H0 = Array(H0)
@@ -113,96 +132,14 @@ function hamiltonians_two_sys(;Ne::Vector{Int64}, Ng::Vector{Int64}, freq01::Vec
 
     if verbose
         println("*** Two coupled quantum systems setup ***")
-        println("System Hamiltonian frequencies [GHz]: f01 = ", freq01, " rot. freq = ", rfreq)
+        println("System Hamiltonian frequencies [GHz]: f01 = ", freq01, " rot. freq = ", f_rot)
         println("Anharmonicity = ", anharm, " coupling coeff = ", couple_coeff, " coupling type = ", (couple_type==1) ? "X-Kerr" : "J-C" )
-        println("Number of essential states = ", Ne, " Number of guard states = ", Ng)
+        println("Number of essential states = ", Ness, " Number of guard states = ", Nguard)
         println("Hamiltonians are of size ", Ntot, " by ", Ntot)
     end
     return H0, Hsym_ops, Hanti_ops, rot_freq
 end
 
-# For 2 systems, where and when do we optionally transform the Hamiltonians such that the 
-# system Hamiltonian becomes diagonal???
-
-    # nrows = size(H0,1)
-    # ncols = size(H0,2)
-
-    # # Calculate diagonalizing transformation of the system Hamiltonian
-    # H0_evals, Utrans = eigen_and_reorder(H0)
-    
-    # use_diagonal_H0 = true # false
-    # if use_diagonal_H0 # transformation to diagonalize H0
-
-    #     H0 = Utrans'*H0*Utrans # use the transformed (diagonal) system Hamiltonian
-
-    #     # transform the control Hamiltonians
-    #     amat = Utrans'*(amat)*Utrans
-    #     adag = Utrans'*(adag)*Utrans
-    #     bmat = Utrans'*(bmat)*Utrans
-    #     bdag = Utrans'*(bdag)*Utrans
-
-    #     println("\n U'*(a+adag)*U:")
-    #     for i in 1:nrows
-    #         for j in 1:ncols
-    #             @printf("%+5.3f ", amat[i,j]+adag[i,j])
-    #         end
-    #         @printf("\n")
-    #     end
-
-    #     println("\n U'*(b+bdag)*U:")
-    #     for i in 1:nrows
-    #         for j in 1:ncols
-    #             @printf("%+5.3f ", bmat[i,j]+bdag[i,j])
-    #         end
-    #         @printf("\n")
-    #     end
-
-    # end # end diagonalizing the Hamiltonian
-
-    # # scale the eigenvalues of H0
-    # #ka_delta = H0_eigen.values[perm[:]]./(2*pi) # re-ordered eigenvalues to match order of the eigenvectors
-    # ka_delta = H0_evals./(2*pi) # re-ordered eigenvalues to match order of the eigenvectors
-    # println("Hdelta-eigenvals/(2*pi):")
-    # println(ka_delta)
-
-    # # transition frequencies
-    # da_dr = ka_delta[2] - ka_delta[1] # |01> to |00> and vice versa
-    # db_dr = ka_delta[Nt[2]+1] - ka_delta[1] # |10> to |00> and vice versa
-
-    # println("da_dr: ", da_dr, " [GHz] da - jc^2/f_rot: ", da - jc^2/rot_freq[1])
-    # println("db_dr: ", db_dr, " [GHz] db + jc^2/f_rot: ", db + jc^2/rot_freq[2])
-
-    # Nfreq = 3 # number of carrier frequencies
-    # Nctrl = length(Hsym_ops) # Here, Nctrl = 2
-
-    # om = zeros(Nctrl, Nfreq) # Allocate space for the carrier wave frequencies
-    # # freq 1
-    # om[1,1] = 2*pi*(da_dr)
-    # om[2,1] = 2*pi*(db_dr)
-    # # freq 2
-    # if Nfreq >= 2
-    #     om[1,2] = 2*pi*(db_dr) 
-    #     om[2,2] = 2*pi*(da_dr)
-    # end
-    # # freq 3 (dressed anharmonicity)
-    # if Nfreq >= 3
-    #     om[1,3] = 2*pi*(ka_delta[3] - ka_delta[2]) # |02> to |01> and vice-versa 
-    #     om[2,3] = 2*pi*(ka_delta[2*Nt[2]+1] - ka_delta[Nt[2]+1]) # |20> to |10> and vice-versa
-    # end
-
-    # println("Prev. carrier frequencies (lab frame) 1st ctrl Hamiltonian [GHz]: ", rot_freq[1] .+ om[1,:]./(2*pi))
-    # println("Prev. carrier frequencies (lab frame) 2nd ctrl Hamiltonian [GHz]: ", rot_freq[2] .+ om[2,:]./(2*pi))
-
-
-    #thres = 0.9998 # cut such that two carrier frequencies are used
-    # thres = 0.9  # cut such that four carrier frequencies are used
-    # om = get_resonances(Ne, Ng, H0, Hsym_ops, thres)
-
-    # println("Carrier frequencies (lab frame) 1st ctrl Hamiltonian [GHz]: ", rot_freq[1] .+ om[1,:]./(2*pi))
-    # println("Carrier frequencies (lab frame) 2nd ctrl Hamiltonian [GHz]: ", rot_freq[2] .+ om[2,:]./(2*pi))
-    
-    # println("Carrier frequencies (rot frame) 1st ctrl Hamiltonian [GHz]: ", om[1,:]./(2*pi))
-    # println("Carrier frequencies (rot frame) 2nd ctrl Hamiltonian [GHz]: ", om[2,:]./(2*pi))
 
 # initial parameter guess
 function init_control(params::objparams; maxrand::Float64, nCoeff::Int64, startFile::String = "", seed::Int64 = -1)
@@ -316,7 +253,7 @@ function get_resonances(;Ness::Vector{Int64}, Nguard::Vector{Int64}, Hsys::Matri
     Nt = Ness + Nguard
     Ntot = prod(Nt)
 
-    # setup mapping between 1-d and 2-d indexing
+    # setup mapping between 1-d and 2-d indexing (assumes classical Juqbox ordering)
     it2i1 = zeros(Int64, Ntot)
     it2i2 = zeros(Int64, Ntot)
     it2i3 = zeros(Int64, Ntot)
@@ -415,5 +352,15 @@ function get_resonances(;Ness::Vector{Int64}, Nguard::Vector{Int64}, Hsys::Matri
     resonances = resonances*2*pi
 
     # Return as a matrix, one row per control
-    return Matrix(reduce(hcat, resonances)')
+    return Matrix(reduce(hcat, resonances)'), Utrans
+end
+
+function transformHamiltonians!(H0::Matrix{Float64}, Hsym_ops::Vector{Matrix{Float64}}, Hanti_ops::Vector{Matrix{Float64}}, Utrans::Matrix{Float64})
+    H0 = Utrans'*H0*Utrans # use the transformed (diagonal) system Hamiltonian
+
+    # transform the control Hamiltonians
+    for q = 1:length(Hsym_ops)
+        Hsym_ops[q] = Utrans'*(Hsym_ops[q])*Utrans
+        Hanti_ops[q] = Utrans'*(Hanti_ops[q])*Utrans
+    end
 end

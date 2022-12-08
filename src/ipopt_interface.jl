@@ -413,7 +413,7 @@ Call IPOPT to  optimizize the control functions.
 - `nodes:: AbstractArray`: (Optional-kw) Risk-neutral opt: User specified quadrature nodes on the interval [-ϵ,ϵ] for some ϵ
 - `weights:: AbstractArray`: (Optional-kw) Risk-neutral opt: User specified quadrature weights on the interval [-ϵ,ϵ] for some ϵ
 """
-function run_optimizer(params:: objparams, pcof0:: Vector{Float64}, maxAmp:: Vector{Float64}; zeroCtrlBC::Bool = true, maxIter::Int64 = 50, lbfgsMax:: Int64=200, coldStart:: Bool=true, ipTol:: Float64=1e-5, acceptTol:: Float64=1e-5, acceptIter:: Int64=15, nodes::AbstractArray=[0.0], weights::AbstractArray=[1.0])
+function run_optimizer(params:: objparams, pcof0:: Vector{Float64}, maxAmp:: Vector{Float64}; zeroCtrlBC::Bool = false, maxIter::Int64 = 50, lbfgsMax:: Int64=200, coldStart:: Bool=true, ipTol:: Float64=1e-5, acceptTol:: Float64=1e-5, acceptIter:: Int64=15, nodes::AbstractArray=[0.0], weights::AbstractArray=[1.0])
     
     # start by setting up the Ipopt object: prob
     println("Ipopt initialization timing:")

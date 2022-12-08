@@ -2513,8 +2513,8 @@ function ks_alloc(Ntot:: Int64, Hconst::MyRealMatrix, Hsym_ops::Vector{MyRealMat
         S0 = spzeros(size(Hconst,1),size(Hconst,2))
         Ncoupled = length(Hsym_ops)
         for q=1:Ncoupled
-            K0 += params.Hsym_ops[q]
-            S0 += params.Hanti_ops[q]
+            K0 += Hsym_ops[q]
+            S0 += Hanti_ops[q]
         end
         Nunc = length(Hunc_ops)
         for q=1:Nunc
