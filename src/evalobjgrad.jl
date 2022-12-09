@@ -1018,7 +1018,7 @@ function setup_prior!(params::objparams, priorFile::String)
 end
 
 """
-    wmat = wmatsetup(Ne, Ng)
+    wmat = wmatsetup(Ne, Ng[, msb_order])
 
 Build the default positive semi-definite weighting matrix W to calculate the 
 leakage into higher energy forbidden states
@@ -1026,8 +1026,9 @@ leakage into higher energy forbidden states
 # Arguments
 - `Ne::Array{Int64,1}`: Number of essential energy levels for each subsystem
 - `Ng::Array{Int64,1}`: Number of guard energy levels for each subsystem
+- `msb_order::Bool`: Ordering of the subsystems within the state vector (default is true)
 """
-function wmatsetup(Ne::Array{Int64,1}, Ng::Array{Int64,1})
+function wmatsetup(Ne::Array{Int64,1}, Ng::Array{Int64,1}, msb_order::Bool = true)
     Nt = Ne + Ng
     Ndim = length(Ne)
     @assert(Ndim == 1 || Ndim == 2 || Ndim ==3)
@@ -1041,115 +1042,176 @@ function wmatsetup(Ne::Array{Int64,1}, Ng::Array{Int64,1})
 
     if sum(Ng) > 0
         nForb = 0 # number of states with the highest index in at least one dimension
+        
+        if msb_order # Classical Juqbox ordering
+            if Ndim == 1
+                fact = 0.1
+                for q in 0:Ng[1]-1
+                    w[Ntot-q] = fact^q
+                end
+                nForb = 1
+                coeff = 1.0
+            elseif Ndim == 2
+                fact = 1e-3 # for more emphasis on the "forbidden" states. Old value: 0.1
+                q = 0 # element in the array 'w'
 
-        if Ndim == 1
-            fact = 0.1
-            for q in 0:Ng[1]-1
-                w[Ntot-q] = fact^q
-            end
-            nForb = 1
-            coeff = 1.0
-        elseif Ndim == 2
-            fact = 1e-3 # for more emphasis on the "forbidden" states. Old value: 0.1
-            q = 0 # element in the array 'w'
-
-            for i2 = 1:Nt[2]
-                for i1 = 1:Nt[1]
-                    q += 1
-                    # initialize temp variables
-                    temp[1] = 0.0
-                    temp[2] = 0.0
-                    if i1 <= Ne[1] && i2 <= Ne[2]
-                        w[q] = 0.0
-                    else
-                        # determine and assign the largest penalty
-                        if i1 > Ne[1]   #only included if at a guard level
-                            temp[1] = fact^(Nt[1]-i1)
-                        end
-                        if i2 > Ne[2]   #only included if at a guard level
-                            temp[2] = fact^(Nt[2]-i2)
-                        end
-
-                        if i1 == Nt[1] || i2 == Nt[2]
-                            nForb += 1 
-                        end
-
-                        forbFact=1.0
-
-                        # additional weighting (ad hoc)
-                        # if i1 == Nt1 && i2<=Ne2 
-                        #   forbFact=100
-                        # end
-                        # if i2 == Nt2 && i1<=Ne1 
-                        #   forbFact=100
-                        # end
-
-                        w[q] = forbFact*maximum(temp)
-          
-                    end # if guard level
-                end # for i1
-            end # for i2
-
-            # normalize by the number of entries with w=1
-            coeff = 1.0/nForb # was 1/nForb
-        elseif Ndim == 3
-            fact = 1e-3 #  0.1 # for more emphasis on the "forbidden" states. Old value: 0.1
-            nForb = 0 # number of states with the highest index in at least one dimension
-            q = 0
-            for i3 = 1:Nt[3]
                 for i2 = 1:Nt[2]
                     for i1 = 1:Nt[1]
                         q += 1
                         # initialize temp variables
-                        temp1 = 0.0
-                        temp2 = 0.0
-                        temp3 = 0.0
-                        if i1 <= Ne[1] && i2 <= Ne[2] && i3 <= Ne[3]
+                        temp[1] = 0.0
+                        temp[2] = 0.0
+                        if i1 <= Ne[1] && i2 <= Ne[2]
                             w[q] = 0.0
                         else
                             # determine and assign the largest penalty
                             if i1 > Ne[1]   #only included if at a guard level
-#                                temp1 = (Nt[1] - Ne[1]) * fact^(Nt[1]-i1)
-                                temp1 = fact^(Nt[1]-i1)
+                                temp[1] = fact^(Nt[1]-i1)
                             end
                             if i2 > Ne[2]   #only included if at a guard level
-#                                temp2 = (Nt[2] - Ne[2]) *fact^(Nt[2]-i2)
-                                temp2 = fact^(Nt[2]-i2)
+                                temp[2] = fact^(Nt[2]-i2)
                             end
-                            if i3 > Ne[3]   #only included if at a guard level
-#                                temp3 = (Nt[3] - Ne[3]) *fact^(Nt[3]-i3)
-                                temp3 = fact^(Nt[3]-i3)
+                            if i1 == Nt[1] || i2 == Nt[2]
+                                nForb += 1 
                             end
 
                             forbFact=1.0
-                            # additional weighting (ad hoc)
-                            # if i1 == Nt[1] && i2<=Ne[2] && i3<=Ne3
-                            #   forbFact=100
-                            # end
-                            # if i2 == Nt[2] && i1<=Ne[1] && i3<=Ne3
-                            #   forbFact=100
-                            # end
-                            # if i3 == Nt[3] && i1<=Ne[1] && i2<=Ne[2]
-                            #    forbFact=100
-                            # end
+                            w[q] = forbFact*maximum(temp)
+            
+                        end # if guard level
+                    end # for i1
+                end # for i2
 
-                            w[q] = forbFact*max(temp1, temp2, temp3)
+                # normalize by the number of entries with w=1
+                coeff = 1.0/nForb # was 1/nForb
+            elseif Ndim == 3
+                fact = 1e-3 #  0.1 # for more emphasis on the "forbidden" states. Old value: 0.1
+                nForb = 0 # number of states with the highest index in at least one dimension
+                q = 0
+                for i3 = 1:Nt[3]
+                    for i2 = 1:Nt[2]
+                        for i1 = 1:Nt[1]
+                            q += 1
+                            # initialize temp variables
+                            temp1 = 0.0
+                            temp2 = 0.0
+                            temp3 = 0.0
+                            if i1 <= Ne[1] && i2 <= Ne[2] && i3 <= Ne[3]
+                                w[q] = 0.0
+                            else
+                                # determine and assign the largest penalty
+                                if i1 > Ne[1]   #only included if at a guard level
+                                    temp1 = fact^(Nt[1]-i1)
+                                end
+                                if i2 > Ne[2]   #only included if at a guard level
+                                    temp2 = fact^(Nt[2]-i2)
+                                end
+                                if i3 > Ne[3]   #only included if at a guard level
+                                    temp3 = fact^(Nt[3]-i3)
+                                end
 
-                            if i1 == Nt[1] || i2 == Nt[2] || i3 == Nt[3]
-                                nForb += 1
-                            end
+                                forbFact=1.0
+                                w[q] = forbFact*max(temp1, temp2, temp3)
 
-                        end # if
+                                if i1 == Nt[1] || i2 == Nt[2] || i3 == Nt[3]
+                                    nForb += 1
+                                end
+
+                            end # if
+                        end # for
                     end # for
                 end # for
-            end # for
 
-            # normalize by the number of entries with w=1
-            coeff = 10.0/nForb # was 1/nForb
-        end # if ndim == 3
+                # normalize by the number of entries with w=1
+                coeff = 10.0/nForb # was 1/nForb
+            end # if ndim == 3
+        else # msb_order = false
+            if Ndim == 1
+                fact = 0.1
+                for q in 0:Ng[1]-1
+                    w[Ntot-q] = fact^q
+                end
+                nForb = 1
+                coeff = 1.0
+            elseif Ndim == 2
+                fact = 1e-3 # for more emphasis on the "forbidden" states. Old value: 0.1
+                q = 0 # element in the array 'w'
 
+                for i1 = 1:Nt[1]
+                    for i2 = 1:Nt[2]
+                        q += 1
+                        # initialize temp variables
+                        temp[1] = 0.0
+                        temp[2] = 0.0
+                        if i1 <= Ne[1] && i2 <= Ne[2]
+                            w[q] = 0.0
+                        else
+                            # determine and assign the largest penalty
+                            if i1 > Ne[1]   #only included if at a guard level
+                                temp[1] = fact^(Nt[1]-i1)
+                            end
+                            if i2 > Ne[2]   #only included if at a guard level
+                                temp[2] = fact^(Nt[2]-i2)
+                            end
+                            if i1 == Nt[1] || i2 == Nt[2]
+                                nForb += 1 
+                            end
+
+                            forbFact=1.0
+                            w[q] = forbFact*maximum(temp)
+            
+                        end # if guard level
+                    end # for i1
+                end # for i2
+
+                # normalize by the number of entries with w=1
+                coeff = 1.0/nForb # was 1/nForb
+            elseif Ndim == 3
+                fact = 1e-3 #  0.1 # for more emphasis on the "forbidden" states. Old value: 0.1
+                nForb = 0 # number of states with the highest index in at least one dimension
+                q = 0
+
+                for i1 = 1:Nt[1]
+                    for i2 = 1:Nt[2]
+                        for i3 = 1:Nt[3]
+                            q += 1
+                            # initialize temp variables
+                            temp1 = 0.0
+                            temp2 = 0.0
+                            temp3 = 0.0
+                            if i1 <= Ne[1] && i2 <= Ne[2] && i3 <= Ne[3]
+                                w[q] = 0.0
+                            else
+                                # determine and assign the largest penalty
+                                if i1 > Ne[1]   #only included if at a guard level
+                                    temp1 = fact^(Nt[1]-i1)
+                                end
+                                if i2 > Ne[2]   #only included if at a guard level
+                                    temp2 = fact^(Nt[2]-i2)
+                                end
+                                if i3 > Ne[3]   #only included if at a guard level
+                                    temp3 = fact^(Nt[3]-i3)
+                                end
+
+                                forbFact=1.0
+                                w[q] = forbFact*max(temp1, temp2, temp3)
+
+                                if i1 == Nt[1] || i2 == Nt[2] || i3 == Nt[3]
+                                    nForb += 1
+                                end
+
+                            end # if
+                        end # for
+                    end # for
+                end # for
+
+                # normalize by the number of entries with w=1
+                coeff = 10.0/nForb # was 1/nForb
+            end # if ndim == 3
+        end # lsb ordering
         # println("wmatsetup: Number of forbidden states = ", nForb, " scaling coeff = ", coeff)
     end # if sum(Ng) > 0
+
     wmat = coeff * Diagonal(w) # turn vector into diagonal matrix
     return wmat
 end

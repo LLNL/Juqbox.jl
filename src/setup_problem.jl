@@ -97,12 +97,6 @@ function hamiltonians_two_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, freq0
         N1 = Diagonal(kron(I2, num1) )
         N2 = Diagonal(kron(num2, I1) )
 
-        # Coupling Hamiltonian: couple_type = 2 # 1: cross-Kerr, 2: Jaynes-Cummings
-        if couple_type == 1
-            Hcouple = couple_coeff*(N1*N2)
-        elseif couple_type == 2
-            Hcouple = couple_coeff*(kron(a2', a1) + kron(a2, a1'))
-        end
     else
         # LSB ordering: qubit 1 varies the slowest and qubit 2 varies the fastest in the state vector
         amat = Array(kron(a1, I2))
@@ -114,15 +108,15 @@ function hamiltonians_two_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, freq0
         # number operators
         N1 = Diagonal(kron(num1, I2) )
         N2 = Diagonal(kron(I1, num2) )
-
-        # Coupling Hamiltonian: couple_type = 2 # 1: cross-Kerr, 2: Jaynes-Cummings
-        if couple_type == 1
-            Hcouple = couple_coeff*(N1*N2)
-        elseif couple_type == 2
-            Hcouple = couple_coeff*(kron(a1, a2') + kron(a1', a2))
-        end
     end
-    # System Hamiltonian
+
+    # Coupling Hamiltonian: couple_type = 2 # 1: cross-Kerr, 2: Jaynes-Cummings
+    if couple_type == 1
+        Hcouple = couple_coeff*(N1*N2)
+    elseif couple_type == 2
+        Hcouple = couple_coeff*(bdag * amat + bmat * adag)
+    end
+            # System Hamiltonian
     H0 = 2*pi*(  da*N1 + 0.5*x1*(N1*N1-N1) + db*N2 + 0.5*x2*(N2*N2-N2) + Hcouple )
     H0 = Array(H0)
 
@@ -140,7 +134,125 @@ function hamiltonians_two_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, freq0
     return H0, Hsym_ops, Hanti_ops, rot_freq
 end
 
+function hamiltonians_three_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, freq01::Vector{Float64}, anharm::Vector{Float64}, f_rot::Float64, couple_coeff::Vector{Float64}, couple_type::Int64, msb_order::Bool = true, verbose::Bool = true)
+    @assert(length(Ness) == 3)
+    @assert(length(Nguard) == 3)
+    @assert(couple_type == 1 || couple_type == 2)
 
+    Nt = Ness + Nguard
+    N = prod(Ness); # Total number of nonpenalized energy levels
+    Ntot = prod(Nt)
+    #Nguard = Ntot - N # total number of guard states
+
+    Nt1 = Nt[1]
+    Nt2 = Nt[2]
+    Nt3 = Nt[3]
+
+    # frequencies (in GHz, will be multiplied by 2*pi to get angular frequencies 
+    # in the Hamiltonian matrix)
+    fa = freq01[1]
+    fb = freq01[2]
+    fc = freq01[3]
+
+    xa = anharm[1]
+    xb = anharm[2]
+    xc = anharm[3]
+
+    xab = couple_coeff[1]
+    xac = couple_coeff[2]
+    xbc = couple_coeff[3]
+
+    # rotational frequencies
+    favg = f_rot
+    rot_freq = [favg, favg, favg] 
+
+    # detuning
+    da = fa - favg
+    db = fb - favg
+    dc = fc - favg
+
+    # single system lowering ops
+    a1 = Array(Bidiagonal(zeros(Nt1),sqrt.(collect(1:Nt[1]-1)),:U))
+    a2 = Array(Bidiagonal(zeros(Nt2),sqrt.(collect(1:Nt[2]-1)),:U))
+    a3 = Array(Bidiagonal(zeros(Nt2),sqrt.(collect(1:Nt[3]-1)),:U))
+
+    I1 = Array{Float64, 2}(I, Nt[1], Nt[1])
+    I2 = Array{Float64, 2}(I, Nt[2], Nt[2])
+    I3 = Array{Float64, 2}(I, Nt[3], Nt[3])
+
+    # single system number ops
+    num1 = Diagonal(collect(0:Nt[1]-1))
+    num2 = Diagonal(collect(0:Nt[2]-1))
+    num3 = Diagonal(collect(0:Nt[3]-1))
+
+    if msb_order
+        # MSB ordering: Let the elements in the state vector be
+        # |psi> = sum a_{kji} (|k> kron |j> kron |i>, 
+        # for i in [1,Nt1], j in [1,Nt2], , k in [1,Nt3]
+        # We order the elements in the vector psi such that i varies the fastest 
+        # The matrix amat = I kron I kron a1 acts on alpha in psi = gamma kron beta kron alpha
+        # The matrix bmat = I kron a2 kron I acts on beta in psi = gamma kron beta kron alpha
+        # The matrix cmat = a3 kron I2 kron I1 acts on gamma in psi = gamma kron beta kron alpha
+
+        # create the combined lowering and raising ops
+        amat = kron(I3, kron(I2, a1))
+        bmat = kron(I3, kron(a2, I1))
+        cmat = kron(a3, kron(I2, I1))
+
+        adag = Array(transpose(amat))
+        bdag = Array(transpose(bmat))
+        cdag = Array(transpose(cmat))
+
+        # number operators
+        Na = Diagonal(kron(I3, kron(I2, num1)) )
+        Nb = Diagonal(kron(I3, kron(num2, I1)) )
+        Nc = Diagonal(kron(num3, kron(I2, I1)) )
+    else
+        # LSB ordering: Let the elements in the state vector be
+        # |psi> = sum a_{ijk} (|i> kron |j> kron |k>, 
+        # for i in [1,Nt1], j in [1,Nt2], , k in [1,Nt3]
+        # In the vector representation of the state, qubit 1 varies the slowest and qubit 3 varies the fastest in the state vector
+        # create the combined lowering and raising ops
+        amat = kron(a1, kron(I2, I3))
+        bmat = kron(I1, kron(a2, I3))
+        cmat = kron(I1, kron(I2, a3))
+
+        adag = Array(transpose(amat))
+        bdag = Array(transpose(bmat))
+        cdag = Array(transpose(cmat))
+
+        # number operators
+        Na = Diagonal(kron(num1, kron(I2, I3)) )
+        Nb = Diagonal(kron(I1, kron(num2, I3)) )
+        Nc = Diagonal(kron(I1, kron(I2, num3)) )
+    end
+
+    # Coupling Hamiltonian: couple_type = 2 # 1: cross-Kerr, 2: Jaynes-Cummings
+    if couple_type == 1
+        Hcouple = xab*(Na*Nb) + xac*(Na*Nc) + xbc*(Nb*Nc)
+    elseif couple_type == 2
+        Hcouple = xab*(amat * bdag + adag * bmat) + xac*(amat * cdag + adag * cmat) + xbc*(bmat * cdag + bdag * cmat)
+    end
+
+    # System Hamiltonian
+    H0 = 2*pi*(da*Na + 0.5*xa*(Na*Na-Na) + db*Nb + 0.5*xb*(Nb*Nb-Nb) + dc*Nc + xc/2*(Nc*Nc-Nc) + Hcouple )
+
+    H0 = Array(H0)
+
+    # set up control hamiltonians
+    Hsym_ops =[ amat+adag, bmat+bdag, cmat+cdag ]
+    Hanti_ops=[ amat-adag, bmat-bdag, cmat-cdag ]
+
+    if verbose
+        println("*** Three coupled quantum systems setup ***")
+        println("System Hamiltonian frequencies [GHz]: f01 = ", freq01, " rot. freq = ", f_rot)
+        println("Anharmonicity = ", anharm)
+        println("Coupling type = ", (couple_type==1) ? "X-Kerr" : "J-C", ". Coupling coeff = ", couple_coeff )
+        println("Number of essential states = ", Ness, " Number of guard states = ", Nguard)
+        println("Hamiltonians are of size ", Ntot, " by ", Ntot)
+    end
+    return H0, Hsym_ops, Hanti_ops, rot_freq
+end
 # initial parameter guess
 function init_control(params::objparams; maxrand::Float64, nCoeff::Int64, startFile::String = "", seed::Int64 = -1)
     Nctrl = size(params.Cfreq,1)

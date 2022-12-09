@@ -71,13 +71,24 @@ Tmax = 550.0 # 700.0
 fa = 4.10595
 fb = 4.81526  # official
 fs = 7.8447 # storage   # official
-rot_freq = [fa, fb, fs] # rotational frequencies
-xa = 2 * 0.1099
-xb = 2 * 0.1126 # official
-xs = 0.002494^2/xa # 2.8298e-5 # official
-xab = 1.0e-6 # 1e-6 official
-xas = sqrt(xa*xs) # 2.494e-3 # official
-xbs = sqrt(xb*xs) # 2.524e-3 # official
+favg = (fa + fb + fs)/3
+#rot_freq = [fa, fb, fs] # rotational frequencies
+xa = -2 * 0.1099
+xb = -2 * 0.1126 # official
+xs = -0.002494^2/xa # 2.8298e-5 # official
+
+couple_type = 1 # 1=cross-Kerr, 2=Jaynes-Cummings
+xab = -1.0e-6 # 1e-6 official
+xas = -sqrt(abs(xa*xs)) # 2.494e-3 # official
+xbs = -sqrt(abs(xb*xs)) # 2.524e-3 # official
+
+msb_order = false # true: original Juqbox, false: Quandary
+println("Hamiltonian is setup for ", (msb_order ? "MSB" : "LSB"), " ordering")
+
+# setup the Hamiltonian matrices
+H0, Hsym_ops, Hanti_ops, rot_freq = hamiltonians_three_sys(Ness=Ne, Nguard=Ng, freq01=[fa, fb, fs], anharm=[xa, xb, xs], f_rot=favg, couple_coeff=[xab, xas, xbs], couple_type=couple_type, msb_order = msb_order)
+
+@assert(false)
 
 # Note: The ket psi = kji> = e_k kron e_j kron e_i.
 # We order the elements in the vector psi such that i varies the fastest with i in [1,Nt1], j in [1,Nt2], , k in [1,Nt3]
@@ -88,34 +99,38 @@ xbs = sqrt(xb*xs) # 2.524e-3 # official
 # construct the lowering and raising matricies: amat, bmat, cmat
 # and the system Hamiltonian: H0
 
-a1 = Array(Bidiagonal(zeros(Nt[1]),sqrt.(collect(1:Nt[1]-1)),:U))
-a2 = Array(Bidiagonal(zeros(Nt[2]),sqrt.(collect(1:Nt[2]-1)),:U))
-a3 = Array(Bidiagonal(zeros(Nt[3]),sqrt.(collect(1:Nt[3]-1)),:U))
+# a1 = Array(Bidiagonal(zeros(Nt[1]),sqrt.(collect(1:Nt[1]-1)),:U))
+# a2 = Array(Bidiagonal(zeros(Nt[2]),sqrt.(collect(1:Nt[2]-1)),:U))
+# a3 = Array(Bidiagonal(zeros(Nt[3]),sqrt.(collect(1:Nt[3]-1)),:U))
 
-I1 = Array{Float64, 2}(I, Nt[1], Nt[1])
-I2 = Array{Float64, 2}(I, Nt[2], Nt[2])
-I3 = Array{Float64, 2}(I, Nt[3], Nt[3])
+# I1 = Array{Float64, 2}(I, Nt[1], Nt[1])
+# I2 = Array{Float64, 2}(I, Nt[2], Nt[2])
+# I3 = Array{Float64, 2}(I, Nt[3], Nt[3])
 
-# create the a, a^\dag, b and b^\dag vectors
-amat = kron(I3, kron(I2, a1))
-bmat = kron(I3, kron(a2, I1))
-cmat = kron(a3, kron(I2, I1))
+# # create the a, a^\dag, b and b^\dag 
+# amat = kron(I3, kron(I2, a1))
+# bmat = kron(I3, kron(a2, I1))
+# cmat = kron(a3, kron(I2, I1))
 
-adag = Array(transpose(amat))
-bdag = Array(transpose(bmat))
-cdag = Array(transpose(cmat))
+# adag = Array(transpose(amat))
+# bdag = Array(transpose(bmat))
+# cdag = Array(transpose(cmat))
 
-# number ops
-num1 = Diagonal(collect(0:Nt[1]-1))
-num2 = Diagonal(collect(0:Nt[2]-1))
-num3 = Diagonal(collect(0:Nt[3]-1))
+# # number ops
+# num1 = Diagonal(collect(0:Nt[1]-1))
+# num2 = Diagonal(collect(0:Nt[2]-1))
+# num3 = Diagonal(collect(0:Nt[3]-1))
 
-# number operators
-Na = Diagonal(kron(I3, kron(I2, num1)) )
-Nb = Diagonal(kron(I3, kron(num2, I1)) )
-Nc = Diagonal(kron(num3, kron(I2, I1)) )
+# # number operators
+# Na = Diagonal(kron(I3, kron(I2, num1)) )
+# Nb = Diagonal(kron(I3, kron(num2, I1)) )
+# Nc = Diagonal(kron(num3, kron(I2, I1)) )
 
-H0 = -2*pi*(xa/2*(Na*Na-Na) + xb/2*(Nb*Nb-Nb) + xs/2*(Nc*Nc-Nc) + xab*(Na*Nb) + xas*(Na*Nc) + xbs*(Nb*Nc))
+# H0 = -2*pi*(xa/2*(Na*Na-Na) + xb/2*(Nb*Nb-Nb) + xs/2*(Nc*Nc-Nc) + xab*(Na*Nb) + xas*(Na*Nc) + xbs*(Nb*Nc))
+
+# Hsym_ops=[Array(amat+adag), Array(bmat+bdag), Array(cmat+cdag)]
+# Hanti_ops=[Array(amat-adag), Array(bmat-bdag), Array(cmat - cdag)]
+# H0 = Array(H0)
 
 # max coefficient amplitudes, rotating frame
 amax = 0.05
@@ -125,12 +140,8 @@ maxpar = [amax, bmax, cmax]
 
 # package the lowering and raising matrices together into an one-dimensional array of two-dimensional arrays
 # Here we choose dense or sparse representation
+# dense matrices run faster, but (usually) take up more memory
 use_sparse = true
-
-# dense matrices run faster, but take more memory
-Hsym_ops=[Array(amat+adag), Array(bmat+bdag), Array(cmat+cdag)]
-Hanti_ops=[Array(amat-adag), Array(bmat-bdag), Array(cmat - cdag)]
-H0 = Array(H0)
 
 # Estimate time step
 Pmin = 40 # should be 20 or higher
