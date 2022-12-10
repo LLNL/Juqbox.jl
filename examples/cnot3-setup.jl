@@ -71,8 +71,8 @@ Tmax = 550.0 # 700.0
 fa = 4.10595
 fb = 4.81526  # official
 fs = 7.8447 # storage   # official
-favg = (fa + fb + fs)/3
-#rot_freq = [fa, fb, fs] # rotational frequencies
+
+rot_freq = [fa, fb, fs] # rotational frequencies
 xa = -2 * 0.1099
 xb = -2 * 0.1126 # official
 xs = -0.002494^2/xa # 2.8298e-5 # official
@@ -86,7 +86,7 @@ msb_order = false # true: original Juqbox, false: Quandary
 println("Hamiltonian is setup for ", (msb_order ? "MSB" : "LSB"), " ordering")
 
 # setup the Hamiltonian matrices
-H0, Hsym_ops, Hanti_ops, rot_freq = hamiltonians_three_sys(Ness=Ne, Nguard=Ng, freq01=[fa, fb, fs], anharm=[xa, xb, xs], f_rot=favg, couple_coeff=[xab, xas, xbs], couple_type=couple_type, msb_order = msb_order)
+H0, Hsym_ops, Hanti_ops = hamiltonians_three_sys(Ness=Ne, Nguard=Ng, freq01=[fa, fb, fs], anharm=[xa, xb, xs], rot_freq=rot_freq, couple_coeff=[xab, xas, xbs], couple_type=couple_type, msb_order = msb_order)
 
 @assert(false)
 

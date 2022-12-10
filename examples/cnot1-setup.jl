@@ -35,12 +35,12 @@ Ntot = N + Nguard # Total number of energy levels
 # frequencies (in GHz, will be multiplied by 2*pi to get angular frequencies in the Hamiltonian matrix)
 fa = 4.10336
 xa = -0.2198
-
+rot_freq = [fa]
 # form the Hamiltonian matrices
-H0, Hsym_ops, Hanti_ops, rot_freq = hamiltonians_one_sys(Ness=[N], Nguard=[Nguard], freq01=fa, anharm=xa, rotfreq=fa)
+H0, Hsym_ops, Hanti_ops = hamiltonians_one_sys(Ness=[N], Nguard=[Nguard], freq01=fa, anharm=xa, rot_freq=rot_freq)
 
 # calculate resonance frequencies
-om = get_resonances(Ness=[N], Nguard=[Nguard], Hsys=H0, Hsym_ops=Hsym_ops)
+om, Utrans = get_resonances(Ness=[N], Nguard=[Nguard], Hsys=H0, Hsym_ops=Hsym_ops)
 Nctrl = size(om, 1)
 Nfreq = size(om, 2)
 

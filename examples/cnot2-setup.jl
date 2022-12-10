@@ -52,6 +52,7 @@ Nguard = Ntot - N # total number of guard levels
 fa = 4.10595    # official
 fb = 4.81526   # official
 favg = 0.5*(fa+fb)
+rot_freq = [favg, favg]
 
 #rot_freq = [favg, favg] # rotational frequencies
 x1 = -2* 0.1099  # official
@@ -62,7 +63,7 @@ msb_order = true # true: original Juqbox, false: Quandary
 println("Hamiltonian is setup for ", (msb_order ? "MSB" : "LSB"), " ordering")
 
 # setup the Hamiltonian matrices
-H0, Hsym_ops, Hanti_ops, rot_freq = hamiltonians_two_sys(Ness=Ne, Nguard=Ng, freq01=[fa, fb], anharm=[x1, x2], f_rot=favg, couple_coeff=x12, couple_type=couple_type, msb_order = msb_order)
+H0, Hsym_ops, Hanti_ops = hamiltonians_two_sys(Ness=Ne, Nguard=Ng, freq01=[fa, fb], anharm=[x1, x2], rot_freq=rot_freq, couple_coeff=x12, couple_type=couple_type, msb_order = msb_order)
 
 # CONSIDER TRANSFORMATION OF THE HAMILTONIANS WHILE COMPUTING THE CARRIER FREQUENCIES
 

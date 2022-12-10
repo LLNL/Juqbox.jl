@@ -2,7 +2,7 @@
 
 using LinearAlgebra
 
-function hamiltonians_one_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, freq01::Float64, anharm::Float64, rotfreq::Float64, verbose::Bool = true)
+function hamiltonians_one_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, freq01::Float64, anharm::Float64, rot_freq::Vector{Float64}, verbose::Bool = true)
     @assert(length(Ness)==1)
     @assert(length(Nguard)==1)
     @assert(minimum(Ness) >= 2)
@@ -14,9 +14,6 @@ function hamiltonians_one_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, freq0
     # in the Hamiltonian matrix)
     fa = freq01
     xa = anharm
-
-    # rotating frame transformation
-    rot_freq = [rotfreq] 
 
     # setup drift Hamiltonian
     number = Diagonal(collect(0:Ntot-1))
@@ -32,15 +29,15 @@ function hamiltonians_one_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, freq0
 
     if verbose
         println("*** Single quantum system setup ***")
-        println("System Hamiltonian coefficients [GHz]: f01 = ", fa, " anharmonicity = ", xa)
+        println("System Hamiltonian coefficients [GHz]: f01 = ", fa, " anharmonicity = ", xa, " rot_freq = ", rot_freq)
         println("Number of essential states = ", Ness, " Number of guard states = ", Nguard)
         println("Hamiltonians are of size ", Ntot, " by ", Ntot)
     end
-    return H0, Hsym_ops, Hanti_ops, rot_freq
+    return H0, Hsym_ops, Hanti_ops
 end
 
 
-function hamiltonians_two_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, freq01::Vector{Float64}, anharm::Vector{Float64}, f_rot::Float64,couple_coeff::Float64, couple_type::Int64, msb_order::Bool = true, verbose::Bool = true)
+function hamiltonians_two_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, freq01::Vector{Float64}, anharm::Vector{Float64}, rot_freq::Vector{Float64}, couple_coeff::Float64, couple_type::Int64, msb_order::Bool = true, verbose::Bool = true)
     @assert(length(Ness) == 2)
     @assert(length(Nguard) == 2)
     @assert(couple_type == 1 || couple_type == 2)
@@ -55,18 +52,12 @@ function hamiltonians_two_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, freq0
 
     # frequencies (in GHz, will be multiplied by 2*pi to get angular frequencies 
     # in the Hamiltonian matrix)
-    fa = freq01[1]
-    fb = freq01[2]
     x1 = anharm[1]
     x2 = anharm[2]
 
-    # rotational frequencies
-    favg = f_rot
-    rot_freq = [favg, favg] 
-
     # detuning
-    da = fa - favg
-    db = fb - favg
+    da = freq01[1] - rot_freq[1]
+    db = freq01[2] - rot_freq[2]
 
     a1 = Array(Bidiagonal(zeros(Nt1),sqrt.(collect(1:Nt1-1)),:U))
     a2 = Array(Bidiagonal(zeros(Nt2),sqrt.(collect(1:Nt2-1)),:U))
@@ -126,7 +117,7 @@ function hamiltonians_two_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, freq0
 
     if verbose
         println("*** Two coupled quantum systems setup ***")
-        println("System Hamiltonian frequencies [GHz]: f01 = ", freq01, " rot. freq = ", f_rot)
+        println("System Hamiltonian frequencies [GHz]: f01 = ", freq01, " rot. freq = ", rot_freq)
         println("Anharmonicity = ", anharm, " coupling coeff = ", couple_coeff, " coupling type = ", (couple_type==1) ? "X-Kerr" : "J-C" )
         println("Number of essential states = ", Ness, " Number of guard states = ", Nguard)
         println("Hamiltonians are of size ", Ntot, " by ", Ntot)
@@ -134,7 +125,7 @@ function hamiltonians_two_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, freq0
     return H0, Hsym_ops, Hanti_ops, rot_freq
 end
 
-function hamiltonians_three_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, freq01::Vector{Float64}, anharm::Vector{Float64}, f_rot::Float64, couple_coeff::Vector{Float64}, couple_type::Int64, msb_order::Bool = true, verbose::Bool = true)
+function hamiltonians_three_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, freq01::Vector{Float64}, anharm::Vector{Float64}, rot_freq::Vector{Float64}, couple_coeff::Vector{Float64}, couple_type::Int64, msb_order::Bool = true, verbose::Bool = true)
     @assert(length(Ness) == 3)
     @assert(length(Nguard) == 3)
     @assert(couple_type == 1 || couple_type == 2)
@@ -150,10 +141,6 @@ function hamiltonians_three_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, fre
 
     # frequencies (in GHz, will be multiplied by 2*pi to get angular frequencies 
     # in the Hamiltonian matrix)
-    fa = freq01[1]
-    fb = freq01[2]
-    fc = freq01[3]
-
     xa = anharm[1]
     xb = anharm[2]
     xc = anharm[3]
@@ -162,14 +149,10 @@ function hamiltonians_three_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, fre
     xac = couple_coeff[2]
     xbc = couple_coeff[3]
 
-    # rotational frequencies
-    favg = f_rot
-    rot_freq = [favg, favg, favg] 
-
-    # detuning
-    da = fa - favg
-    db = fb - favg
-    dc = fc - favg
+    # detuning frequencies
+    da = freq01[1] - rot_freq[1]
+    db = freq01[2] - rot_freq[2]
+    dc = freq01[3] - rot_freq[3]
 
     # single system lowering ops
     a1 = Array(Bidiagonal(zeros(Nt1),sqrt.(collect(1:Nt[1]-1)),:U))
@@ -245,13 +228,13 @@ function hamiltonians_three_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, fre
 
     if verbose
         println("*** Three coupled quantum systems setup ***")
-        println("System Hamiltonian frequencies [GHz]: f01 = ", freq01, " rot. freq = ", f_rot)
+        println("System Hamiltonian frequencies [GHz]: f01 = ", freq01, " rot. freq = ", rot_freq)
         println("Anharmonicity = ", anharm)
         println("Coupling type = ", (couple_type==1) ? "X-Kerr" : "J-C", ". Coupling coeff = ", couple_coeff )
         println("Number of essential states = ", Ness, " Number of guard states = ", Nguard)
         println("Hamiltonians are of size ", Ntot, " by ", Ntot)
     end
-    return H0, Hsym_ops, Hanti_ops, rot_freq
+    return H0, Hsym_ops, Hanti_ops
 end
 # initial parameter guess
 function init_control(params::objparams; maxrand::Float64, nCoeff::Int64, startFile::String = "", seed::Int64 = -1)
