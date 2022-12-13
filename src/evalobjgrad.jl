@@ -141,6 +141,8 @@ mutable struct objparams
 
     interactionPic:: Bool
     diagHconst::Vector{Float64}
+
+    bspline_new:: Bool
     
 # Regular arrays
     function objparams(Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64;
@@ -327,7 +329,7 @@ mutable struct objparams
              zeros(0), zeros(0), zeros(0), zeros(0), 
              linear_solver, objThreshold, traceInfidelityThreshold, 0.0, 0.0, 
              usingPriorCoeffs, priorCoeffs, quiet, Rfreq, false, [],
-             real(my_dVds), imag(my_dVds), my_sv_type, false, diagHconst
+             real(my_dVds), imag(my_dVds), my_sv_type, false, diagHconst, false
             )
 
     end
@@ -570,7 +572,7 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, wa::Working_A
     # Here we can choose what kind of control function expansion we want to use
     if (params.use_bcarrier)
         # FMG FIX
-        splinepar = bcparams(T, D1, Ncoupled, Nunc, params.Cfreq, pcof)
+        splinepar = bcparams(T, D1, Ncoupled, Nunc, params.Cfreq, pcof, params.bspline_new)
     else
     # the old bsplines is the same as the bcarrier with Cfreq = 0
         splinepar = splineparams(T, D1, Nsig, pcof)   # parameters for B-splines
@@ -1307,8 +1309,9 @@ function assign_thresholds_ctrl_freq(params::objparams, D1:: Int64, maxpar:: Mat
     for c in 1:Ncoupled+Nunc  # We assume that either Nunc = 0 or Ncoupled = 0
         for f in 1:Nfreq
             offset1 = 2*(c-1)*Nfreq*D1 + (f-1)*2*D1
-            minCoeff[ offset1 + 1:offset1+2*D1] .= -maxpar[c,f] # same for p(t) and q(t)
-            maxCoeff[offset1 + 1:offset1+2*D1] .= maxpar[c,f]
+             # same for p(t) and q(t)
+             minCoeff[ offset1 + 1:offset1+2*D1] .= -maxpar[c,f] 
+             maxCoeff[offset1 + 1:offset1+2*D1] .= maxpar[c,f]
         end
     end
     return minCoeff, maxCoeff
@@ -1326,7 +1329,7 @@ there are no uncoupled control functions.
 - `Nfreq::Int64`: Number of carrier wave frequencies used in the controls
 - `D1:: Int64`: Number of basis functions in each control function
 """
-function assign_thresholds_freq(maxamp::Array{Float64,1}, Ncoupled::Int64, Nfreq::Int64, D1::Int64)
+function assign_thresholds_freq(maxamp::Array{Float64,1}, Ncoupled::Int64, Nfreq::Int64, D1::Int64, bspline_new=false)
     nCoeff = 2*Ncoupled*Nfreq*D1
     minCoeff = zeros(nCoeff) # Initialize storage
     maxCoeff = zeros(nCoeff)
@@ -1335,8 +1338,17 @@ function assign_thresholds_freq(maxamp::Array{Float64,1}, Ncoupled::Int64, Nfreq
     for c in 1:Ncoupled
         for f in 1:Nfreq
             offset1 = 2*(c-1)*Nfreq*D1 + (f-1)*2*D1
-            minCoeff[ offset1 + 1:offset1+2*D1] .= -maxamp[f] # same for p(t) and q(t)
-            maxCoeff[offset1 + 1:offset1+2*D1] .= maxamp[f]
+            if bspline_new
+                # amplitude >=0 and <= maxpar
+                minCoeff[offset1 + 1:offset1+D1] .= 0.0 
+                maxCoeff[offset1 + 1:offset1+D1] .= maxamp[f]
+                # phase >=0 (no upper bound. Alternatively [0,2pi...])
+                minCoeff[offset1 + D1:offset1+2*D1] .= 0.0 
+                maxCoeff[offset1 + D1:offset1+2*D1] .= 1000.0 # NO UPPER BOUND on phase
+            else
+                minCoeff[offset1 + 1:offset1+2*D1] .= -maxamp[f] # same for p(t) and q(t)
+                maxCoeff[offset1 + 1:offset1+2*D1] .= maxamp[f]
+            end
         end
     end
     return minCoeff, maxCoeff

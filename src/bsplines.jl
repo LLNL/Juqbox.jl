@@ -169,8 +169,10 @@ struct bcparams
     Ncoupled::Int64 # Number of B-splines functions for the coupled ctrl Hamiltonians
     Nunc::Int64 # Number of B-spline functions  for the UNcoupled ctrl Hamiltonians
 
+    bspline_new:: Bool
+
     # New constructor to allow defining number of symmetric Hamiltonian terms
-    function bcparams(T::Float64, D1::Int64, Ncoupled::Int64, Nunc::Int64, omega::Array{Float64,2}, pcof::Array{Float64,1})
+    function bcparams(T::Float64, D1::Int64, Ncoupled::Int64, Nunc::Int64, omega::Array{Float64,2}, pcof::Array{Float64,1}, bspline_new::Bool = false)
         dtknot = T/(D1 -2)
         tcenter = dtknot.*(collect(1:D1) .- 1.5)
         Nfreq = size(omega,2)
@@ -179,7 +181,7 @@ struct bcparams
             println("nCoeff = ", nCoeff, " Nfreq = ", Nfreq, " D1 = ", D1, " Ncoupled = ", Ncoupled, " Nunc = ", Nunc, " len(pcof) = ", length(pcof))
             throw(DimensionMismatch("Inconsistent number of coefficients and size of parameter vector (nCoeff ≠ length(pcof)."))
         end
-        new(T, D1, omega, tcenter, dtknot, pcof, Nfreq, nCoeff, Ncoupled, Nunc)
+        new(T, D1, omega, tcenter, dtknot, pcof, Nfreq, nCoeff, Ncoupled, Nunc, bspline_new)
     end
 
 end
@@ -255,9 +257,17 @@ Evaluate a B-spline function with carrier waves. See also the `bcparams` constru
             #    end # for carrier phase
             # p(t)
             if q_func==1
-                f += fbs1 * sin(params.om[osc+1,freq]*t) + fbs2 * cos(params.om[osc+1,freq]*t) # q-func
+                if params.bspline_new
+                    f += fbs1 * sin(fbs2 + params.om[osc+1,freq]*t) # q-func
+                else
+                    f += fbs1 * sin(params.om[osc+1,freq]*t) + fbs2 * cos(params.om[osc+1,freq]*t) # q-func
+                end
             else
-                f += fbs1 * cos(params.om[osc+1,freq]*t) - fbs2 * sin(params.om[osc+1,freq]*t) # p-func
+                if params.bspline_new
+                    f += fbs1 * cos(fbs2 + params.om[osc+1,freq]*t)  # p-func
+                else
+                    f += fbs1 * cos(params.om[osc+1,freq]*t) - fbs2 * sin(params.om[osc+1,freq]*t) # p-func
+                end
             end
         end # for freq
     end # if
@@ -343,16 +353,43 @@ function gradbcarrier2!(t::Float64, params::bcparams, func::Int64, g::Array{Floa
             offset1 = 2*osc*params.Nfreq*params.D1 + (freq-1)*2*params.D1
             offset2 = 2*osc*params.Nfreq*params.D1 + (freq-1)*2*params.D1 + params.D1
 
+            fbs1 = 0.0
+            fbs2 = 0.0
+            if params.bspline_new
+                # Evaluate sum_s alpha_sf^k(2)Bs(t)
+                # 1st segment of nurb k
+                tc = params.tcenter[k]
+                tau = (t .- tc)./width
+                fbs1 += params.pcof[offset1+k] * (9/8 .+ 4.5*tau + 4.5*tau^2)
+                fbs2 += params.pcof[offset2+k] * (9/8 .+ 4.5*tau + 4.5*tau^2)
+                # 2nd segment of nurb k-1
+                tc = params.tcenter[k-1]
+                tau = (t - tc)./width
+                fbs1 += params.pcof[offset1+k.-1] .* (0.75 - 9 *tau^2)
+                fbs2 += params.pcof[offset2+k.-1] .* (0.75 - 9 *tau^2)
+                # 3rd segment of nurb k-2
+                tc = params.tcenter[k.-2]
+                tau = (t .- tc)./width
+                fbs1 += params.pcof[offset1+k-2] * (9/8 - 4.5*tau + 4.5*tau.^2)
+                fbs2 += params.pcof[offset2+k-2] * (9/8 - 4.5*tau + 4.5*tau.^2)
+            else
+                fbs1 = 1.0
+                fbs2 = 0.0
+            end
+
+
+            # Gradient
+
             #1st segment of nurb k
             tc = params.tcenter[k]
             tau = (t .- tc)./width
             bk = (9/8 .+ 4.5.*tau .+ 4.5.*tau.^2)
             if q_func==1
-                g[offset1 .+ k] = bk * sin(params.om[osc+1,freq]*t)
-                g[offset2 .+ k] = bk * cos(params.om[osc+1,freq]*t) 
+                g[offset1 .+ k] = bk * sin(fbs2 + params.om[osc+1,freq]*t)
+                g[offset2 .+ k] = bk * cos(fbs2 + params.om[osc+1,freq]*t) * fbs1
             else # p-func
-                g[offset1 .+ k] = bk * cos(params.om[osc+1,freq]*t)
-                g[offset2 .+ k] = -bk * sin(params.om[osc+1,freq]*t) 
+                g[offset1 .+ k] = bk * cos(fbs2 + params.om[osc+1,freq]*t)
+                g[offset2 .+ k] = -bk * sin(fbs2 + params.om[osc+1,freq]*t) * fbs1
             end          
 
             #2nd segment of nurb k-1
@@ -360,11 +397,11 @@ function gradbcarrier2!(t::Float64, params::bcparams, func::Int64, g::Array{Floa
             tau = (t .- tc)./width
             bk = (0.75 .- 9 .*tau.^2)
             if q_func==1
-                g[offset1 .+ (k-1)] = bk * sin(params.om[osc+1,freq]*t)
-                g[offset2 .+ (k-1)] = bk * cos(params.om[osc+1,freq]*t) 
+                g[offset1 .+ (k-1)] = bk * sin(fbs2 + params.om[osc+1,freq]*t)
+                g[offset2 .+ (k-1)] = bk * cos(fbs2 + params.om[osc+1,freq]*t) * fbs1
             else # p-func
-                g[offset1 .+ (k-1)] = bk * cos(params.om[osc+1,freq]*t)
-                g[offset2 .+ (k-1)] = -bk * sin(params.om[osc+1,freq]*t) 
+                g[offset1 .+ (k-1)] =  bk * cos(fbs2 + params.om[osc+1,freq]*t)
+                g[offset2 .+ (k-1)] = -bk * sin(fbs2 + params.om[osc+1,freq]*t) * fbs1
             end
       
             # 3rd segment og nurb k-2
@@ -372,11 +409,11 @@ function gradbcarrier2!(t::Float64, params::bcparams, func::Int64, g::Array{Floa
             tau = (t .- tc)./width
             bk = (9/8 .- 4.5.*tau .+ 4.5.*tau.^2)
             if q_func==1
-                g[offset1 .+ (k-2)] = bk * sin(params.om[osc+1,freq]*t)
-                g[offset2 .+ (k-2)] = bk * cos(params.om[osc+1,freq]*t) 
+                g[offset1 .+ (k-2)] = bk * sin(fbs2 + params.om[osc+1,freq]*t)
+                g[offset2 .+ (k-2)] = bk * cos(fbs2 + params.om[osc+1,freq]*t) * fbs1
             else # p-func
-                g[offset1 .+ (k-2)] = bk * cos(params.om[osc+1,freq]*t)
-                g[offset2 .+ (k-2)] = -bk * sin(params.om[osc+1,freq]*t) 
+                g[offset1 .+ (k-2)] =  bk * cos(fbs2 + params.om[osc+1,freq]*t)
+                g[offset2 .+ (k-2)] = -bk * sin(fbs2 + params.om[osc+1,freq]*t) * fbs1
             end
 
         end #for freq
