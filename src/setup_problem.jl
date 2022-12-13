@@ -339,53 +339,89 @@ function exists(x::Float64, invec::Vector{Float64}, prox_thres::Float64 = 5e-3)
     return id
 end
   
-function get_resonances(;Ness::Vector{Int64}, Nguard::Vector{Int64}, Hsys::Matrix{Float64}, Hsym_ops::Vector{Matrix{Float64}}, thres::Float64 = 0.01)
-    Nctrl = length(Hsym_ops)
-
-    nrows = size(Hsys,1)
-    ncols = size(Hsys,2)
-
-    Nt = Ness + Nguard
+function identify_essential_levels(Ness::Vector{Int64}, Nt::Vector{Int64}, Nctrl::Int64, msb_order::Bool)
+    # setup mapping between 1-d and 2-d indexing
     Ntot = prod(Nt)
-
-    # setup mapping between 1-d and 2-d indexing (assumes classical Juqbox ordering)
     it2i1 = zeros(Int64, Ntot)
     it2i2 = zeros(Int64, Ntot)
     it2i3 = zeros(Int64, Ntot)
-    is_ess = Array{Bool, 1}(undef, Ntot)
+    is_ess = Vector{Bool}(undef, Ntot)
     is_ess .= false # initialize
-    if Nctrl == 1
-        itot = 0
-        for i1=1:Nt[1]
-            itot += 1
-            it2i1[itot] = i1-1
-            if i1 <= Ness[1] 
-                is_ess[itot] = true
-            end
-        end
-    elseif Nctrl == 2
-        itot = 0
-        for i2=1:Nt[2]
+
+    if msb_order # classical Juqbox ordering
+
+        if Nctrl == 1
+            itot = 0
             for i1=1:Nt[1]
                 itot += 1
                 it2i1[itot] = i1-1
-                it2i2[itot] = i2-1
-                if i1 <= Ness[1] && i2 <= Ness[2]
-                is_ess[itot] = true
+                if i1 <= Ness[1] 
+                    is_ess[itot] = true
                 end
             end
-        end
-    elseif Nctrl == 3
-        itot = 0
-        for i3=1:Nt[3]
+        elseif Nctrl == 2
+            itot = 0
             for i2=1:Nt[2]
                 for i1=1:Nt[1]
                     itot += 1
                     it2i1[itot] = i1-1
                     it2i2[itot] = i2-1
-                    it2i3[itot] = i3-1
-                    if i1 <= Ness[1] && i2 <= Ness[2] && i3 <= Ness[3]
+                    if i1 <= Ness[1] && i2 <= Ness[2]
+                    is_ess[itot] = true
+                    end
+                end
+            end
+        elseif Nctrl == 3
+            itot = 0
+            for i3=1:Nt[3]
+                for i2=1:Nt[2]
+                    for i1=1:Nt[1]
+                        itot += 1
+                        it2i1[itot] = i1-1
+                        it2i2[itot] = i2-1
+                        it2i3[itot] = i3-1
+                        if i1 <= Ness[1] && i2 <= Ness[2] && i3 <= Ness[3]
+                            is_ess[itot] = true
+                        end
+                    end
+                end
+            end
+        end
+    else
+        # LSB ordering
+        if Nctrl == 1
+            itot = 0
+            for i1=1:Nt[1]
+                itot += 1
+                it2i1[itot] = i1-1
+                if i1 <= Ness[1] 
+                    is_ess[itot] = true
+                end
+            end
+        elseif Nctrl == 2
+            itot = 0
+            for i1=1:Nt[1]
+                for i2=1:Nt[2]
+                    itot += 1
+                    it2i1[itot] = i1-1
+                    it2i2[itot] = i2-1
+                    if i1 <= Ness[1] && i2 <= Ness[2]
                         is_ess[itot] = true
+                    end
+                end
+            end
+        elseif Nctrl == 3
+            itot = 0
+            for i1=1:Nt[1]
+                for i2=1:Nt[2]
+                    for i3=1:Nt[3]
+                        itot += 1
+                        it2i1[itot] = i1-1
+                        it2i2[itot] = i2-1
+                        it2i3[itot] = i3-1
+                        if i1 <= Ness[1] && i2 <= Ness[2] && i3 <= Ness[3]
+                            is_ess[itot] = true
+                        end
                     end
                 end
             end
@@ -395,6 +431,19 @@ function get_resonances(;Ness::Vector{Int64}, Nguard::Vector{Int64}, Hsys::Matri
     # println("it2i1= ", it2i1)
     # println("it2i2= ", it2i2)
     # println("it2i3= ", it2i3)
+    return is_ess, it2i1, it2i2, it2i3
+end
+
+function get_resonances(;Ness::Vector{Int64}, Nguard::Vector{Int64}, Hsys::Matrix{Float64}, Hsym_ops::Vector{Matrix{Float64}}, thres::Float64 = 0.01, msb_order::Bool = true)
+    Nctrl = length(Hsym_ops)
+
+    nrows = size(Hsys,1)
+    ncols = size(Hsys,2)
+
+    Nt = Ness + Nguard
+    Ntot = prod(Nt)
+
+    is_ess, it2i1, it2i2, it2i3 = identify_essential_levels(Ness, Nt, Nctrl, msb_order)
 
     # Note: if Hsys is diagonal, then Hsys_evals = diag(Hsys) and Utrans = IdentityMatrix
     Hsys_evals, Utrans = eigen_and_reorder(Hsys)
@@ -409,16 +458,16 @@ function get_resonances(;Ness::Vector{Int64}, Nguard::Vector{Int64}, Hsys::Matri
     # Note: Only resonances between *essential* levels are considered
 
     resonances = []
-    for i in 1:Nctrl
+    for q in 1:Nctrl
         # Transformation of control Hamiltonian (a+adag)
-        Hctrl_a = Hsym_ops[i]
+        Hctrl_a = Hsym_ops[q]
         Hctrl_a_trans = Utrans' * Hctrl_a * Utrans
 
         #initialize
         resonances_a =zeros(0)
 
         # identify resonant couplings in 'a+adag'
-        println("\nResonances in ctrl ", i, ":")
+        println("\nResonances in ctrl ", q, ":")
         for i in 1:nrows
             for j in 1:i # Only consider transitions from lower to higher levels
                 if abs(Hctrl_a_trans[i,j]) > thres
@@ -443,9 +492,23 @@ function get_resonances(;Ness::Vector{Int64}, Nguard::Vector{Int64}, Hsys::Matri
         push!(resonances, resonances_a)
     end
 
+    # Make sure we have the same number of frequencies for all controls
+    maxlen = maximum(length.(resonances[:]))
+    # println("maxlen = ", maxlen)
+    for q in 1:length(resonances)
+        orig_len = length(resonances[q])
+        #println("q = ", q, " orig_len = ", orig_len)
+        for p = orig_len+1:maxlen
+            push!(resonances[q], 0.0)
+        end
+        new_len = length(resonances[q])
+        #println("q = ", q, " new_len = ", new_len)
+    end
+
     # Convert to radians
     resonances = resonances*2*pi
 
+    println()
     # Return as a matrix, one row per control
     return Matrix(reduce(hcat, resonances)'), Utrans
 end

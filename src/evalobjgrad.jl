@@ -247,7 +247,7 @@ mutable struct objparams
                        forb_weights:: Vector{Float64} = Float64[],
                        objFuncType:: Int64 = 1, leak_ubound:: Float64=1.0e-3,
                        wmatScale::Float64 = 1.0, use_sparse::Bool = false, use_custom_forbidden::Bool = false,
-                       linear_solver::lsolver_object = lsolver_object(nrhs=prod(Ne)),
+                       linear_solver::lsolver_object = lsolver_object(nrhs=prod(Ne)), msb_order::Bool = true,
                        dVds::Array{ComplexF64,2}= Array{ComplexF64}(undef,0,0))
         pFidType = 2
         Nosc   = length(Ne) # number of subsystems
@@ -296,7 +296,7 @@ mutable struct objparams
         use_bcarrier = true
 
         # Weights in the W matrix for discouraging population of guarded states
-        wmat = wmatScale.*Juqbox.wmatsetup(Ne, Ng)
+        wmat = wmatScale.*Juqbox.wmatsetup(Ne, Ng, msb_order)
 
         # Build weighting matrices if there are user-specified forbidden states
         if use_custom_forbidden
@@ -2644,60 +2644,99 @@ end
 
 # setup the initial conditions
 """
-    u_init = initial_cond(Ne, Ng)
+    u_init = initial_cond(Ne, Ng, msb_order=true)
 
 Setup a basis of canonical unit vectors that span the essential Hilbert space, setting all guard levels to zero
  
 # Arguments
 - `Ne:: Array{Int64}`: Array holding the number of essential levels in each system
 - `Ng:: Array{Int64}`: Array holding the number of guard levels in each system
+- `msb_order:: Bool`: Most Significant Bit (MSB) ordering: true
 """
-function initial_cond(Ne, Ng)
+function initial_cond(Ne::Vector{Int64}, Ng::Vector{Int64}, msb_order::Bool = true)
     Nt = Ne + Ng
     Ntot = prod(Nt)
+    @assert length(Nt) <= 3 "ERROR: initial_cond(): only length(Nt) <= 3 is implemented"
+    NgTot = sum(Ng)
     N = prod(Ne)
     Ident = Matrix{Float64}(I, Ntot, Ntot)
     U0 = Ident[1:Ntot,1:N] # initial guess
 
     #adjust initial guess if there are ghost points
-    if length(Nt) == 3
-        if Ng[1]+Ng[2]+Ng[3] > 0
-            col = 0
-            m = 0
-            for k3 in 1:Nt[3]
+    if msb_order
+        if length(Nt) == 3
+            if NgTot > 0
+                col = 0
+                m = 0
+                for k3 in 1:Nt[3]
+                    for k2 in 1:Nt[2]
+                        for k1 in 1:Nt[1]
+                            m += 1
+                            # is this a guard level?
+                            guard = (k1 > Ne[1]) || (k2 > Ne[2]) || (k3 > Ne[3])
+                            if !guard
+                                col = col+1
+                                U0[:,col] = Ident[:,m]
+                            end # if ! guard
+                        end #for
+                    end # for
+                end # for            
+            end # if  
+        elseif length(Nt) == 2
+            if NgTot > 0
+                # build up a basis for the essential states
+                col = 0
+                m = 0
                 for k2 in 1:Nt[2]
                     for k1 in 1:Nt[1]
                         m += 1
                         # is this a guard level?
-                        guard = (k1 > Ne[1]) || (k2 > Ne[2]) || (k3 > Ne[3])
+                        guard = (k1 > Ne[1]) || (k2 > Ne[2])
                         if !guard
-                            col = col+1
+                            col += 1
                             U0[:,col] = Ident[:,m]
                         end # if ! guard
-                    end #for
+                    end # for
                 end # for
-            end # for            
-        end # if  
-    elseif length(Nt) == 2
-        if Ng[1] + Ng[2] > 0
-            Nt = Ne + Ng
-            # build up a basis for the essential states
-            col = 0
-            m = 0
-            for k2 in 1:Nt[2]
+            end # if
+        end
+    else
+        if length(Nt) == 3
+            if NgTot > 0
+                col = 0
+                m = 0
                 for k1 in 1:Nt[1]
-                    m += 1
-                    # is this a guard level?
-                    guard = (k1 > Ne[1]) || (k2 > Ne[2])
-                    if !guard
-                        col += 1
-                        U0[:,col] = Ident[:,m]
-                    end # if ! guard
+                    for k2 in 1:Nt[2]
+                        for k3 in 1:Nt[3]    
+                            m += 1
+                            # is this a guard level?
+                            guard = (k1 > Ne[1]) || (k2 > Ne[2]) || (k3 > Ne[3])
+                            if !guard
+                                col = col+1
+                                U0[:,col] = Ident[:,m]
+                            end # if ! guard
+                        end #for
+                    end # for
+                end # for            
+            end # if  
+        elseif length(Nt) == 2
+            if NgTot > 0
+                # build up a basis for the essential states
+                col = 0
+                m = 0
+                for k1 in 1:Nt[1]
+                    for k2 in 1:Nt[2]
+                        m += 1
+                        # is this a guard level?
+                        guard = (k1 > Ne[1]) || (k2 > Ne[2])
+                        if !guard
+                            col += 1
+                            U0[:,col] = Ident[:,m]
+                        end # if ! guard
+                    end # for
                 end # for
-            end # for
-        end # if
-    elseif length(Nt) > 3
-        println("ERROR: initial_cond(): length(Nt) = ", length(Nt), " is not implemented")
+            end # if
+        end
     end
     return U0
 end

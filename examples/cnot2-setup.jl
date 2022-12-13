@@ -59,16 +59,17 @@ x1 = -2* 0.1099  # official
 x2 = -2* 0.1126   # official
 x12 = -0.1 # Artificially large to allow fast coupling. Actual value: 1e-6 
 couple_type = 1 # cross-Kerr
-msb_order = true # true: original Juqbox, false: Quandary
+msb_order = false # true: original Juqbox, false: Quandary
 println("Hamiltonian is setup for ", (msb_order ? "MSB" : "LSB"), " ordering")
 
 # setup the Hamiltonian matrices
-H0, Hsym_ops, Hanti_ops = hamiltonians_two_sys(Ness=Ne, Nguard=Ng, freq01=[fa, fb], anharm=[x1, x2], rot_freq=rot_freq, couple_coeff=x12, couple_type=couple_type, msb_order = msb_order)
+H0, Hsym_ops, Hanti_ops = hamiltonians_two_sys(Ness=Ne, Nguard=Ng, freq01=[fa, fb], anharm=[x1, x2], rot_freq=rot_freq, couple_coeff=x12, couple_type=couple_type, msb_order=msb_order)
 
 # CONSIDER TRANSFORMATION OF THE HAMILTONIANS WHILE COMPUTING THE CARRIER FREQUENCIES
 
 # calculate resonance frequencies & diagonalizing transformation
-om, Utrans = get_resonances(Ness=Ne, Nguard=Ng, Hsys=H0, Hsym_ops=Hsym_ops)
+om, Utrans = get_resonances(Ness=Ne, Nguard=Ng, Hsys=H0, Hsym_ops=Hsym_ops, msb_order=msb_order)
+
 Nctrl = size(om, 1)
 Nfreq = size(om, 2)
 println("Nctrl = ", Nctrl, " Nfreq = ", Nfreq)
@@ -106,7 +107,7 @@ elseif ctrlQubit == 2
 end
 
 # Initial basis with guard levels
-U0 = initial_cond(Ne, Ng)
+U0 = initial_cond(Ne, Ng, msg_order)
 utarget = U0 * gate_cnot
 
 # create a linear solver object
@@ -116,7 +117,7 @@ linear_solver = Juqbox.lsolver_object(solver=Juqbox.JACOBI_SOLVER,max_iter=100,t
 use_sparse = true
 # use_sparse = false
 
-params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=utarget, Cfreq=om, Rfreq=rot_freq, Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, linear_solver=linear_solver, use_sparse=use_sparse)
+params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=utarget, Cfreq=om, Rfreq=rot_freq, Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, linear_solver=linear_solver, use_sparse=use_sparse, msb_order=msb_order)
 
 # dimensions for the parameter vector
 D1 = 10 # number of B-spline coeff per oscillator, freq and sin/cos
