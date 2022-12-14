@@ -143,6 +143,7 @@ mutable struct objparams
     diagHconst::Vector{Float64}
 
     bspline_new:: Bool
+    bspline_new_scaling:: Float64
     
 # Regular arrays
     function objparams(Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64;
@@ -329,7 +330,7 @@ mutable struct objparams
              zeros(0), zeros(0), zeros(0), zeros(0), 
              linear_solver, objThreshold, traceInfidelityThreshold, 0.0, 0.0, 
              usingPriorCoeffs, priorCoeffs, quiet, Rfreq, false, [],
-             real(my_dVds), imag(my_dVds), my_sv_type, false, diagHconst, false
+             real(my_dVds), imag(my_dVds), my_sv_type, false, diagHconst, false, 1.0
             )
 
     end
@@ -572,7 +573,7 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, wa::Working_A
     # Here we can choose what kind of control function expansion we want to use
     if (params.use_bcarrier)
         # FMG FIX
-        splinepar = bcparams(T, D1, Ncoupled, Nunc, params.Cfreq, pcof, params.bspline_new)
+        splinepar = bcparams(T, D1, Ncoupled, Nunc, params.Cfreq, pcof, params.bspline_new, params.bspline_new_scaling)
     else
     # the old bsplines is the same as the bcarrier with Cfreq = 0
         splinepar = splineparams(T, D1, Nsig, pcof)   # parameters for B-splines
@@ -1329,7 +1330,7 @@ there are no uncoupled control functions.
 - `Nfreq::Int64`: Number of carrier wave frequencies used in the controls
 - `D1:: Int64`: Number of basis functions in each control function
 """
-function assign_thresholds_freq(maxamp::Array{Float64,1}, Ncoupled::Int64, Nfreq::Int64, D1::Int64, bspline_new=false)
+function assign_thresholds_freq(maxamp::Array{Float64,1}, Ncoupled::Int64, Nfreq::Int64, D1::Int64, bspline_new=false, maxphase::Float64=2.0*pi)
     nCoeff = 2*Ncoupled*Nfreq*D1
     minCoeff = zeros(nCoeff) # Initialize storage
     maxCoeff = zeros(nCoeff)
@@ -1340,11 +1341,14 @@ function assign_thresholds_freq(maxamp::Array{Float64,1}, Ncoupled::Int64, Nfreq
             offset1 = 2*(c-1)*Nfreq*D1 + (f-1)*2*D1
             if bspline_new
                 # amplitude >=0 and <= maxpar
-                minCoeff[offset1 + 1:offset1+D1] .= 0.0 
+                eps = 0.0
+                minCoeff[offset1 + 1:offset1+D1] .= -eps
                 maxCoeff[offset1 + 1:offset1+D1] .= maxamp[f]
-                # phase >=0 (no upper bound. Alternatively [0,2pi...])
-                minCoeff[offset1 + D1:offset1+2*D1] .= 0.0 
-                maxCoeff[offset1 + D1:offset1+2*D1] .= 1000.0 # NO UPPER BOUND on phase
+                # -0.5*scaling <= phase <= 0.5 * scaling
+                # minCoeff[offset1 + D1+1:offset1+2*D1] .= -maxphase*maxamp[f]
+                # maxCoeff[offset1 + D1+1:offset1+2*D1] .=  maxphase*maxamp[f]
+                minCoeff[offset1 + D1+1:offset1+2*D1] .= -eps
+                maxCoeff[offset1 + D1+1:offset1+2*D1] .= 2*maxphase*maxamp[f]
             else
                 minCoeff[offset1 + 1:offset1+2*D1] .= -maxamp[f] # same for p(t) and q(t)
                 maxCoeff[offset1 + 1:offset1+2*D1] .= maxamp[f]
@@ -1651,9 +1655,19 @@ end
 
     # Tikhonov regularization
     if params.usingPriorCoeffs
-        penalty0 = dot(pcof-params.priorCoeffs, pcof-params.priorCoeffs)
+        penalty0 = dot(pcof-params.priorCoeffs, pcof-params.priorCoeffs) / Npar
+    elseif params.bspline_new # only penalize amplitudes
+        penalty0 = 0.0
+        for c in 1:params.Ncoupled
+            for f in 1:params.Nfreq
+                offset1 = 2*(c-1)*params.Nfreq*D1 + (f-1)*2*D1
+                myvec = pcof[offset1+1:offset1+D1]
+                penalty0 += dot(myvec, myvec)
+            end
+        end
+        penalty0 = penalty0 / Npar * 2
     else
-        penalty0 = dot(pcof,pcof)
+        penalty0 = dot(pcof,pcof) / Npar
     end
 
     penalty1 = 0.0
@@ -1667,7 +1681,7 @@ end
 
 #    penalty = (params.tik0 * penalty0 + params.tik1 * penalty1) * iNpar;
 
-    penalty = (params.tik0 * penalty0) * iNpar;
+    penalty = (params.tik0 * penalty0);
                                 
     return penalty
 end
@@ -1696,12 +1710,22 @@ end
         @fastmath @inbounds @simd for i = 1:Npar
             pengrad[i] += (2.0*params.tik0*iNpar)* ( pcof[i] - params.priorCoeffs[i] )
         end
-    else
+    elseif params.bspline_new
+        penalty0 = 0.0
+        for c in 1:params.Ncoupled
+            for f in 1:params.Nfreq
+                offset1 = 2*(c-1)*params.Nfreq*D1 + (f-1)*2*D1
+                pengrad[offset1+1:offset1+D1] .+= 2.0*params.tik0*pcof[offset1+1:offset1+D1] / Npar * 2
+            end
+        end
+   else
         @fastmath @inbounds @simd for i = 1:Npar
             #        pengrad[i] *= iNpar*params.tik1
             pengrad[i] += (2.0*params.tik0*pcof[i]*iNpar)
         end
     end
+
+
 
 end
 
