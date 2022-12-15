@@ -1268,7 +1268,8 @@ function zero_start_end!(params::objparams, D1:: Int64, minCoeff:: Array{Float64
 #    @printf("Ncoupled = %d, Nfreq = %d, D1 = %d, nCoeff = %d\n", Ncoupled, Nfreq, D1, nCoeff)
     for c in 1:Ncoupled+Nunc  # We assume that either Nunc = 0 or Ncoupled = 0
         for f in 1:Nfreq
-            for q in 0:1
+            if params.bspline_new # only for amplitude!
+                q = 0
                 offset1 = 2*(c-1)*Nfreq*D1 + (f-1)*2*D1 + q*D1
                 # start
                 minCoeff[ offset1 + 1] = 0.0
@@ -1281,6 +1282,21 @@ function zero_start_end!(params::objparams, D1:: Int64, minCoeff:: Array{Float64
                 minCoeff[ offset2] = 0.0
                 maxCoeff[ offset2-1] = 0.0
                 maxCoeff[ offset2 ] = 0.0
+            else
+                for q in 0:1
+                    offset1 = 2*(c-1)*Nfreq*D1 + (f-1)*2*D1 + q*D1
+                    # start
+                    minCoeff[ offset1 + 1] = 0.0
+                    minCoeff[ offset1 + 2] = 0.0
+                    maxCoeff[ offset1 + 1] = 0.0
+                    maxCoeff[ offset1 + 2] = 0.0
+                    # end
+                    offset2 = offset1+D1
+                    minCoeff[ offset2-1] = 0.0
+                    minCoeff[ offset2] = 0.0
+                    maxCoeff[ offset2-1] = 0.0
+                    maxCoeff[ offset2 ] = 0.0
+                end
             end
         end
     end
