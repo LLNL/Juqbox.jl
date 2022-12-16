@@ -1358,13 +1358,14 @@ function assign_thresholds_freq(maxamp::Array{Float64,1}, Ncoupled::Int64, Nfreq
             if bspline_new
                 # amplitude >=0 and <= maxpar
                 eps = 1e-4 
-                minCoeff[offset1 + 1:offset1+D1] .= -eps
+                # minCoeff[offset1 + 1:offset1+D1] .= -eps
+                minCoeff[offset1 + 1:offset1+D1] .= -maxamp[f]
                 maxCoeff[offset1 + 1:offset1+D1] .= maxamp[f]
                 # -0.5*scaling <= phase <= 0.5 * scaling
-                # minCoeff[offset1 + D1+1:offset1+2*D1] .= -maxphase*maxamp[f] - eps
-                # maxCoeff[offset1 + D1+1:offset1+2*D1] .=  maxphase*maxamp[f] + eps
-                minCoeff[offset1 + D1+1:offset1+2*D1] .= -eps
-                maxCoeff[offset1 + D1+1:offset1+2*D1] .= 2*maxphase*maxamp[f] + eps
+                minCoeff[offset1 + D1+1:offset1+2*D1] .= -maxphase*maxamp[f] - eps
+                maxCoeff[offset1 + D1+1:offset1+2*D1] .=  maxphase*maxamp[f] + eps
+                # minCoeff[offset1 + D1+1:offset1+2*D1] .= -eps
+                # maxCoeff[offset1 + D1+1:offset1+2*D1] .= 2*maxphase*maxamp[f] + eps
             else
                 minCoeff[offset1 + 1:offset1+2*D1] .= -maxamp[f] # same for p(t) and q(t)
                 maxCoeff[offset1 + 1:offset1+2*D1] .= maxamp[f]
