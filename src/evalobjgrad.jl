@@ -1378,7 +1378,7 @@ end
 
 #------------------------------------------------------------
 """
-    minCoeff, maxCoeff = assign_thresholds_ctrl_freq(params, D1, maxamp)
+    minCoeff, maxCoeff = assign_thresholds_ctrl_freq(params, D1, maxAmp)
 
 Build vector of parameter min/max constraints that can depend on the control function and carrier wave frequency, 
 with `minCoeff = -maxCoeff`.
@@ -1386,9 +1386,9 @@ with `minCoeff = -maxCoeff`.
 # Arguments
 - `params:: objparams`: Struct containing problem definition.
 - `D1:: Int64`: Number of basis functions in each segment.
-- `maxamp:: Matrix{Float64}`: `maxamp[c,f]` is the maximum parameter value for ctrl `c` and frequency `f`
+- `maxAmp:: Matrix{Float64}`: `maxAmp[c,f]` is the maximum parameter value for ctrl `c` and frequency `f`
 """
-function assign_thresholds_ctrl_freq(params::objparams, D1:: Int64, maxpar:: Matrix{Float64})
+function assign_thresholds_ctrl_freq(params::objparams, D1:: Int64, maxAmp:: Matrix{Float64})
     Nfreq = params.Nfreq
     Ncoupled = params.Ncoupled
     Nunc = params.Nunc
@@ -1400,26 +1400,26 @@ function assign_thresholds_ctrl_freq(params::objparams, D1:: Int64, maxpar:: Mat
     for c in 1:Ncoupled+Nunc  # We assume that either Nunc = 0 or Ncoupled = 0
         for f in 1:Nfreq
             offset1 = 2*(c-1)*Nfreq*D1 + (f-1)*2*D1
-            minCoeff[ offset1 + 1:offset1+2*D1] .= -maxpar[c,f] # same for p(t) and q(t)
-            maxCoeff[offset1 + 1:offset1+2*D1] .= maxpar[c,f]
+            minCoeff[offset1 + 1:offset1+2*D1] .= -maxAmp[c,f] # same for p(t) and q(t)
+            maxCoeff[offset1 + 1:offset1+2*D1] .= maxAmp[c,f]
         end
     end
     return minCoeff, maxCoeff
 end
 
 """
-    minCoeff, maxCoeff = assign_thresholds_freq(maxamp, Ncoupled, Nfreq, D1)
+    minCoeff, maxCoeff = assign_thresholds_freq(maxAmp, Ncoupled, Nfreq, D1)
 
 Build vector of frequency dependent min/max parameter constraints, with `minCoeff = -maxCoeff`, when
 there are no uncoupled control functions.
  
 # Arguments
-- `maxamp::Array{Float64,1}`: Maximum parameter value for each frequency
+- `maxAmp::Array{Float64,1}`: Maximum parameter value for each frequency
 - `Ncoupled::Int64`: Number of coupled controls in the simulation
 - `Nfreq::Int64`: Number of carrier wave frequencies used in the controls
 - `D1:: Int64`: Number of basis functions in each control function
 """
-function assign_thresholds_freq(maxamp::Array{Float64,1}, Ncoupled::Int64, Nfreq::Int64, D1::Int64)
+function assign_thresholds_freq(maxAmp::Array{Float64,1}, Ncoupled::Int64, Nfreq::Int64, D1::Int64)
     nCoeff = 2*Ncoupled*Nfreq*D1
     minCoeff = zeros(nCoeff) # Initialize storage
     maxCoeff = zeros(nCoeff)
@@ -1428,45 +1428,37 @@ function assign_thresholds_freq(maxamp::Array{Float64,1}, Ncoupled::Int64, Nfreq
     for c in 1:Ncoupled
         for f in 1:Nfreq
             offset1 = 2*(c-1)*Nfreq*D1 + (f-1)*2*D1
-            minCoeff[ offset1 + 1:offset1+2*D1] .= -maxamp[f] # same for p(t) and q(t)
-            maxCoeff[offset1 + 1:offset1+2*D1] .= maxamp[f]
+            minCoeff[ offset1 + 1:offset1+2*D1] .= -maxAmp[f] # same for p(t) and q(t)
+            maxCoeff[offset1 + 1:offset1+2*D1] .= maxAmp[f]
         end
     end
     return minCoeff, maxCoeff
 end
 
 """
-    minCoeff, maxCoeff = assign_thresholds(params, D1, maxpar [, maxpar_unc])
+    minCoeff, maxCoeff = assign_thresholds(maxAmp, Ncoupled, Nfreq, D1, Nunc=0])
 
 Build vector of frequency independent min/max parameter constraints for each control function. Here, `minCoeff = -maxCoeff`.
  
 # Arguments
-- `params:: objparams`: Struct containing problem definition.
-- `D1:: Int64`: Number of basis functions in each segment.
-- `maxpar::Array{Float64,1}`: Maximum parameter value for each coupled control.
+- `maxamp::Array{Float64,1}`: Maximum parameter value for each frequency
+- `Ncoupled::Int64`: Number of coupled controls in the simulation
+- `Nfreq::Int64`: Number of carrier wave frequencies used in each control function
+- `D1::Int64`: Number of basis functions per frequency and re/im in each control function
+- `Nunc::Int64`: (optional) Number of un-coupled controls (default = 0)
 """
-function assign_thresholds(params::objparams, D1::Int64, maxpar::Array{Float64,1})
-    Nfreq = params.Nfreq
-    nCoeff =  2*(params.Ncoupled + params.Nunc)*Nfreq*D1
+function assign_thresholds(maxamp::Array{Float64,1}, Ncoupled::Int64, Nfreq::Int64, D1::Int64, Nunc::Int64 = 0)
+    nCoeff = (2*Ncoupled+Nunc)*Nfreq*D1
     minCoeff = zeros(nCoeff) # Initialize storage
     maxCoeff = zeros(nCoeff)
 
-    for c in 1:params.Ncoupled+params.Nunc # We assume that either Nunc = 0 or Ncoupled = 0
+    for c in 1:Ncoupled+Nunc # We assume that either Nunc = 0 or Ncoupled = 0
         for f in 1:Nfreq
             offset1 = 2*(c-1)*Nfreq*D1 + (f-1)*2*D1
-            minCoeff[ offset1 + 1:offset1+2*D1] .= -maxpar[c] # same for p(t) and q(t)
-            maxCoeff[offset1 + 1:offset1+2*D1] .= maxpar[c]
+            minCoeff[offset1 + 1:offset1+2*D1] .= -maxamp[c] # same for p(t) and q(t)
+            maxCoeff[offset1 + 1:offset1+2*D1] .= maxamp[c]
         end
     end
-
-    # offset0 = 2*params.Ncoupled*params.Nfreq*D1
-    # for c in 1:params.Nunc
-    #     for f in 1:Nfreq
-    #         offset1 = (c-1)*Nfreq*D1 + (f-1)*D1
-    #         minCoeff[offset0+offset1+1:offset0+offset1+D1] .= -maxpar_unc[c]
-    #         maxCoeff[offset0+offset1+1:offset0+offset1+D1] .= maxpar_unc[c]
-    #     end
-    # end
 
     return minCoeff, maxCoeff
 end
@@ -2295,83 +2287,9 @@ function estimate_Neumann!(tol::Float64, params::objparams, maxpar::Array{Float6
     # return nterms
 end
 
-
-# """
-#     nsteps = calculate_timestep(T, H0, Hsym_ops, Hanti_ops, maxpar [, Pmin = 40])
-
-# Estimate the number of time steps needed for the simulation, for the case without uncoupled controls.
- 
-# # Arguments
-# - `T:: Float64`: Final simulation
-# - `H0:: Matrix{Float64}`: Time-independent part of the Hamiltonian matrix
-# - `Hsym_ops:: Vector{Matrix{Float64}}`: Array of symmetric control Hamiltonians
-# - `Hanti_ops:: Vector{Matrix{Float64}}`: Array of symmetric control Hamiltonians
-# - `maxpar:: Vector{Float64}`: Maximum parameter value for each subsystem
-# - `Pmin:: Int64`: Number of time steps per shortest period (assuming a slowly varying Hamiltonian).
-# """
-# function calculate_timestep(T::Float64, H0::Matrix{Float64}, Hsym_ops::Vector{Matrix{Float64}},Hanti_ops::Vector{Matrix{Float64}}, maxpar::Vector{Float64}, Pmin::Int64 = 40)
-#     K1 = copy(H0) 
-#     Ncoupled = length(Hsym_ops)
-
-#     # Coupled control Hamiltonians
-#     for i = 1:Ncoupled
-#         K1 = K1 + maxpar[i].*Hsym_ops[i] + 1im*maxpar[i].*Hanti_ops[i]
-#     end
-
-#     # Estimate time step
-#     lamb = eigvals(Array(K1))
-#     maxeig = maximum(abs.(lamb)) 
-#     mineig = minimum(abs.(lamb)) 
-
-#     samplerate1 = maxeig*Pmin/(2*pi)
-#     nsteps = ceil(Int64, T*samplerate1)
-
-#     # NOTE: The above estimate does not account for quickly varying signals or a large number of splines.  
-#     # Double check at least 2-3 points per spline to resolve control function.
-
-#     return nsteps
-# end
-
-# # for sparse matrix format
-# """
-#     nsteps = calculate_timestep(T, H0, Hsym_ops, Hanti_ops, maxpar [, Pmin = 40])
-
-# Estimate the number of time steps needed for the simulation, for the case without uncoupled controls.
- 
-# # Arguments
-# - `T:: Float64`: Final simulation
-# - `H0:: SparseMatrixCSC{Float64,Int64}`: Time-independent part of the Hamiltonian matrix
-# - `Hsym_ops:: Vector{SparseMatrixCSC{Float64,Int64}}`: Array of symmetric control Hamiltonians
-# - `Hanti_ops:: Vector{SparseMatrixCSC{Float64,Int64}}`: Array of symmetric control Hamiltonians
-# - `maxpar:: Vector{Float64}`: Maximum parameter value for each subsystem
-# - `Pmin:: Int64`: Number of time steps per shortest period (assuming a slowly varying Hamiltonian).
-# """
-# function calculate_timestep(T::Float64, H0::SparseMatrixCSC{Float64,Int64}, Hsym_ops::Vector{SparseMatrixCSC{Float64,Int64}},Hanti_ops::Vector{SparseMatrixCSC{Float64,Int64}}, maxpar::Vector{Float64}, Pmin::Int64 = 40)
-#     K1 = copy(H0) 
-#     Ncoupled = length(Hsym_ops)
-
-#     # Coupled control Hamiltonians
-#     for i = 1:Ncoupled
-#         K1 = K1 + maxpar[i].*Hsym_ops[i] + 1im*maxpar[i].*Hanti_ops[i]
-#     end
-
-#     # Estimate time step
-#     lamb = eigvals(Array(K1))
-#     maxeig = maximum(abs.(lamb)) 
-#     mineig = minimum(abs.(lamb)) 
-
-#     samplerate1 = maxeig*Pmin/(2*pi)
-#     nsteps = ceil(Int64, T*samplerate1)
-
-#     # NOTE: The above estimate does not account for quickly varying signals or a large number of splines.  
-#     # Double check at least 2-3 points per spline to resolve control function.
-
-#     return nsteps
-# end
-
 # unified calculation of the time step, merging previous cases into one routine
 """
-    nsteps = calculate_timestep(T, H0; Hsym_ops=[], Hanti_ops=[], Hunc_ops=[], maxSym=[], maxUnc=[], Pmin=40)
+    nsteps = calculate_timestep(T, H0; Hsym_ops=[], Hanti_ops=[], Hunc_ops=[], maxCoupled=[], maxUnc=[], Pmin=40)
 
 Estimate the number of time steps needed for the simulation, when there are uncoupled controls.
  
@@ -2381,22 +2299,23 @@ Estimate the number of time steps needed for the simulation, when there are unco
 - `Hsym_ops:: Vector{Matrix{Float64}}`: (Optional kw-arg) Array of symmetric control Hamiltonians
 - `Hanti_ops:: Vector{Matrix{Float64}}`: (Optional kw-arg) Array of anti-symmetric control Hamiltonians
 - `Hunc_ops:: Vector{Matrix{Float64}}`: (Optional kw-arg) Array of uncoupled control Hamiltonians
-- `maxCop:: Vector{Float64}`: (Optional kw-arg) Maximum control amplitude for each sym/anti-sym control Hamiltonian
+- `maxCoupled:: Matrix{Float64}`: (Optional kw-arg) Maximum control amplitude for each sym/anti-sym control Hamiltonian
 - `maxUnc:: Vector{Float64}`: (Optional kw-arg) Maximum control amplitude for each uncoupled control Hamiltonian
 - `Pmin:: Int64`: (Optional kw-arg) Number of time steps per shortest period (assuming a slowly varying Hamiltonian).
 """
-function calculate_timestep(T::Float64, H0::Matrix{Float64}; Hsym_ops::Vector{Matrix{Float64}}=Matrix{Float64}[], Hanti_ops::Vector{Matrix{Float64}}=Matrix{Float64}[], Hunc_ops::Vector{Matrix{Float64}}=Matrix{Float64}[], maxCop::Vector{Float64}=Float64[], maxUnc::Vector{Float64}=Float64[], Pmin::Int64=40)
+function calculate_timestep(T::Float64, H0::Matrix{Float64}; Hsym_ops::Vector{Matrix{Float64}}=Matrix{Float64}[], Hanti_ops::Vector{Matrix{Float64}}=Matrix{Float64}[], Hunc_ops::Vector{Matrix{Float64}}=Matrix{Float64}[], maxCoupled::Matrix{Float64}=Float64[], maxUnc::Vector{Float64}=Float64[], Pmin::Int64=40)
 
     Ncoupled = length(Hsym_ops)
     Nunc = length(Hunc_ops)
-    @assert(length(maxCop)>= Ncoupled)
+    @assert(length(maxCoupled)>= Ncoupled)
     @assert(length(maxUnc)>= Nunc)
 
     K1 = copy(H0) # system Hamiltonian
 
     # Coupled control Hamiltonians
+    maxpar = sum(maxCoupled, dims=2) # sum over all frequencies
     for i = 1:Ncoupled
-        K1 += maxCop[i].*Hsym_ops[i] + 1im*maxCop[i].*Hanti_ops[i]
+        K1 += maxpar[i].*Hsym_ops[i] + 1im*maxpar[i].*Hanti_ops[i]
     end
 
     # Uncoupled control Hamiltonians
@@ -2426,7 +2345,7 @@ end
 
 # sparse array case:
 """
-    nsteps = calculate_timestep(T, H0; Hsym_ops=[], Hanti_ops=[], Hunc_ops=[], maxSym=[], maxUnc=[], Pmin=40)
+    nsteps = calculate_timestep(T, H0; Hsym_ops=[], Hanti_ops=[], Hunc_ops=[], maxCoupled=[], maxUnc=[], Pmin=40)
 
 Estimate the number of time steps needed for the simulation, when there are uncoupled controls.
  
@@ -2436,15 +2355,15 @@ Estimate the number of time steps needed for the simulation, when there are unco
 - `Hsym_ops:: Vector{SparseMatrixCSC{Float64,Int64}}`: (Optional kw-arg) Array of symmetric control Hamiltonians
 - `Hanti_ops:: Vector{SparseMatrixCSC{Float64,Int64}}`: (Optional kw-arg) Array of anti-symmetric control Hamiltonians
 - `Hunc_ops:: Vector{SparseMatrixCSC{Float64,Int64}}`: (Optional kw-arg) Array of uncoupled control Hamiltonians
-- `maxCop:: Vector{Float64}`: (Optional kw-arg) Maximum control amplitude for each sym/anti-sym control Hamiltonian
+- `maxCoupled:: Vector{Float64}`: (Optional kw-arg) Maximum control amplitude for each sym/anti-sym control Hamiltonian
 - `maxUnc:: Vector{Float64}`: (Optional kw-arg) Maximum control amplitude for each uncoupled control Hamiltonian
 - `Pmin:: Int64`: (Optional kw-arg) Number of time steps per shortest period (assuming a slowly varying Hamiltonian).
 """
-function calculate_timestep(T::Float64, H0::SparseMatrixCSC{Float64,Int64}; Hsym_ops::Vector{SparseMatrixCSC{Float64,Int64}}=SparseMatrixCSC{Float64,Int64}[], Hanti_ops::Vector{SparseMatrixCSC{Float64,Int64}}=SparseMatrixCSC{Float64,Int64}[], Hunc_ops::Vector{SparseMatrixCSC{Float64,Int64}}=SparseMatrixCSC{Float64,Int64}[], maxCop::Vector{Float64}=Float64[], maxUnc::Vector{Float64}=Float64[], Pmin::Int64=40)
+function calculate_timestep(T::Float64, H0::SparseMatrixCSC{Float64,Int64}; Hsym_ops::Vector{SparseMatrixCSC{Float64,Int64}}=SparseMatrixCSC{Float64,Int64}[], Hanti_ops::Vector{SparseMatrixCSC{Float64,Int64}}=SparseMatrixCSC{Float64,Int64}[], Hunc_ops::Vector{SparseMatrixCSC{Float64,Int64}}=SparseMatrixCSC{Float64,Int64}[], maxCoupled::Vector{Float64}=Float64[], maxUnc::Vector{Float64}=Float64[], Pmin::Int64=40)
 
     Ncoupled = length(Hsym_ops)
     Nunc = length(Hunc_ops)
-    @assert(length(maxCop)>= Ncoupled)
+    @assert(length(maxCoupled)>= Ncoupled)
     @assert(length(maxUnc)>= Nunc)
 
     K1 = copy(H0) # system Hamiltonian
@@ -2455,7 +2374,7 @@ function calculate_timestep(T::Float64, H0::SparseMatrixCSC{Float64,Int64}; Hsym
 
     # Coupled control Hamiltonians
     for i = 1:Ncoupled
-        K1 += maxCop[i].*Hsym_ops[i] + 1im*maxCop[i].*Hanti_ops[i]
+        K1 += maxCoupled[i].*Hsym_ops[i] + 1im*maxCoupled[i].*Hanti_ops[i]
     end
 
     # Uncoupled control Hamiltonians
@@ -2483,88 +2402,6 @@ function calculate_timestep(T::Float64, H0::SparseMatrixCSC{Float64,Int64}; Hsym
     return nsteps
 end
 
-# # Function to estimate the number of time steps needed for the simulation. Only uncoupled controls.
-# """
-#     nsteps = calculate_timestep(T, H0, Hunc_ops, maxpar [, Pmin = 40])
-
-# Estimate the number of time steps needed for an accurate simulation, when there are no coupled controls
- 
-# # Arguments
-# - `T:: Float64`: Final simulation
-# - `H0:: Matrix{Float64}`: Time-independent part of the Hamiltonian matrix
-# - `Hunc_ops:: Vector{Matrix{Float64}}`: Array of uncoupled control Hamiltonians
-# - `max_unc:: Vector{Float64}`: Maximum parameter value for each subsystem (uncoupled)
-# - `Pmin:: Int64`: Sample rate for accuracy (assuming a slowly varying Hamiltonian)
-# """
-# function calculate_timestep(T::Float64, H0::Matrix{Float64}, Hunc_ops::Vector{Matrix{Float64}}, max_unc::Vector{Float64}, Pmin::Int64 = 40)
-#     K1 = copy(H0) 
-#     Nunc = length(Hunc_ops)
-
-#     # Typecasting issue for sparse arrays
-#     if(typeof(H0) == SparseMatrixCSC{Float64,Int64})
-#         K1 = SparseMatrixCSC{ComplexF64,Int64}(K1)
-#     end
-
-#     # Uncoupled control Hamiltonians
-#     for i = 1:Nunc
-#         if(issymmetric(Hunc_ops[i]))
-#             K1 = K1 .+ max_unc[i]*Hunc_ops[i]
-#         elseif(norm(Hunc_ops[i]+Hunc_ops[i]') < 1e-14)
-#             K1 .+= 1im*max_unc[i].*Hunc_ops[i]
-#         else 
-#             throw(ArgumentError("Uncoupled Hamiltonians must currently be either symmetric or anti-symmetric.\n"))
-#         end
-#     end
-
-#     # Estimate time step
-#     lamb = eigvals(Array(K1))
-#     maxeig = maximum(abs.(lamb)) 
-#     mineig = minimum(abs.(lamb)) 
-
-#     samplerate1 = maxeig*Pmin/(2*pi)
-#     nsteps = ceil(Int64, T*samplerate1)
-
-#     # NOTE: The above estimate does not account for quickly varying signals or a large number of splines. 
-#     # Double check at least 2-3 points per spline to resolve control function.
-
-#     return nsteps
-# end
-
-# Preallocate K and S matrices (not used anymore)
-# function KS_alloc(params)
-#     Ntot = prod(params.Nt)
-#     # establish the non-zero pattern for sparse storage
-#     if typeof(params.Hconst) == SparseMatrixCSC{Float64, Int64}
-#         K0 = copy(params.Hconst)
-#         S0 = spzeros(size(params.Hconst,1),size(params.Hconst,2))
-#         for q=1:params.Ncoupled
-#             K0 += params.Hsym_ops[q]
-#             S0 += params.Hanti_ops[q]
-#         end
-#         for q=1:params.Nunc
-#             if(params.isSymm[q])
-#                 K0 = K0 + params.Hunc_ops[q]
-#             else
-#                 S0 = S0 + params.Hunc_ops[q]
-#             end
-#         end
-#         K05 = copy(K0)
-#         K1  = copy(K0)
-#         S05 = copy(S0)
-#         S1  = copy(S0)
-#     else
-#         K0   = zeros(Float64,Ntot,Ntot)
-#         S0   = zeros(Float64,Ntot,Ntot)
-#         K05  = zeros(Float64,Ntot,Ntot)
-#         S05  = zeros(Float64,Ntot,Ntot)
-#         K1   = zeros(Float64,Ntot,Ntot)
-#         S1   = zeros(Float64,Ntot,Ntot)
-#     end
-#     # vtargetr = real(params.Utarget)
-#     # vtargeti = imag(params.Utarget)
-#     #return K0,S0,K05,S05,K1,S1,vtargetr,vtargeti
-#     return K0,S0,K05,S05,K1,S1
-# end
 
 # Preallocate K and S matrices, not relying on params
 function ks_alloc(Ntot:: Int64, Hconst::MyRealMatrix, Hsym_ops::Vector{MyRealMatrix}, Hanti_ops::Vector{MyRealMatrix}, Hunc_ops::Vector{MyRealMatrix}, isSymm::BitArray{1})

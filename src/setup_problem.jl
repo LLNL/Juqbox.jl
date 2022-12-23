@@ -2,7 +2,7 @@
 
 using LinearAlgebra
 
-function hamiltonians_one_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, freq01::Float64, anharm::Float64, rot_freq::Vector{Float64}, verbose::Bool = true)
+function hamiltonians_one_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, freq01::Vector{Float64}, anharm::Vector{Float64}, rot_freq::Vector{Float64}, verbose::Bool = true)
     @assert(length(Ness)==1)
     @assert(length(Nguard)==1)
     @assert(minimum(Ness) >= 2)
@@ -10,15 +10,12 @@ function hamiltonians_one_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, freq0
 
     Ntot = Ness[1] + Nguard[1] # Total number of energy levels
 
-    # frequencies (in GHz, will be multiplied by 2*pi to get angular frequencies 
-    # in the Hamiltonian matrix)
-    fa = freq01
-    xa = anharm
+    # NOTE: input frequencies are in GHz, will be multiplied by 2*pi to get angular frequencies 
 
     # setup drift Hamiltonian
     number = Diagonal(collect(0:Ntot-1))
     # Note: xa is negative
-    H0  = 2*pi * ( (fa - rot_freq[1])*number + 0.5*xa* (number*number - number) ) 
+    H0  = 2*pi * ( (freq01[1] - rot_freq[1])*number + 0.5*anharm[1]* (number*number - number) ) 
     H0 = Array(H0)
 
     # Set up the control drive operators
@@ -29,7 +26,7 @@ function hamiltonians_one_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, freq0
 
     if verbose
         println("*** Single quantum system setup ***")
-        println("System Hamiltonian coefficients [GHz]: f01 = ", fa, " anharmonicity = ", xa, " rot_freq = ", rot_freq)
+        println("System Hamiltonian coefficients [GHz]: f01 = ", freq01, " anharmonicity = ", anharm, " rot_freq = ", rot_freq)
         println("Number of essential states = ", Ness, " Number of guard states = ", Nguard)
         println("Hamiltonians are of size ", Ntot, " by ", Ntot)
     end
@@ -263,20 +260,20 @@ function init_control(params::objparams; maxrand::Float64, nCoeff::Int64, startF
     return pcof0
 end
 
-function control_bounds(params::objparams, maxamp::Vector{Float64}, nCoeff::Int64, zeroCtrlBC::Bool)
+function control_bounds(params::objparams, maxAmp::Matrix{Float64}, nCoeff::Int64, zeroCtrlBC::Bool)
     Nctrl  = size(params.Cfreq,1)
     Nfreq  = size(params.Cfreq,2)
 
     D1 = div(nCoeff, 2*Nctrl*Nfreq)
 
     if zeroCtrlBC
-        @assert(D1 >= 5) # D1 smaller than 5 does not work with zero start & end conditions
+        @assert D1 >= 5 "D1 smaller than 5 does not work with zero start & end conditions"
     else
-        @assert(D1 >=3)
+        @assert D1 >=3 "D1 can not be less than 3"
     end
 
-    # min and max coefficient values
-    minCoeff, maxCoeff = Juqbox.assign_thresholds_freq(maxamp, Nctrl, Nfreq, D1)
+    # min and max coefficient values, maxamp[Nctrl]
+    minCoeff, maxCoeff = Juqbox.assign_thresholds_ctrl_freq(params, D1, maxAmp)
     
     if zeroCtrlBC
         zero_start_end!(Nctrl, Nfreq, D1, minCoeff, maxCoeff) # maxCoeff stores the bounds for the controls amplitudes (zero at the boundary)
@@ -494,23 +491,27 @@ function get_resonances(;Ness::Vector{Int64}, Nguard::Vector{Int64}, Hsys::Matri
 
     # Make sure we have the same number of frequencies for all controls
     maxlen = maximum(length.(resonances[:]))
+
+    Nfreq = maxlen
+    maxMask = ones(Int64, Nctrl, Nfreq)
+    om = zeros(Nctrl, Nfreq)
+
     # println("maxlen = ", maxlen)
-    for q in 1:length(resonances)
+    for q in 1:Nctrl
         orig_len = length(resonances[q])
-        #println("q = ", q, " orig_len = ", orig_len)
-        for p = orig_len+1:maxlen
-            push!(resonances[q], 0.0)
+        #println("q = ", q, " orig_len = ", orig_len, " Nfreq = ", Nfreq)
+        om[q, 1:orig_len] .= resonances[q]
+        if orig_len < Nfreq
+            om[q, orig_len+1:Nfreq] .= 0.0
+            maxMask[q, orig_len+1:Nfreq] .= 0
         end
-        new_len = length(resonances[q])
-        #println("q = ", q, " new_len = ", new_len)
     end
 
-    # Convert to radians
-    resonances = resonances*2*pi
+    # Convert carrier frequencies to radians
+    om = 2*pi * om
 
     println()
-    # Return as a matrix, one row per control
-    return Matrix(reduce(hcat, resonances)'), Utrans
+    return om, maxMask, Utrans
 end
 
 function transformHamiltonians!(H0::Matrix{Float64}, Hsym_ops::Vector{Matrix{Float64}}, Hanti_ops::Vector{Matrix{Float64}}, Utrans::Matrix{Float64})

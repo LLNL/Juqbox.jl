@@ -86,28 +86,30 @@ println("Hamiltonian is setup for ", (msb_order ? "MSB" : "LSB"), " ordering")
 # setup the Hamiltonian matrices
 H0, Hsym_ops, Hanti_ops = hamiltonians_three_sys(Ness=Ne, Nguard=Ng, freq01=[fa, fb, fs], anharm=[xa, xb, xs], rot_freq=rot_freq, couple_coeff=[xab, xas, xbs], couple_type=couple_type, msb_order = msb_order)
 
+amax = 0.1 # Approx max amplitude for each (p & q) ctrl function [rad/ns]
+
 # calculate resonance frequencies & diagonalizing transformation
-om, Utrans = get_resonances(Ness=Ne, Nguard=Ng, Hsys=H0, Hsym_ops=Hsym_ops, msb_order=msb_order)
+om, maxAmp, Utrans = get_resonances(Ness=Ne, Nguard=Ng, Hsys=H0, Hsym_ops=Hsym_ops, maxCtrl_pq=amax, msb_order=msb_order)
 
 Nctrl = size(om, 1)
 Nfreq = size(om, 2)
 println("Nctrl = ", Nctrl, " Nfreq = ", Nfreq)
+
+for q = 1:Nctrl
+    println("Carrier frequencies in ctrl Hamiltonian # ", q, " [GHz]: ", om[q,:]./(2*pi))
+    println("Amplitude bounds for p & q-functions in system # ", q, " [GHz]: ", maxAmp[q,:]./(2*pi))
+end
 
 use_diagonal_H0 = true # false
 if use_diagonal_H0 # transformation to diagonalize the system Hamiltonian
     transformHamiltonians!(H0, Hsym_ops, Hanti_ops, Utrans)
 end
 
-amax = 0.05
-bmax = 0.1
-cmax = 0.1
-maxpar = [amax, bmax, cmax]
-
 Tmax = 550.0 # 700.0
 # Estimate time step
 Pmin = 40 # should be 20 or higher
-nsteps = calculate_timestep(Tmax, H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, maxCop=maxpar, Pmin=Pmin)
-println("Number of time steps = ", nsteps)
+nsteps = calculate_timestep(Tmax, H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, maxCoupled=maxAmp, Pmin=Pmin)
+println("Duration T = ", T, " Number of time steps = ", nsteps)
 
 # initialize the carrier frequencies
 # @assert(Nfreq == 1 || Nfreq == 2 || Nfreq == 3)
@@ -140,16 +142,12 @@ if Ne[3] == 1
     Utarg = gate_cnot
 else
     Ident3 = Array{Float64, 2}(I, Ne[3], Ne[3])
-    Utarg = kron(Ident3, gate_cnot)
+    Utarg = kron(Ident3, gate_cnot) # assumes msb_order=true
 end
 
-U0 = initial_cond(Ne, Ng, msb_order)
 # U0 has size Ntot x Ness. Each of the Ness columns has one non-zero element, which is 1.
-
-# Initial basis with guard levels
-utarget = U0 * Utarg
-
-println("size(utarget): ", size(utarget))
+U0 = initial_cond(Ne, Ng, msb_order)
+utarget = U0 * Utarg # Initial basis with guard levels
 
 # create a linear solver object
 linear_solver = Juqbox.lsolver_object(solver=Juqbox.JACOBI_SOLVER,max_iter=100,tol=1e-12,nrhs=N)
@@ -159,8 +157,7 @@ use_sparse = true
 # use_sparse = false
 
 # NOTE: maxpar is now a vector with 3 elements: amax, bmax, cmax
-params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=utarget, Cfreq=om, Rfreq=rot_freq,
-                          Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, use_sparse=use_sparse, msb_order = msb_order)
+params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=utarget, Cfreq=om, Rfreq=rot_freq, Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, use_sparse=use_sparse, msb_order = msb_order)
 
 Random.seed!(2456)
 
@@ -169,7 +166,7 @@ startFromScratch = true # false
 startFile="drives/cnot3-pcof-opt.jld2"
 
 if startFromScratch
-    D1 = 15 # 20 # number of B-spline coeff per oscillator, freq, p/q
+    D1 = 50 # 15 # 20 # number of B-spline coeff per oscillator, freq, p/q
     nCoeff = 2*Nctrl*Nfreq*D1 # Total number of parameters.
     maxrand = amax*0.01
     pcof0 = init_control(params, maxrand=maxrand, nCoeff=nCoeff, seed=2456)
@@ -182,9 +179,6 @@ else
     nCoeff = 2*Nctrl*Nfreq*D1 
     println("*** Starting from B-spline coefficients in file: ", startFile)
 end
-
-# control amplitude threshold for each frequency
-maxAmp = maxpar
 
 println("*** Settings ***")
 println("Number of coefficients per spline = ", D1, " Total number of control parameters = ", length(pcof0))

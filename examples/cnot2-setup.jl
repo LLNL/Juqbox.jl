@@ -65,30 +65,31 @@ println("Hamiltonian is setup for ", (msb_order ? "MSB" : "LSB"), " ordering")
 # setup the Hamiltonian matrices
 H0, Hsym_ops, Hanti_ops = hamiltonians_two_sys(Ness=Ne, Nguard=Ng, freq01=[fa, fb], anharm=[x1, x2], rot_freq=rot_freq, couple_coeff=x12, couple_type=couple_type, msb_order=msb_order)
 
-# CONSIDER TRANSFORMATION OF THE HAMILTONIANS WHILE COMPUTING THE CARRIER FREQUENCIES
+# max coefficients, rotating frame
+amax = 2*pi * 0.015 # 15 MHz max amplitude for each (p & q) ctrl function
 
 # calculate resonance frequencies & diagonalizing transformation
-om, Utrans = get_resonances(Ness=Ne, Nguard=Ng, Hsys=H0, Hsym_ops=Hsym_ops, msb_order=msb_order)
+om, maxAmp, Utrans = get_resonances(Ness=Ne, Nguard=Ng, Hsys=H0, Hsym_ops=Hsym_ops, maxCtrl_pq=amax, msb_order=msb_order)
 
 Nctrl = size(om, 1)
 Nfreq = size(om, 2)
 println("Nctrl = ", Nctrl, " Nfreq = ", Nfreq)
+
+for q = 1:Nctrl
+    println("Carrier frequencies in ctrl Hamiltonian # ", q, " [GHz]: ", om[q,:]./(2*pi))
+    println("Amplitude bounds for p & q-functions in system # ", q, " [GHz]: ", maxAmp[q,:]./(2*pi))
+end
 
 use_diagonal_H0 = true # false
 if use_diagonal_H0 # transformation to diagonalize the system Hamiltonian
     transformHamiltonians!(H0, Hsym_ops, Hanti_ops, Utrans)
 end
 
-# max coefficients, rotating frame
-amax = 0.040 # 0.014 # max amplitude ctrl func for Hamiltonian #1
-#bmax = 0.040 # 0.020 # max amplitude ctrl func for Hamiltonian #2
-maxpar = [amax, amax]
-
 Tmax = 50.0 # Duration of gate
 # estimate time step
 Pmin = 40 # should be 20 or higher
-nsteps = calculate_timestep(Tmax, H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, maxCop=maxpar, Pmin=Pmin)
-println("Number of time steps = ", nsteps)
+nsteps = calculate_timestep(Tmax, H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, maxCoupled=maxAmp, Pmin=Pmin)
+println("Duration T = ", T, " Number of time steps = ", nsteps)
 
 # CNOT target for the essential levels
 gate_cnot =  zeros(ComplexF64, N, N)
@@ -107,7 +108,7 @@ elseif ctrlQubit == 2
 end
 
 # Initial basis with guard levels
-U0 = initial_cond(Ne, Ng, msg_order)
+U0 = initial_cond(Ne, Ng, msb_order)
 utarget = U0 * gate_cnot
 
 # create a linear solver object
@@ -123,11 +124,8 @@ params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=utarget, Cfreq
 D1 = 10 # number of B-spline coeff per oscillator, freq and sin/cos
 nCoeff = 2*Nctrl*Nfreq*D1 # Total number of parameters.
 
-maxrand = 0.01*amax  # amplitude of the random control vector
+maxrand = 0.01*amax/Nfreq  # amplitude of the random control vector
 pcof0 = init_control(params, maxrand=maxrand, nCoeff=nCoeff, seed=2456)
-
-# same ctrl threshold for all frequencies
-maxAmp = amax .* ones(Nfreq)
 
 println("*** Settings ***")
 println("Number of coefficients per spline = ", D1, " Total number of control parameters = ", length(pcof0))
