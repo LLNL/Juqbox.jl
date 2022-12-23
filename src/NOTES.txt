@@ -1,0 +1,17 @@
+The following functions assume MSB ordering (classical Juqbox)
+In src/plotstatectrl.jl:
+1. plotunitary()
+2. plot_energy()
+3. marginalize3()
+4. specify_level3()
+5. identify_forbidden_levels()
+6. identify_guard_levels()
+7. plotspecified() ?
+
+
+Both MSB and LSB ordering implemented in
+1. wmatsetup() in evalobjgrad.jl
+2. objparams()    -- " --
+3. identify_essential_levels() in setup_problem.jl
+4. initial_cond() in src/evalobjgrad.jl
+
