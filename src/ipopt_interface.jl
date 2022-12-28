@@ -79,7 +79,7 @@ function eval_f_par(pcof::Vector{Float64}, params:: Juqbox.objparams,
     # if x_new 
     pnorm =norm(pcof .- params.last_pcof)     
     if pnorm > 1.0e-15
-        compute_adjoint = true
+        compute_adjoint = true # could it be false?
         eval_f_g_grad!(pcof, params, nodes, weights, compute_adjoint)        
     end
 
@@ -105,7 +105,7 @@ function eval_g_par(pcof::Vector{Float64}, g::Vector{Float64}, params:: Juqbox.o
     # if x_new
     pnorm =norm(pcof .- params.last_pcof) 
     if pnorm > 1.0e-15
-        compute_adjoint = true
+        compute_adjoint = true # could it be false?
         eval_f_g_grad!(pcof, params, nodes, weights, compute_adjoint)
     end
     
@@ -125,7 +125,7 @@ function eval_grad_f_par(pcof::Vector{Float64}, grad_f::Vector{Float64}, params:
     #Return last stored
     # if x_new 
     pnorm =norm(pcof .- params.last_pcof) 
-    if pnorm > 1.0e-15
+    if pnorm > 1.0e-15 # check if the gradient was calculated
         compute_adjoint = true
         eval_f_g_grad!(pcof, params, nodes, weights, compute_adjoint)
     end

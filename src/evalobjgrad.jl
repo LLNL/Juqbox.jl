@@ -426,7 +426,7 @@ end # mutable struct objparams
 
 
 """
-    objf = traceobjgrad(pcof0, params, wa[, verbose = false, evaladjoint = true])
+    objf = traceobjgrad(pcof0, params[, verbose = false, evaladjoint = true])
 
 Perform a forward and/or adjoint Schrödinger solve to evaluate the objective
 function and/or gradient.
@@ -434,7 +434,6 @@ function and/or gradient.
 # Arguments
 - `pcof0::Array{Float64,1}`: Array of parameter values defining the controls
 - `param::objparams`: Struct with problem definition
-- `wa::Working_Arrays`: Struct containing preallocated working arrays
 - `verbose::Bool = false`: Run simulation with additional terminal output and store state history.
 - `evaladjoint::Bool = true`: Solve the adjoint equation and calculate the gradient of the objective function.
 """

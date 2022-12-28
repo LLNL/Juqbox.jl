@@ -290,21 +290,38 @@ function eigen_and_reorder(H0::Union{Matrix{ComplexF64},Matrix{Float64}})
     Ntot = size(H0_eigen.vectors,1)
     @assert(size(H0_eigen.vectors,2) == Ntot) #only square matrices
 
+    # test
+    # Vmat = H0_eigen.vectors
+    # H0diag = Vmat' * H0 * Vmat
+    # println("Eigenvectors of H0:")
+    # for i in 1:Ntot
+    #     for j in 1:Ntot
+    #         @printf("%+6.2e, ", Vmat[i,j])
+    #     end
+    #     @printf("\n")
+    # end
+    # println("H0diag = Vmat' * H0 * Vmat:")
+    # for i in 1:Ntot
+    #     for j in 1:Ntot
+    #         @printf("%+6.2e, ", H0diag[i,j])
+    #     end
+    #     @printf("\n")
+    # end
+    # end test
+
     # look for the largest element in each column
     maxrow = zeros(Int64, Ntot)
     for j in 1:Ntot
         maxrow[j] = argmax(abs.(H0_eigen.vectors[:,j]));
     end
-    #println("maxrow: ", maxrow)
+    println("maxrow: ", maxrow)
 
     # find inverse of maxrow
     perm = zeros(Int64, Ntot) 
     for j in 1:Ntot
         perm[j] = argmin(abs.(maxrow .- j))
     end
-    #println("perm: ", perm)
-
-    #println("jc = ", jc, " [GHz]")
+    println("perm: ", perm)
 
     Utrans = H0_eigen.vectors[:,perm[:]]
     # make sure all diagonal elements in Utrans are positive
@@ -314,8 +331,16 @@ function eigen_and_reorder(H0::Union{Matrix{ComplexF64},Matrix{Float64}})
         end
     end 
 
+    # H0diag = Utrans' * H0 * Utrans
+    # println("H0diag = Utrans' * H0 * Utrans:")
+    # for i in 1:Ntot
+    #     for j in 1:Ntot
+    #         @printf("%+6.2e, ", H0diag[i,j])
+    #     end
+    #     @printf("\n")
+    # end
     # println("Utrans = H0_eigen.vectors (re-ordered):")
-    # for i in 1:nrows
+    # for i in 1:Ntot
     #     println(Utrans[i,:])
     # end
     # Check orthonormality
@@ -445,6 +470,15 @@ function get_resonances(;Ness::Vector{Int64}, Nguard::Vector{Int64}, Hsys::Matri
     # Note: if Hsys is diagonal, then Hsys_evals = diag(Hsys) and Utrans = IdentityMatrix
     Hsys_evals, Utrans = eigen_and_reorder(Hsys)
 
+    # H0diag = Utrans' * Hsys * Utrans
+    # println("get_resonances: H0diag = Utrans' * Hsys * Utrans:")
+    # for i in 1:Ntot
+    #     for j in 1:Ntot
+    #         @printf("%+6.2e, ", H0diag[i,j])
+    #     end
+    #     @printf("\n")
+    # end
+
     # scale the eigen-values
     ka_delta = Hsys_evals./(2*pi) 
 
@@ -510,16 +544,35 @@ function get_resonances(;Ness::Vector{Int64}, Nguard::Vector{Int64}, Hsys::Matri
     # Convert carrier frequencies to radians
     om = 2*pi * om
 
+    # H0diag = Utrans' * Hsys * Utrans
+    # println("get_resonances_2: H0diag = Utrans' * Hsys * Utrans:")
+    # for i in 1:Ntot
+    #     for j in 1:Ntot
+    #         @printf("%+6.2e, ", H0diag[i,j])
+    #     end
+    #     @printf("\n")
+    # end
+    # println("typeof(Utrans): ", typeof(Utrans))
     println()
     return om, maxMask, Utrans
 end
 
 function transformHamiltonians!(H0::Matrix{Float64}, Hsym_ops::Vector{Matrix{Float64}}, Hanti_ops::Vector{Matrix{Float64}}, Utrans::Matrix{Float64})
-    H0 = Utrans'*H0*Utrans # use the transformed (diagonal) system Hamiltonian
+    # transform (diagonalize) the system Hamiltonian
+    H0 .= Utrans'*H0*Utrans # the . is essential, otherwise H0 is not changed in the calling fcn
+
+    # println("transformHamiltonians!: H0 := Utrans' * H0 * Utrans:")
+    # Ntot = size(H0,1)
+    # for i in 1:Ntot
+    #     for j in 1:Ntot
+    #         @printf("%+6.2e, ", H0[i,j])
+    #     end
+    #     @printf("\n")
+    # end
 
     # transform the control Hamiltonians
     for q = 1:length(Hsym_ops)
-        Hsym_ops[q] = Utrans'*(Hsym_ops[q])*Utrans
-        Hanti_ops[q] = Utrans'*(Hanti_ops[q])*Utrans
+        Hsym_ops[q] .= Utrans'*(Hsym_ops[q])*Utrans  # Here the . is not required, but added for consistency
+        Hanti_ops[q] .= Utrans'*(Hanti_ops[q])*Utrans
     end
 end
