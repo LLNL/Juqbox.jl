@@ -88,7 +88,7 @@ function eval_f_par(pcof::Vector{Float64}, params:: Juqbox.objparams,
     else
         f = params.last_infidelity
     end
-    
+
     # Add in Tikhonov regularization
     tikhonovpenalty = Juqbox.tikhonov_pen(pcof, params)
 
@@ -115,14 +115,13 @@ function eval_g_par(pcof::Vector{Float64}, g::Vector{Float64}, params:: Juqbox.o
 end
 
 
-
 # function eval_grad_f_par(pcof::Vector{Float64},x_new:: Bool, grad_f::Vector{Float64}, params:: Juqbox.objparams, nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
 function eval_grad_f_par(pcof::Vector{Float64}, grad_f::Vector{Float64}, params:: Juqbox.objparams,
     nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
     
     wa = params.wa
 
-    #Return last stored
+    # Return last stored
     # if x_new 
     pnorm =norm(pcof .- params.last_pcof) 
     if pnorm > 1.0e-15 # check if the gradient was calculated
@@ -130,21 +129,19 @@ function eval_grad_f_par(pcof::Vector{Float64}, grad_f::Vector{Float64}, params:
         eval_f_g_grad!(pcof, params, nodes, weights, compute_adjoint)
     end
 
-    #When params.objFuncType == 1, this stores the total grad
+    # When params.objFuncType == 1, this stores the total grad
     grad_f .= params.last_infidelity_grad
-    
+
     # Add in Tikhonov regularization gradient term
     wa.gr .= 0.0
     Juqbox.tikhonov_grad!(pcof, params, wa.gr)  
     axpy!(1.0, wa.gr, grad_f)
 
-
     # Save intermediate parameter vectors
     if params.save_pcof_hist
-        push!(params.pcof_hist, copy(pcof)) #pcof_hist is and Array of Vector{Float64}
+        push!(params.pcof_hist, copy(pcof)) #pcof_hist is an Array of Vector{Float64}
     end
 end
-
 
 # function eval_jac_g_par(pcof::Vector{Float64},x_new:: Bool, rows::Vector{Int32}, cols::Vector{Int32}, jac_g::Union{Nothing,Vector{Float64}},
 #                         params:: Juqbox.objparams, nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
@@ -158,8 +155,6 @@ function eval_jac_g_par(pcof::Vector{Float64}, rows::Vector{Int32}, cols::Vector
             end
         end
     else
-
-
         #Return last stored
         # if x_new 
         pnorm =norm(pcof .- params.last_pcof) 
@@ -176,17 +171,113 @@ function eval_jac_g_par(pcof::Vector{Float64}, rows::Vector{Int32}, cols::Vector
 end 
 
 
+# for objFuncType == 1
+function eval_f_par1(pcof::Vector{Float64}, params:: Juqbox.objparams,
+    nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
+    
+    nquad = length(nodes)
+    if nquad == 1 # Default deterministic optimization
+        f, _, _ = Juqbox.traceobjgrad(pcof, params, false, false)
+    else # Loop over specified nodes and compute risk-neutral objective value
+        f = 0.0
+        for i = 1:nquad 
+            ep = nodes[i]
+    
+            # Perturb system Hamiltonian
+            if ep != 0.0
+                for j = 2:size(params.Hconst,2)
+                    # params.Hconst[j,j] += H0_old[j,j] + 0.01*ep*(10.0^(j-2))
+                    params.Hconst[j,j] += 0.01*ep*(10.0^(j-2))
+                end
+            end
+    
+            objf, _, _ = Juqbox.traceobjgrad(pcof, params, false, false)
+            f += objf*weights[i]
+
+            # Reset system Hamiltonian
+            if ep != 0.0
+                for j = 2:size(params.Hconst,2)
+                    params.Hconst[j,j] -= 0.01*ep*(10.0^(j-2))
+                end
+            end
+        end  
+    end
+
+    # Add in Tikhonov regularization
+    tikhonovpenalty = Juqbox.tikhonov_pen(pcof, params)
+
+    return f .+ tikhonovpenalty
+  end
+
+  # for objFuncType == 1
+function eval_grad_f_par1(pcof::Vector{Float64}, grad_f::Vector{Float64}, params:: Juqbox.objparams,
+    nodes::AbstractArray=[0.0], weights::AbstractArray=[1.0])
+
+    grad_f .= 0.0 # initialize gradient
+
+    nquad = length(nodes)
+    if nquad == 1
+        _, totalgrad, f1, f2, _, _, _ = Juqbox.traceobjgrad(pcof, params, false, true)
+        axpy!(1.0, totalgrad, grad_f)
+    else
+        # initialize
+        f1 = 0.0 # primary obj func
+        f2 = 0.0 # secondary obj func
+
+        # Loop over specified nodes and compute risk-neutral objective value
+        for i = 1:nquad 
+            ep = nodes[i]
+
+            for j = 2:size(params.Hconst,2) # Perturb the Hamiltonian
+                params.Hconst[j,j] += 0.01*ep*(10.0^(j-2))
+            end
+
+            _, totalgrad, primaryobjf, secondaryobjf, _, _, _ = Juqbox.traceobjgrad(pcof, params, false, true)
+
+            f1 += primaryobjf * weights[i]
+            f2 += secondaryobjf * weights[i]
+
+            # grad_f += totalgrad * weights[i]
+            axpy!(weights[i], totalgrad, grad_f)
+
+            # Reset the Hamiltonian
+            for j = 2:size(params.Hconst,2)
+                params.Hconst[j,j] -= 0.01*ep*(10.0^(j-2))
+            end
+        end
+    end
+
+    params.lastTraceInfidelity = f1
+    params.lastLeakIntegral = f2
+
+    # Add in Tikhonov regularization gradient term
+    wa = params.wa # use pre-allocated torage
+    #wa.gr .= 0.0
+    Juqbox.tikhonov_grad!(pcof, params, wa.gr)  
+    axpy!(1.0, wa.gr, grad_f)
+
+    # Save intermediate parameter vectors
+    if params.save_pcof_hist
+        push!(params.pcof_hist, copy(pcof)) #pcof_hist is an Array of Vector{Float64}
+    end
+
+end
+
+function eval_g_empty(pcof::Vector{Float64}, g::Vector{Float64})
+    return nothing
+    #g[1] = 0.0
+    #return g[1]
+end
+
+
 function eval_jac_g_empty(
     x::Vector{Float64},         # Current solution
-    x_new:: Bool,               # If new vector x
+    # x_new:: Bool,               # If new vector x
     rows::Vector{Int32},        # Sparsity structure - row indices
     cols::Vector{Int32},        # Sparsity structure - column indices
     values::Union{Nothing,Vector{Float64}})    # The values of the Hessian
     return nothing
 end
-
-
-
 
 function eval_h(
     x::Vector{Float64},
@@ -267,26 +358,13 @@ function ipopt_setup(params:: Juqbox.objparams, nCoeff:: Int64, maxAmp:: Matrix{
     
     minCoeff, maxCoeff = control_bounds(params, maxAmp, nCoeff, zeroCtrlBC)
 
-    #Initialize the last fidelity and leak terms and gradients
-    params.last_pcof = 1e9.*rand(nCoeff)
-    params.last_infidelity_grad = 1e9.*rand(nCoeff)
-    if params.objFuncType != 1 #Only allcoate for inequality opt...
-        params.last_leak_grad = 1e9.*rand(nCoeff)        
-    end
-
-    # callback functions need access to the params object
-    eval_f(pcof) = eval_f_par(pcof, params, nodes, weights)
-    eval_grad_f(pcof, grad_f) = eval_grad_f_par(pcof,grad_f, params, nodes, weights)
-
-    #Comment out to use xnew with later version of ipopt
-    # eval_f(pcof,x_new) = eval_f_par(pcof, x_new,params, nodes, weights)
-    # eval_grad_f(pcof,x_new, grad_f) = eval_grad_f_par(pcof,x_new, grad_f, params, nodes, weights)
     intermediate(alg_mod, iter_count, obj_value, inf_pr, inf_du, mu,
                 d_norm, regularization_size, alpha_du, alpha_pr, ls_trials) =
                     intermediate_par(alg_mod, iter_count, obj_value, inf_pr, inf_du, mu,
                                     d_norm, regularization_size, alpha_du, alpha_pr, ls_trials, params)
 
-    # setup the Ipopt data structure
+
+
     if params.objFuncType == 3
         # treat the leakage as an inequality constraint
         nconst = 1 # One constraint
@@ -294,28 +372,49 @@ function ipopt_setup(params:: Juqbox.objparams, nCoeff:: Int64, maxAmp:: Matrix{
         nEleHess = 0
         g_L = -2e19.*ones(nconst) # no lower bound needed because the leakage is always non-negative
         g_U = params.leak_ubound.*ones(nconst)
+
+        #Initialize the last fidelity and leak terms and gradients
+        params.last_pcof = 1e9.*rand(nCoeff)
+        params.last_infidelity_grad = 1e9.*rand(nCoeff)
+        params.last_leak_grad = 1e9.*rand(nCoeff)        
+    
+        # Comment out to use xnew with later version of ipopt
+        # eval_f(pcof,x_new) = eval_f_par(pcof, x_new,params, nodes, weights)
+        # eval_grad_f(pcof,x_new, grad_f) = eval_grad_f_par(pcof,x_new, grad_f, params, nodes, weights)
+        # eval_g(pcof,x_new,g) = eval_g_par(pcof,x_new,g,params,nodes,weights)
+        # eval_jac_g(pcof,x_new,rows,cols,jac_g) = eval_jac_g_par(pcof,x_new,rows,cols,jac_g,params,nodes,weights)
+        
+        # callback functions need access to the params object
+        eval_f(pcof) = eval_f_par(pcof, params, nodes, weights)
+        eval_grad_f(pcof, grad_f) = eval_grad_f_par(pcof,grad_f, params, nodes, weights)
+        eval_g(pcof,g) = eval_g_par(pcof, g, params, nodes, weights)
+        eval_jac_g(pcof,rows,cols,jac_g) = eval_jac_g_par(pcof, rows, cols, jac_g, params,nodes, weights)
+        
+        # setup the Ipopt data structure
+        prob = CreateIpoptProblem( nCoeff, minCoeff, maxCoeff, nconst, g_L, g_U, nEleJac, nEleHess, eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h);
     else
         nconst = 0
         nEleJac = 0
         nEleHess = 0
         g_L = zeros(0);
         g_U = zeros(0);
-    end
 
-    #Create alias even if not used
-    eval_g(pcof,g) = eval_g_par(pcof, g, params, nodes, weights)
-    eval_jac_g(pcof,rows,cols,jac_g) = eval_jac_g_par(pcof, rows, cols, jac_g, params,nodes, weights)
-    # eval_g(pcof,x_new,g) = eval_g_par(pcof,x_new,g,params,nodes,weights)
-    # eval_jac_g(pcof,x_new,rows,cols,jac_g) = eval_jac_g_par(pcof,x_new,rows,cols,jac_g,params,nodes,weights)
+        # callback functions need access to the params object
+        eval_f1(pcof) = eval_f_par1(pcof, params, nodes, weights)
+        eval_grad_f1(pcof, grad_f) = eval_grad_f_par1(pcof,grad_f, params, nodes, weights)
+        
+        # setup the Ipopt data structure
+        prob = CreateIpoptProblem( nCoeff, minCoeff, maxCoeff, nconst, g_L, g_U, nEleJac, nEleHess, eval_f1, eval_g_empty, eval_grad_f1, eval_jac_g_empty, eval_h);
+    end
 
 
     # tmp
-    if @isdefined createProblem
-        prob = createProblem( nCoeff, minCoeff, maxCoeff, nconst, g_L, g_U, nEleJac, nEleHess, eval_f, eval_g, eval_grad_f, eval_jac_g);
-    else
-        # prob = CreateIpoptProblem( nCoeff, minCoeff, maxCoeff, nconst, g_L, g_U, nEleJac, nEleHess, eval_f, eval_g, eval_grad_f, eval_jac_g,eval_h,expose_xnew=true);
-        prob = CreateIpoptProblem( nCoeff, minCoeff, maxCoeff, nconst, g_L, g_U, nEleJac, nEleHess, eval_f, eval_g, eval_grad_f, eval_jac_g,eval_h);
-    end
+    # if @isdefined createProblem
+    #     prob = createProblem( nCoeff, minCoeff, maxCoeff, nconst, g_L, g_U, nEleJac, nEleHess, eval_f, eval_g, eval_grad_f, eval_jac_g);
+    # else
+    #     # prob = CreateIpoptProblem( nCoeff, minCoeff, maxCoeff, nconst, g_L, g_U, nEleJac, nEleHess, eval_f, eval_g, eval_grad_f, eval_jac_g,eval_h,expose_xnew=true);
+    #     prob = CreateIpoptProblem( nCoeff, minCoeff, maxCoeff, nconst, g_L, g_U, nEleJac, nEleHess, eval_f, eval_g, eval_grad_f, eval_jac_g,eval_h);
+    # end
 
     if @isdefined addOption
         addOption( prob, "hessian_approximation", "limited-memory");
@@ -414,8 +513,9 @@ Call IPOPT to  optimizize the control functions.
 - `print_frequency_iter:: Int64`: (Optional-kw) Ipopt printout frequency (1)
 - `nodes:: AbstractArray`: (Optional-kw) Risk-neutral opt: User specified quadrature nodes on the interval [-ϵ,ϵ] for some ϵ
 - `weights:: AbstractArray`: (Optional-kw) Risk-neutral opt: User specified quadrature weights on the interval [-ϵ,ϵ] for some ϵ
+- `derivative_test:: Bool`: (Optional-kw) Set to true to check the gradient against a FD approximation (default is false)
 """
-function run_optimizer(params:: objparams, pcof0:: Vector{Float64}, maxAmp:: Matrix{Float64}; zeroCtrlBC::Bool = false, maxIter::Int64 = 50, lbfgsMax:: Int64=200, coldStart:: Bool=true, ipTol:: Float64=1e-5, acceptTol:: Float64=1e-5, acceptIter:: Int64=15, print_level:: Int64=5, print_frequency_iter:: Int64=1, nodes::AbstractArray=[0.0], weights::AbstractArray=[1.0])
+function run_optimizer(params:: objparams, pcof0:: Vector{Float64}, maxAmp:: Matrix{Float64}; zeroCtrlBC::Bool = false, maxIter::Int64 = 50, lbfgsMax:: Int64=200, coldStart:: Bool=true, ipTol:: Float64=1e-5, acceptTol:: Float64=1e-5, acceptIter:: Int64=15, print_level:: Int64=5, print_frequency_iter:: Int64=1, nodes::AbstractArray=[0.0], weights::AbstractArray=[1.0], derivative_test::Bool=false)
     
     # start by setting up the Ipopt object: prob
     println("Ipopt initialization timing:")
@@ -424,6 +524,13 @@ function run_optimizer(params:: objparams, pcof0:: Vector{Float64}, maxAmp:: Mat
     AddIpoptIntOption(prob, "print_level", print_level)
     AddIpoptIntOption(prob, "print_frequency_iter", print_frequency_iter)
 
+    if derivative_test # for testing the gradient
+        if @isdefined addOption
+            addOption( prob, "derivative_test", "first-order");
+        else
+            AddIpoptStrOption( prob, "derivative_test", "first-order")
+        end
+    end        
     # initial guess for IPOPT; make a copy of pcof0 to avoid overwriting it
     prob.x = copy(pcof0);
 
