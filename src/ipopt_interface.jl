@@ -358,9 +358,6 @@ where the fundamental frequency is random.
 """
 function ipopt_setup(params:: Juqbox.objparams, nCoeff:: Int64, maxAmp:: Matrix{Float64}; zeroCtrlBC::Bool = true, maxIter:: Int64=50, lbfgsMax:: Int64=200, coldStart:: Bool=true, ipTol:: Float64=1e-5, acceptTol:: Float64=1e-5, acceptIter:: Int64=15, nodes::AbstractArray=[0.0], weights::AbstractArray=[1.0])
 
-    # setup the working_arrays object, holding temporary arrays
-    params.wa = working_arrays(params.N, params.N+params.Nguard, params.Hconst, params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, params.isSymm, params.pFidType, params.objFuncType, nCoeff)
-    
     minCoeff, maxCoeff = control_bounds(params, maxAmp, nCoeff, zeroCtrlBC)
 
     intermediate(alg_mod, iter_count, obj_value, inf_pr, inf_du, mu,
