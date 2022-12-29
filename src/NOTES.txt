@@ -1,4 +1,4 @@
-The following functions assume MSB ordering (classical Juqbox)
+The following functions MSB ordering is assumed (classical Juqbox)
 In src/plotstatectrl.jl:
 1. plotunitary()
 2. plot_energy()
@@ -9,9 +9,13 @@ In src/plotstatectrl.jl:
 7. plotspecified() ?
 
 
-Both MSB and LSB ordering implemented in
+Both MSB and LSB ordering are implemented in
 1. wmatsetup() in evalobjgrad.jl
 2. objparams()    -- " --
 3. identify_essential_levels() in setup_problem.jl
 4. initial_cond() in src/evalobjgrad.jl
+
+Updated test cases in the examples folder
+1. cnot1-setup.jl
+2. cnot1-leakieq-setup.jl
 

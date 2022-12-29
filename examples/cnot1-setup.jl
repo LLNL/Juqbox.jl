@@ -75,14 +75,14 @@ utarget = U0 * gate_cnot # Add zero rows for the guard levels
 # create a linear solver object
 linear_solver = Juqbox.lsolver_object(solver=Juqbox.JACOBI_SOLVER, max_iter=100, tol=1e-12, nrhs=prod(Ne))
 
-params = Juqbox.objparams(Ne, Ng, T, nsteps, Uinit=U0, Utarget=utarget, Cfreq=om, Rfreq=rot_freq, Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, linear_solver=linear_solver)
-
 # number of B-splines per ctrl/freq/real-imag
 D1 = 10
 nCoeff = 2*D1*Nctrl*Nfreq
 
 maxrand = 0.05*maxctrl/Nfreq  # amplitude of the random control vector
-pcof0 = init_control(params, maxrand=maxrand, nCoeff=nCoeff, seed=2345)
+pcof0 = init_control(Nctrl=Nctrl, Nfreq=Nfreq, maxrand=maxrand, nCoeff=nCoeff, seed=2345)
+
+params = Juqbox.objparams(Ne, Ng, T, nsteps, Uinit=U0, Utarget=utarget, Cfreq=om, Rfreq=rot_freq, Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, linear_solver=linear_solver, nCoeff=length(pcof0))
 
 println("*** Settings ***")
 println("Number of coefficients per spline = ", D1, " Total number of control parameters = ", length(pcof0))

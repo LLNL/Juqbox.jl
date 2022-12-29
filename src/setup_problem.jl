@@ -234,9 +234,9 @@ function hamiltonians_three_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, fre
     return H0, Hsym_ops, Hanti_ops
 end
 # initial parameter guess
-function init_control(params::objparams; maxrand::Float64, nCoeff::Int64, startFile::String = "", seed::Int64 = -1)
-    Nctrl = size(params.Cfreq,1)
-    Nfreq = size(params.Cfreq,2)
+function init_control(;Nctrl::Int64, Nfreq::Int64, maxrand::Float64, nCoeff::Int64, startFile::String = "", seed::Int64 = -1)
+    # Nctrl = size(params.Cfreq,1)
+    # Nfreq = size(params.Cfreq,2)
 
     D1 = div(nCoeff, 2*Nctrl*Nfreq)
 

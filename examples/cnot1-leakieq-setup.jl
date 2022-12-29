@@ -72,19 +72,19 @@ gate_cnot[4,3] = 1.0
 U0 = initial_cond(Ne, Ng)
 utarget = U0 * gate_cnot
 
-# create a linear solver object
-linear_solver = Juqbox.lsolver_object(solver=Juqbox.JACOBI_SOLVER, max_iter=100, tol=1e-12, nrhs=prod(Ne))
-
-leak_ubound = 1e-4
-
-params = Juqbox.objparams(Ne, Ng, T, nsteps, Uinit=U0, Utarget=utarget, Cfreq=om, Rfreq=rot_freq, Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, linear_solver=linear_solver, objFuncType=3, leak_ubound=leak_ubound)
-
 # Number of B-spline coefficients per segment
 D1 = 10 
 nCoeff = 2*Nctrl*Nfreq*D1 # factor '2' is for sin/cos
 
 maxrand = 0.05*maxctrl/Nfreq  # amplitude of the random control vector
-pcof0 = init_control(params, maxrand=maxrand, nCoeff=nCoeff, seed=2345)
+pcof0 = init_control(Nctrl=Nctrl, Nfreq=Nfreq, maxrand=maxrand, nCoeff=nCoeff, seed=2345)
+
+# create a linear solver object
+linear_solver = Juqbox.lsolver_object(solver=Juqbox.JACOBI_SOLVER, max_iter=100, tol=1e-12, nrhs=prod(Ne))
+
+leak_ubound = 1e-4
+
+params = Juqbox.objparams(Ne, Ng, T, nsteps, Uinit=U0, Utarget=utarget, Cfreq=om, Rfreq=rot_freq, Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, linear_solver=linear_solver, objFuncType=3, leak_ubound=leak_ubound, nCoeff=length(pcof0))
 
 println("*** Settings ***")
 println("Using an inequality constraint for the leakage, with bound = ", leak_ubound)
