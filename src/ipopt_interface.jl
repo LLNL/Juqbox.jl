@@ -177,7 +177,7 @@ function eval_f_par1(pcof::Vector{Float64}, params:: Juqbox.objparams,
     
     nquad = length(nodes)
     if nquad == 1 # Default deterministic optimization
-        f, _, _ = Juqbox.traceobjgrad(pcof, params, false, false)
+        f, f1, f2 = Juqbox.traceobjgrad(pcof, params, false, false)
     else # Loop over specified nodes and compute risk-neutral objective value
         f = 0.0
         for i = 1:nquad 
@@ -191,8 +191,10 @@ function eval_f_par1(pcof::Vector{Float64}, params:: Juqbox.objparams,
                 end
             end
     
-            objf, _, _ = Juqbox.traceobjgrad(pcof, params, false, false)
-            f += objf*weights[i]
+            objf, infid, leak = Juqbox.traceobjgrad(pcof, params, false, false)
+            f += objf * weights[i]
+            f1 += infid * weights[i]
+            f2 += leak * weights[i]
 
             # Reset system Hamiltonian
             if ep != 0.0
@@ -202,6 +204,9 @@ function eval_f_par1(pcof::Vector{Float64}, params:: Juqbox.objparams,
             end
         end  
     end
+
+    params.lastTraceInfidelity = f1
+    params.lastLeakIntegral = f2
 
     # Add in Tikhonov regularization
     tikhonovpenalty = Juqbox.tikhonov_pen(pcof, params)
