@@ -248,7 +248,7 @@ mutable struct objparams
                        objFuncType:: Int64 = 1, leak_ubound:: Float64=1.0e-3,
                        wmatScale::Float64 = 1.0, use_sparse::Bool = false, use_custom_forbidden::Bool = false,
                        linear_solver::lsolver_object = lsolver_object(nrhs=prod(Ne)), msb_order::Bool = true,
-                       dVds::Array{ComplexF64,2}= Array{ComplexF64}(undef,0,0))
+                       dVds::Array{ComplexF64,2}= Array{ComplexF64}(undef,0,0), nCoeff::Int = 1)
         pFidType = 2
         Nosc   = length(Ne) # number of subsystems
         N      = prod(Ne)
@@ -283,7 +283,7 @@ mutable struct objparams
                 end
             end
         else
-            isSymm = []
+            isSymm = BitArray(undef, Nunc)
         end
         
         # Set default Tikhonov parameter
@@ -406,6 +406,9 @@ mutable struct objparams
             my_sv_type = 2
         end
 
+        wa = working_arrays(N, Ntot, convert(MyRealMatrix, Hconst), convert(Vector{MyRealMatrix}, Hsym_ops1), convert(Vector{MyRealMatrix}, Hanti_ops1), convert(Vector{MyRealMatrix}, Hunc_ops1), isSymm, pFidType, objFuncType, nCoeff)
+
+
         # sv_type is used for continuation. Only change this if you know what you are doing
         new(
              Nosc, N, Nguard, Ne, Ng, Ne+Ng, T, nsteps, Uinit, real(Utarget), imag(Utarget), 
@@ -417,7 +420,7 @@ mutable struct objparams
              zeros(0), zeros(0), zeros(0), zeros(0), 
              linear_solver, objThreshold, traceInfidelityThreshold, 0.0, 0.0, 
              usingPriorCoeffs, priorCoeffs, quiet, Rfreq, false, [],
-             real(my_dVds), imag(my_dVds), my_sv_type
+             real(my_dVds), imag(my_dVds), my_sv_type, wa
             )
 
     end
