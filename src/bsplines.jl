@@ -144,9 +144,9 @@ Then the `pcof` array then has `2*Ncoupled*Nfreq*D1` elements.
 Each `ctrl ∈ [1,Ncoupled]` and `freq ∈ [1,Nfreq]` corresponds to `D1` elements in 
 the `pcof` vector. For the case `Ncoupled = 2` and `Nfreq = 2`, the elements are ordered according to
 
-| ctrl    | freq    | α_1  | α_2 |
-| ------- | -------- | -------- | -------|
-| 1      | 1        | 1:D1             | D1+1:2 D1 |
+| ctrl   | freq     | α_1          | α_2         |
+| ------ | -------- | ------------ | ----------- |
+| 1      | 1        | 1:D1         | D1+1:2 D1   |
 | 1      | 2        | 2 D1+1: 3 D1 | 3 D1+1:4 D1 |
 | 2      | 1        | 4 D1+1: 5 D1 | 5 D1+1:6 D1 |
 | 2      | 2        | 6 D1+1: 7 D1 | 7 D1+1: 8D1 |
@@ -210,10 +210,10 @@ Evaluate a B-spline function with carrier waves. See also the `bcparams` constru
 """
 @inline function bcarrier2(t::Float64, params::bcparams, func::Int64)
     # for a single oscillator, func=0 corresponds to p(t) and func=1 to q(t)
-    # in general, 0 <= func < 2*Ncoupled + Nunc
+    # in general, 0 <= func < 2*(Ncoupled + Nunc)
 
     # compute basic offset: func 0 and 1 use the same spline coefficients, but combined in a different way
-    osc = div(func, 2) # osc is base 0; 0<= osc < Ncoupled
+    osc = div(func, 2) # osc is base 0; 0 <= osc < Ncoupled
     q_func = func % 2 # q_func = 0 for p and q_func=1 for q
     
     f = 0.0 # initialize
@@ -226,12 +226,12 @@ Evaluate a B-spline function with carrier waves. See also the `bcparams` constru
     
     if func < 2*(params.Ncoupled + params.Nunc)
         # Coupled and uncoupled controls
-        @fastmath @inbounds @simd for freq in 1:params.Nfreq
+        @fastmath @inbounds @simd for freq in 1:params.Nfreq # params.Nfreq[osc+1]
             fbs1 = 0.0 # initialize
             fbs2 = 0.0 # initialize
             # offset in parameter array (osc = 0,1,2,...
             # Vary freq first, then osc
-            offset1 = 2*osc*params.Nfreq*params.D1 + (freq-1)*2*params.D1
+            offset1 = 2*osc*params.Nfreq*params.D1 + (freq-1)*2*params.D1 # offset1 & 2 need updating
             offset2 = 2*osc*params.Nfreq*params.D1 + (freq-1)*2*params.D1 + params.D1
 
             # 1st segment of nurb k

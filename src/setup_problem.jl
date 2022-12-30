@@ -215,7 +215,7 @@ function hamiltonians_three_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, fre
     end
 
     # System Hamiltonian
-    H0 = 2*pi*(da*Na + 0.5*xa*(Na*Na-Na) + db*Nb + 0.5*xb*(Nb*Nb-Nb) + dc*Nc + xc/2*(Nc*Nc-Nc) + Hcouple )
+    H0 = 2*pi*(da*Na + 0.5*xa*(Na*Na-Na) + db*Nb + 0.5*xb*(Nb*Nb-Nb) + dc*Nc + 0.5*xc*(Nc*Nc-Nc) + Hcouple )
 
     H0 = Array(H0)
 
