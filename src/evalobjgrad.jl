@@ -129,7 +129,7 @@ and either be symmetric or skew-symmetric.
 - `Nsteps::Int64`: Number of timesteps for integrating Schroedinger's equation
 - `Uinit::Array{Float64,2}`: (keyword) Matrix holding the initial conditions for the solution matrix of size Uinit[Ntot, Ness]
 - `Utarget::Array{Complex{Float64},2}`: (keyword) Matrix holding the target gate matrix of size Uinit[Ntot, Ness]
-- `Cfreq::Array{Float64,2}`: (keyword) Carrier wave (angular) frequencies of size Cfreq[Nctrl, Nfreq]
+- `Cfreq::Vector{Vector{Float64}}`: (keyword) Carrier wave (angular) frequencies of size Cfreq[Nctrl]
 - `Rfreq::Array{Float64,1}`: (keyword) Rotational (regular) frequencies for each control Hamiltonian; size Rfreq[Nctrl]
 - `Hconst::Array{Float64,2}`: (keyword) Time-independent part of the Hamiltonian matrix of size Ntot × Ntot
 - `Hsym_ops:: Array{Array{Float64,2},1}`: (keyword) Array of symmetric control Hamiltonians, each of size Ntot × Ntot
@@ -159,8 +159,11 @@ mutable struct objparams
     Utarget_r      ::Array{Float64,2}
     Utarget_i      ::Array{Float64,2}
     use_bcarrier ::Bool
-    Nfreq        ::Int64 # number of frequencies
-    Cfreq        ::Array{Float64,2} # Carrier wave frequencies of dim Cfreq[seg,freq]
+#    Nfreq        ::Int64 # number of frequencies
+#    Cfreq        ::Array{Float64,2} # Carrier wave frequencies of dim Cfreq[seg,freq]
+    NfreqTot     ::Int64
+    Nfreq        ::Vector{Int64} # number of carrier frequencies in each control function
+    Cfreq        ::Vector{Vector{Float64}} # Pointer to carrier wave frequencies of dim Cfreq[ctrl]
     kpar         ::Int64   # element of gradient to test
     tik0         ::Float64
 #    tik1         ::Float64
@@ -239,7 +242,7 @@ mutable struct objparams
 # Regular arrays
     function objparams(Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64;
                        Uinit::Array{Float64,2}, Utarget::Array{Complex{Float64},2}, # keyword args w/o default values (must be assigned)
-                       Cfreq::Array{Float64,2}, Rfreq::Array{Float64,1}, Hconst::Array{Float64,2},
+                       Cfreq::Vector{Vector{Float64}}, Rfreq::Array{Float64,1}, Hconst::Array{Float64,2},
                        Hsym_ops:: Array{Array{Float64,2},1} = Array{Float64,2}[], # keyword args with default values
                        Hanti_ops:: Array{Array{Float64,2},1} = Array{Float64,2}[],
                        Hunc_ops:: Array{Array{Float64,2},1} = Array{Float64,2}[],
@@ -254,15 +257,20 @@ mutable struct objparams
         N      = prod(Ne)
         Ntot   = prod(Ne+Ng)
         Nguard = Ntot-N
-        Nfreq  = size(Cfreq,2)
-        Ncoupled   = length(Hsym_ops)
+        # Nfreq  = size(Cfreq,2)
+        Nctrl = length(Cfreq)
+        Ncoupled = length(Hsym_ops)
         Nanti  = length(Hanti_ops)
         Nunc   = length(Hunc_ops)
 
         Nctrl = Ncoupled + Nunc # Number of control Hamiltonians
         
-        @assert(Ncoupled==0 || Nunc== 0)
+        @assert(Ncoupled==Nctrl)
         @assert(length(Rfreq) >= Nctrl)
+        
+        if(Nunc > 0)
+            throw(ArgumentError("Uncoupled Hamiltonians are currently not supported.\n"))
+        end
 
         # Check size of Uinit, Utarget
         tz = ( Ntot, N )
@@ -270,6 +278,16 @@ mutable struct objparams
         @assert( size(Utarget) == tz)
         #println("Passed size compatibility tests")
 
+        @assert(Ncoupled == Nanti)
+        # Exit if there are any uncoupled controls
+
+        Nfreq = Vector{Int64}(undef,Nctrl) # setup Nfreq vector from Cfreq
+        for c = 1:Nctrl
+            Nfreq[c] = length(Cfreq[c])
+        end
+        NfreqTot = sum(Nfreq)
+        println("objparams: NfreqTot = ", NfreqTot)
+    
         # Track symmetries of uncoupled Hamiltonian terms
         if Nunc > 0
             isSymm = BitArray(undef, Nunc)
@@ -328,8 +346,6 @@ mutable struct objparams
         # By default save convergence history
         saveConvHist = true
 
-        @assert(Ncoupled == Nanti)
-
         # Check for consistency in coupled controls 
         for i = 1:Ncoupled
             L = LinearAlgebra.tril(Hsym_ops[i] + Hanti_ops[i]) # tril forms the lower triangular part of a matrix, in this case (a+a^† ) + (a - a^†) = 2 a, which is upper triangular
@@ -337,11 +353,6 @@ mutable struct objparams
                 println("WARNING: Control Hamiltonian #", i, " may be inconsistently defined because H_sym+H_anti has a lower triangular part.")
             end
         end
-
-        # Exit if uncoupled controls with more than 1 oscillator present
-        # if(Nunc > 0 && Nosc > 1)
-        #     throw(ArgumentError("Uncoupled Hamiltonians for more than a single oscillator not currently supported.\n"))
-        # end
 
         quiet = false
 
@@ -412,7 +423,7 @@ mutable struct objparams
         # sv_type is used for continuation. Only change this if you know what you are doing
         new(
              Nosc, N, Nguard, Ne, Ng, Ne+Ng, T, nsteps, Uinit, real(Utarget), imag(Utarget), 
-             use_bcarrier, Nfreq, Cfreq, kpar, tik0, Hconst, Hsym_ops1, 
+             use_bcarrier, NfreqTot, Nfreq, Cfreq, kpar, tik0, Hconst, Hsym_ops1, 
              Hanti_ops1, Hunc_ops1, Ncoupled, Nunc, isSymm, Ident, wmat, 
              forb_states, forb_weights, wmat_real, wmat_imag, pFidType, 0.0,
              objFuncType, leak_ubound,
@@ -540,8 +551,11 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, verbose::Bool
         error("pcof must have an even number of elements >= ",3*Nsig,", not ", Psize)
     end
     if params.use_bcarrier
-        D1 = div(Psize, Nsig*Nfreq)  # 
-        Psize = D1*Nsig*Nfreq # active part of the parameter array
+        # NOTE: Nsig  = 2*(Ncoupled + Nunc)
+        # D1 = div(Psize, Nsig*Nfreq)  # 
+        # Psize = D1*Nsig*Nfreq # active part of the parameter array
+        D1 = div(Psize, 2*params.NfreqTot)  # 
+        Psize = 2*D1*params.NfreqTot # active part of the parameter array
     else
         D1 = div(Psize, Nsig)
         Psize = D1*Nsig # active part of the parameter array
@@ -567,7 +581,7 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, verbose::Bool
     # Here we can choose what kind of control function expansion we want to use
     if (params.use_bcarrier)
         # FMG FIX
-        splinepar = bcparams(T, D1, Ncoupled, Nunc, params.Cfreq, pcof)
+        splinepar = bcparams(T, D1, params.Cfreq, pcof) # Assumes Nunc = 0
     else
     # the old bsplines is the same as the bcarrier with Cfreq = 0
         splinepar = splineparams(T, D1, Nsig, pcof)   # parameters for B-splines
@@ -732,7 +746,8 @@ if evaladjoint
     end  
 
     if (params.use_bcarrier)
-        gradSize = (2*Ncoupled+Nunc)*Nfreq*D1
+        # gradSize = (2*Ncoupled+Nunc)*Nfreq*D1
+        gradSize = params.NfreqTot*2*D1
     else
         gradSize = Nsig*D1
     end
@@ -1315,13 +1330,17 @@ function zero_start_end!(params::objparams, D1:: Int64, minCoeff:: Array{Float64
     Nfreq = params.Nfreq
     Ncoupled = params.Ncoupled
     Nunc = params.Nunc
-    nCoeff = 2*Ncoupled*Nfreq*D1
+    # nCoeff = 2*Ncoupled*Nfreq*D1
+    NfreqTot = sum(Nfreq) 
+    nCoeff = 2*D1*NfreqTot
 
 #    @printf("Ncoupled = %d, Nfreq = %d, D1 = %d, nCoeff = %d\n", Ncoupled, Nfreq, D1, nCoeff)
+    baseOffset = 0
     for c in 1:Ncoupled+Nunc  # We assume that either Nunc = 0 or Ncoupled = 0
-        for f in 1:Nfreq
+        for f in 1:Nfreq[c]
             for q in 0:1
-                offset1 = 2*(c-1)*Nfreq*D1 + (f-1)*2*D1 + q*D1
+                # offset1 = 2*(c-1)*Nfreq*D1 + (f-1)*2*D1 + q*D1
+                offset1 = baseOffset + (f-1)*2*D1 + q*D1
                 # start
                 minCoeff[ offset1 + 1] = 0.0
                 minCoeff[ offset1 + 2] = 0.0
@@ -1334,7 +1353,8 @@ function zero_start_end!(params::objparams, D1:: Int64, minCoeff:: Array{Float64
                 maxCoeff[ offset2-1] = 0.0
                 maxCoeff[ offset2 ] = 0.0
             end
-        end
+        end # for f
+        baseOffset += 2*D1*Nfreq[c]
     end
 end
 
@@ -1347,21 +1367,23 @@ two parameters in each B-spline segment.
  
 # Arguments
 - `Nctrl:: Int64`: Number of control Hamiltonians.
-- `Nfreq:: Int64`: Number of carrier frequencies.
+- `Nfreq:: Vector{Int64}`: Vector holding the number of carrier frequencies for each control
 - `D1:: Int64`: Number of basis functions in each segment.
 - `minCoeff:: Vector{Float64}`: Lower parameter bounds to be modified
 - `maxCoeff:: Vector{Float64}`: Upper parameter bounds to be modified
 """
-function zero_start_end!(Nctrl::Int64, Nfreq::Int64, D1:: Int64, minCoeff:: Array{Float64,1}, maxCoeff:: Array{Float64,1} )
+function zero_start_end!(Nctrl::Int64, Nfreq::Vector{Int64}, D1:: Int64, minCoeff:: Array{Float64,1}, maxCoeff:: Array{Float64,1} )
     @assert(D1 >= 5) # Need at least 5 parameters per B-spline segment
-    @assert(Nctrl >= 1)
-    @assert(Nfreq >= 1)
+    @assert(Nctrl == length(Nfreq))
+    @assert(sum(Nfreq) >= 1)
 
 #    @printf("Ncoupled = %d, Nfreq = %d, D1 = %d, nCoeff = %d\n", Ncoupled, Nfreq, D1, nCoeff)
+    baseOffset = 0
     for c in 1:Nctrl  # We assume that either Nunc = 0 or Ncoupled = 0
-        for f in 1:Nfreq
+        for f in 1:Nfreq[c]
             for q in 0:1
-                offset1 = 2*(c-1)*Nfreq*D1 + (f-1)*2*D1 + q*D1
+                # offset1 = 2*(c-1)*Nfreq*D1 + (f-1)*2*D1 + q*D1
+                offset1 = baseOffset + (f-1)*2*D1 + q*D1
                 # start
                 minCoeff[ offset1 + 1] = 0.0
                 minCoeff[ offset1 + 2] = 0.0
@@ -1374,7 +1396,8 @@ function zero_start_end!(Nctrl::Int64, Nfreq::Int64, D1:: Int64, minCoeff:: Arra
                 maxCoeff[ offset2-1] = 0.0
                 maxCoeff[ offset2 ] = 0.0
             end
-        end
+        end # for f
+        baseOffset += 2*D1*Nfreq[c]        
     end
 end
 
@@ -1390,78 +1413,97 @@ with `minCoeff = -maxCoeff`.
 - `D1:: Int64`: Number of basis functions in each segment.
 - `maxAmp:: Matrix{Float64}`: `maxAmp[c,f]` is the maximum parameter value for ctrl `c` and frequency `f`
 """
-function assign_thresholds_ctrl_freq(params::objparams, D1:: Int64, maxAmp:: Matrix{Float64})
+function assign_thresholds_ctrl_freq(params::objparams, D1:: Int64, maxAmp:: Vector{Vector{Float64}})
     Nfreq = params.Nfreq
     Ncoupled = params.Ncoupled
     Nunc = params.Nunc
-    nCoeff = 2*(Ncoupled+Nunc)*Nfreq*D1
+    @assert(Nunc == 0)
+
+    NfreqTot = sum(Nfreq) 
+    nCoeff = 2*D1*NfreqTot
+    #nCoeff = 2*(Ncoupled+Nunc)*Nfreq*D1
     minCoeff = zeros(nCoeff) # Initialize storage
     maxCoeff = zeros(nCoeff)
 
 #    @printf("Ncoupled = %d, Nfreq = %d, D1 = %d, nCoeff = %d\n", Ncoupled, Nfreq, D1, nCoeff)
-    for c in 1:Ncoupled+Nunc  # We assume that either Nunc = 0 or Ncoupled = 0
-        for f in 1:Nfreq
-            offset1 = 2*(c-1)*Nfreq*D1 + (f-1)*2*D1
-            minCoeff[offset1 + 1:offset1+2*D1] .= -maxAmp[c,f] # same for p(t) and q(t)
-            maxCoeff[offset1 + 1:offset1+2*D1] .= maxAmp[c,f]
+    baseOffset = 0
+    for c in 1:Ncoupled  # We assume that either Nunc = 0 or Ncoupled = 0
+        for f in 1:Nfreq[c]
+            # offset1 = 2*(c-1)*Nfreq*D1 + (f-1)*2*D1
+            offset1 = baseOffset + (f-1)*2*D1
+            minCoeff[offset1 + 1:offset1+2*D1] .= -maxAmp[c][f] # same for p(t) and q(t)
+            maxCoeff[offset1 + 1:offset1+2*D1] .= maxAmp[c][f]
         end
+        baseOffset += 2*D1*Nfreq[c]
     end
     return minCoeff, maxCoeff
 end
 
-"""
-    minCoeff, maxCoeff = assign_thresholds_freq(maxAmp, Ncoupled, Nfreq, D1)
+# """
+#     minCoeff, maxCoeff = assign_thresholds_freq(maxAmp, Ncoupled, Nfreq, D1)
 
-Build vector of frequency dependent min/max parameter constraints, with `minCoeff = -maxCoeff`, when
-there are no uncoupled control functions.
+# Build vector of frequency dependent min/max parameter constraints, with `minCoeff = -maxCoeff`, when
+# there are no uncoupled control functions.
  
-# Arguments
-- `maxAmp::Array{Float64,1}`: Maximum parameter value for each frequency
-- `Ncoupled::Int64`: Number of coupled controls in the simulation
-- `Nfreq::Int64`: Number of carrier wave frequencies used in the controls
-- `D1:: Int64`: Number of basis functions in each control function
-"""
-function assign_thresholds_freq(maxAmp::Array{Float64,1}, Ncoupled::Int64, Nfreq::Int64, D1::Int64)
-    nCoeff = 2*Ncoupled*Nfreq*D1
-    minCoeff = zeros(nCoeff) # Initialize storage
-    maxCoeff = zeros(nCoeff)
+# # Arguments
+# - `maxAmp::Array{Float64,1}`: Maximum parameter value for each frequency
+# - `Ncoupled::Int64`: Number of coupled controls in the simulation
+# - `Nfreq::Vector{Int64}`: Number of carrier wave frequencies used in the controls
+# - `D1:: Int64`: Number of basis functions in each control function
+# """
+# function assign_thresholds_freq(maxAmp::Array{Float64,1}, Ncoupled::Int64, Nfreq::Vector{Int64}, D1::Int64)
+#     NfreqTot = sum(Nfreq) 
+#     # nCoeff = 2*Ncoupled*Nfreq*D1
+#     nCoeff = 2*D1*NfreqTot
+#     minCoeff = zeros(nCoeff) # Initialize storage
+#     maxCoeff = zeros(nCoeff)
+#     baseOffset = 0
+# #    @printf("Ncoupled = %d, Nfreq = %d, D1 = %d, nCoeff = %d\n", Ncoupled, Nfreq, D1, nCoeff)
+#     for c in 1:Ncoupled
+#         for f in 1:Nfreq[c]
+#             #offset1 = 2*(c-1)*Nfreq*D1 + (f-1)*2*D1
+#             offset1 = baseOffset + (f-1)*2*D1
+#             minCoeff[offset1 + 1:offset1+2*D1] .= -maxAmp[f] # same for p(t) and q(t)
+#             maxCoeff[offset1 + 1:offset1+2*D1] .= maxAmp[f]
+#         end
+#         baseOffset += 2*D1*Nfreq[c]
+#     end
+#     return minCoeff, maxCoeff
+# end
 
-#    @printf("Ncoupled = %d, Nfreq = %d, D1 = %d, nCoeff = %d\n", Ncoupled, Nfreq, D1, nCoeff)
-    for c in 1:Ncoupled
-        for f in 1:Nfreq
-            offset1 = 2*(c-1)*Nfreq*D1 + (f-1)*2*D1
-            minCoeff[ offset1 + 1:offset1+2*D1] .= -maxAmp[f] # same for p(t) and q(t)
-            maxCoeff[offset1 + 1:offset1+2*D1] .= maxAmp[f]
-        end
-    end
-    return minCoeff, maxCoeff
-end
-
 """
-    minCoeff, maxCoeff = assign_thresholds(maxAmp, Ncoupled, Nfreq, D1, Nunc=0])
+    minCoeff, maxCoeff = assign_thresholds(params, D1, maxAmp)
 
 Build vector of frequency independent min/max parameter constraints for each control function. Here, `minCoeff = -maxCoeff`.
  
 # Arguments
-- `maxamp::Array{Float64,1}`: Maximum parameter value for each frequency
-- `Ncoupled::Int64`: Number of coupled controls in the simulation
-- `Nfreq::Int64`: Number of carrier wave frequencies used in each control function
-- `D1::Int64`: Number of basis functions per frequency and re/im in each control function
-- `Nunc::Int64`: (optional) Number of un-coupled controls (default = 0)
+- `params:: objparams`: Struct containing problem definition.
+- `D1:: Int64`: Number of basis functions in each segment.
+- `maxAmp:: Vector{Float64}`: `maxAmp[c]` is the maximum parameter value for ctrl `c`
 """
-function assign_thresholds(maxamp::Array{Float64,1}, Ncoupled::Int64, Nfreq::Int64, D1::Int64, Nunc::Int64 = 0)
-    nCoeff = (2*Ncoupled+Nunc)*Nfreq*D1
+function assign_thresholds(params::objparams, D1::Int64, maxAmp::Vector{Float64})
+    Nfreq = params.Nfreq
+    Ncoupled = params.Ncoupled
+    Nunc = params.Nunc
+    @assert(Nunc == 0)
+
+    NfreqTot = params.NfreqTot
+    nCoeff = 2*D1*NfreqTot
+    #nCoeff = 2*(Ncoupled+Nunc)*Nfreq*D1
     minCoeff = zeros(nCoeff) # Initialize storage
     maxCoeff = zeros(nCoeff)
 
-    for c in 1:Ncoupled+Nunc # We assume that either Nunc = 0 or Ncoupled = 0
-        for f in 1:Nfreq
-            offset1 = 2*(c-1)*Nfreq*D1 + (f-1)*2*D1
-            minCoeff[offset1 + 1:offset1+2*D1] .= -maxamp[c] # same for p(t) and q(t)
-            maxCoeff[offset1 + 1:offset1+2*D1] .= maxamp[c]
+#    @printf("Ncoupled = %d, Nfreq = %d, D1 = %d, nCoeff = %d\n", Ncoupled, Nfreq, D1, nCoeff)
+    baseOffset = 0
+    for c in 1:Ncoupled  # We assume that either Nunc = 0 or Ncoupled = 0
+        for f in 1:Nfreq[c]
+            # offset1 = 2*(c-1)*Nfreq*D1 + (f-1)*2*D1
+            offset1 = baseOffset + (f-1)*2*D1
+            minCoeff[offset1 + 1:offset1+2*D1] .= -maxAmp[c] # same for p(t) and q(t)
+            maxCoeff[offset1 + 1:offset1+2*D1] .= maxAmp[c]
         end
+        baseOffset += 2*D1*Nfreq[c]
     end
-
     return minCoeff, maxCoeff
 end
 
@@ -1720,9 +1762,6 @@ end
 
 @inline function tikhonov_pen(pcof::Array{Float64,1}, params ::objparams)
     Npar = size(pcof,1)
-    iNpar = 1.0/Npar
-    Nseg = (2*params.Ncoupled+params.Nunc)*params.Nfreq
-    D1 = div(Npar,Nseg)
 
     # Tikhonov regularization
     if params.usingPriorCoeffs
@@ -1731,7 +1770,9 @@ end
         penalty0 = dot(pcof,pcof)
     end
 
-    penalty1 = 0.0
+    # Nseg = (2*params.Ncoupled+params.Nunc)*params.Nfreq
+    # D1 = div(Npar,Nseg)
+    # penalty1 = 0.0
     # This makes little sense when using smooth B-splines
     # for i = 1:Nseg
     #     offset = (i-1)*D1
@@ -1740,9 +1781,9 @@ end
     #     end
     # end
 
-#    penalty = (params.tik0 * penalty0 + params.tik1 * penalty1) * iNpar;
+#    penalty = (params.tik0 * penalty0 + params.tik1 * penalty1)/Npar;
 
-    penalty = (params.tik0 * penalty0) * iNpar;
+    penalty = (params.tik0 * penalty0)/Npar;
                                 
     return penalty
 end
@@ -1750,12 +1791,13 @@ end
 @inline function tikhonov_grad!(pcof::Array{Float64,1}, params::objparams, pengrad::Array{Float64,1})  
     Npar = size(pcof,1)
     iNpar = 1.0/Npar
-    Nseg = (2*params.Ncoupled+params.Nunc)*params.Nfreq
-    D1 = div(Npar,Nseg)
 
     # Tikhonov regularization
     pengrad[:] .= 0.0
-# make little sense with smooth B-splines
+    
+    # Nseg = (2*params.Ncoupled+params.Nunc)*params.Nfreq
+    # D1 = div(Npar,Nseg)
+    # make little sense with smooth B-splines
     # for i = 1:Nseg
     #     Nstart = (i-1)*D1 + 1
     #     Nend = i*D1
@@ -1872,10 +1914,10 @@ end
 
 # splinefunc determines if the params are for the control function p_k or q_k
 # NEW ordering: p-func are even and q-func are odd
-# 0 - p1(t) for x-drive # Hsym_ops[1]
-# 1 - q1(t) for y-drive # Hanti_ops[1]
-# 2 - p2(t) for x-drive # Hsym_ops[1]
-# 3 - q2(t) for y-drive # Hanti_ops[1]
+# 0 - p1(t) for x-drive * Hsym_ops[1]
+# 1 - q1(t) for y-drive * Hanti_ops[1]
+# 2 - p2(t) for x-drive * Hsym_ops[2]
+# 3 - q2(t) for y-drive * Hanti_ops[2]
 # function for computing the splines
 @inline controlfunc(t::Float64,splinepar::splineparams, splinefunc::Int64) = bspline2(t,splinepar, splinefunc)
 @inline controlfunc(t::Float64, bcparams::bcparams, splinefunc::Int64) = bcarrier2(t, bcparams, splinefunc)
@@ -2106,6 +2148,7 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
     Ncoupled = params.Ncoupled
     Nunc = params.Nunc
     Nfreq = params.Nfreq
+    NfreqTot = params.NfreqTot
     Nsig = 2*(Ncoupled + Nunc)
 
     linear_solver = params.linear_solver    
@@ -2115,8 +2158,10 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
         error("pcof must have an even number of elements >= 6, not ", Psize)
     end
     if params.use_bcarrier
-        D1 = div(Psize, Nsig*Nfreq)  # 
-        Psize = D1*Nsig*Nfreq # active part of the parameter array
+        # D1 = div(Psize, Nsig*Nfreq)  # 
+        # Psize = D1*Nsig*Nfreq # active part of the parameter array
+        D1 = div(Psize, 2*NfreqTot)  # 
+        Psize = 2*D1*NfreqTot # active part of the parameter array
     else
         D1 = div(Psize, Nsig)
         Psize = D1*Nsig # active part of the parameter array
@@ -2301,11 +2346,11 @@ Estimate the number of time steps needed for the simulation, when there are unco
 - `Hsym_ops:: Vector{Matrix{Float64}}`: (Optional kw-arg) Array of symmetric control Hamiltonians
 - `Hanti_ops:: Vector{Matrix{Float64}}`: (Optional kw-arg) Array of anti-symmetric control Hamiltonians
 - `Hunc_ops:: Vector{Matrix{Float64}}`: (Optional kw-arg) Array of uncoupled control Hamiltonians
-- `maxCoupled:: Matrix{Float64}`: (Optional kw-arg) Maximum control amplitude for each sym/anti-sym control Hamiltonian
+- `maxCoupled:: Vector{Float64}`: (Optional kw-arg) Maximum amplitude for each control function
 - `maxUnc:: Vector{Float64}`: (Optional kw-arg) Maximum control amplitude for each uncoupled control Hamiltonian
 - `Pmin:: Int64`: (Optional kw-arg) Number of time steps per shortest period (assuming a slowly varying Hamiltonian).
 """
-function calculate_timestep(T::Float64, H0::Matrix{Float64}; Hsym_ops::Vector{Matrix{Float64}}=Matrix{Float64}[], Hanti_ops::Vector{Matrix{Float64}}=Matrix{Float64}[], Hunc_ops::Vector{Matrix{Float64}}=Matrix{Float64}[], maxCoupled::Matrix{Float64}=Float64[], maxUnc::Vector{Float64}=Float64[], Pmin::Int64=40)
+function calculate_timestep(T::Float64, H0::Matrix{Float64}; Hsym_ops::Vector{Matrix{Float64}}=Matrix{Float64}[], Hanti_ops::Vector{Matrix{Float64}}=Matrix{Float64}[], Hunc_ops::Vector{Matrix{Float64}}=Matrix{Float64}[], maxCoupled::Vector{Float64}=Float64[], maxUnc::Vector{Float64}=Float64[], Pmin::Int64=40)
 
     Ncoupled = length(Hsym_ops)
     Nunc = length(Hunc_ops)
@@ -2315,9 +2360,8 @@ function calculate_timestep(T::Float64, H0::Matrix{Float64}; Hsym_ops::Vector{Ma
     K1 = copy(H0) # system Hamiltonian
 
     # Coupled control Hamiltonians
-    maxpar = sum(maxCoupled, dims=2) # sum over all frequencies
     for i = 1:Ncoupled
-        K1 += maxpar[i].*Hsym_ops[i] + 1im*maxpar[i].*Hanti_ops[i]
+        K1 += maxCoupled[i].*Hsym_ops[i] + 1im*maxCoupled[i].*Hanti_ops[i]
     end
 
     # Uncoupled control Hamiltonians

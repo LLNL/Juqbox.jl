@@ -1,9 +1,3 @@
-# bcarriertest(Nspline, kpar)
-#
-# INPUT:
-# D1: number of spline basis functions per segment and frequency
-# kpar: component of the gradient to plot
-
 using Printf
 using Plots
 #pyplot()
@@ -15,16 +9,116 @@ using Juqbox
 function plotCoupled()
   T= 25.0
   D1= 5
-  om = [0.0 1.0; 0.0 2.0]
-  Nctrl = size(om,1)
-  Nfreq = size(om,2)
-  Ncoeff = 2*D1*Nctrl*Nfreq
-
-  Random.seed!(12345)
-  pcof = 2*(rand(Ncoeff) .- 0.5)
   
-  pl1, pl2 = bcarrierplot(T, D1, om, pcof)
-  return pl1, pl2
+  om1 = [0.0, 1.0]
+  #om1 = [0.0]
+  
+  om2 = [0.0, 2.0]
+  #om2 = [0.0]
+
+  om = [om1, om2] # Vector{Vector{Float64}}
+  Nctrl = length(om)
+
+  NfreqTot = 0
+  for c = 1:Nctrl
+    NfreqTot += length(om[c])
+  end
+  
+  Ncoeff = 2*D1*NfreqTot
+  println("plotCoupled: NfreqTot = ", NfreqTot, " Ncoeff = ", Ncoeff)
+
+  pcof = zeros(Ncoeff)
+  pcof[1:2:D1] .= 1.0
+  pcof[D1+1:2:2*D1] .= -1.0
+  
+  # zero out all coefficients for the 2nd freq in ctrl #1
+  if length(om1) == 2
+    pcof[2*D1+1:4*D1] .= -0.5
+    # pcof[2*D1+1:4*D1] .= 0.0
+    offset = 4*D1
+  else
+    offset = 2*D1
+  end
+
+  # first frequency in ctrl # 2
+  pcof[offset+2:2:offset+D1] .= 1.0
+  pcof[offset+2+D1:2:offset+2*D1] .= -1.0
+  
+  if length(om2) == 2 # 2nd ctrl has 2 frequencies
+    offset += 2*D1
+    pcof[offset+1:2:offset+D1] .= 1.0
+    pcof[offset+1+D1:2:offset+2*D1] .= -1.0
+  end
+
+  bspar = Juqbox.bcparams(T, D1, om, pcof)
+
+  return bcarrierplot(bspar) 
+end
+
+#-----------------------------------------------
+# plot the control functions 
+#-----------------------------------------------
+function  bcarrierplot(bspar::bcparams, basestr="Ctrl")
+
+  T = bspar.T
+
+  #Final time
+  samplerate = 16
+
+  nplot = round(Int64, T*samplerate)
+  dt    = 1.0/samplerate
+
+  println("Final time = ", T, ", number of time steps = ", nplot, ", time step =", dt)
+
+  @show(typeof(bspar))
+	
+  td = collect(range(0, stop = T-dt, length = nplot)) # FFT
+
+  # define shortcut to enable broadcasting
+  splinefcn(t, num) = Juqbox.bcarrier2(t, bspar, num) 
+
+  Nctrl = bspar.Ncoupled
+  plotarray = Array{Plots.Plot}(undef, Nctrl) #empty array for separate plots
+
+  for s in 1:Nctrl
+    # real part
+    ctrlr = splinefcn.(td,2*(s-1))
+    labstr = string("Re");
+    titlestr = string(basestr, ", osc-", s);
+    plotarray[s] = plot(td, ctrlr, lab=labstr, linewidth=2, title=titlestr)
+    # imag part
+    ctrli = splinefcn.(td,2*(s-1)+1)
+    labstr = string("Im");
+    plot!(td, ctrli, lab=labstr, linewidth=2)
+  end
+
+  # one figure for all cntrl functions
+  pl1 = plot(plotarray..., layout = (Nctrl,1))
+
+  # # Fourier transforms
+  # frequency = fftshift( AbstractFFTs.fftfreq(length(td), samplerate) )
+  # fmax = 0.75
+
+  # plotarray2 = Array{Plots.Plot}(undef, Nctrl) #empty array for separate plots
+
+  # for s in 1:Nctrl
+  #   # real part
+  #   ctrlr = splinefcn.(td,s-1)
+  #   Fctrlr = fftshift( fft(ctrlr) ) / nplot
+  #   labstr = string("Re");
+  #   titlestr = string(basestr, ", osc-", s, ", Abs Fourier");
+  #   plotarray2[s] = plot(frequency, abs.(Fctrlr), xlim=(-fmax,fmax), yscale= :log10, lab= labstr, title=titlestr, size = (1000, 500))
+  #   # imag part
+  #   ctrli = splinefcn.(td,s+Nctrl-1)
+  #   Fctrli = fftshift( fft(ctrli) ) / nplot
+  #   labstr = string("Im");
+  #   plot!(frequency, abs.(Fctrli), xlim=(-fmax,fmax), yscale= :log10, lab= labstr, xaxis="Freq [GHz]")
+  # end
+
+  # # one figure for all cntrl functions
+  # pl2 = plot(plotarray2..., layout = (Nctrl,1))
+
+  return pl1
 end
 
 function  bcarriertest(D1::Int64, kpar::Int64 = 1, num0::Int64 = 0 ) #num0 should be 0 or 2
@@ -139,71 +233,6 @@ function  bcarriertest(D1::Int64, kpar::Int64 = 1, num0::Int64 = 0 ) #num0 shoul
     return pl1, pl2
 end
 
-#-----------------------------------------------
-# plot the control functions 
-#-----------------------------------------------
-function  bcarrierplot(T::Float64, D1::Int64, omega::Array{Float64,2}, pcof::Array{Float64,1}, basestr="Ctrl")
-
-  bsparam = Juqbox.bcparams(T, D1, omega, pcof)
-
-  #Final time
-  samplerate = 16
-
-  nplot = round(Int64, T*samplerate)
-  dt    = 1.0/samplerate
-
-  println("Final time = ", T, ", number of time steps = ", nplot, ", time step =", dt)
-
-  @show(typeof(bsparam))
-	
-  td = collect(range(0, stop = T-dt, length = nplot)) # FFT
-
-  # define shortcut to enable broadcasting
-  splinefcn(t, num) = Juqbox.bcarrier2(t, bsparam, num) 
-
-  Nsubpl = bsparam.Ncoupled
-  plotarray = Array{Plots.Plot}(undef, Nsubpl) #empty array for separate plots
-
-  for s in 1:Nsubpl
-    # real part
-    ctrlr = splinefcn.(td,s-1)
-    labstr = string("Re");
-    titlestr = string(basestr, ", osc-", s);
-    plotarray[s] = plot(td, ctrlr, lab=labstr, linewidth=2, title=titlestr)
-    # imag part
-    ctrli = splinefcn.(td,s+Nsubpl-1)
-    labstr = string("Im");
-    plot!(td, ctrli, lab=labstr, linewidth=2)
-  end
-
-  # one figure for all cntrl functions
-  pl1 = plot(plotarray..., layout = (Nsubpl,1))
-
-  # Fourier transforms
-  frequency = fftshift( AbstractFFTs.fftfreq(length(td), samplerate) )
-  fmax = 0.75
-
-  plotarray2 = Array{Plots.Plot}(undef, Nsubpl) #empty array for separate plots
-
-  for s in 1:Nsubpl
-    # real part
-    ctrlr = splinefcn.(td,s-1)
-    Fctrlr = fftshift( fft(ctrlr) ) / nplot
-    labstr = string("Re");
-    titlestr = string(basestr, ", osc-", s, ", Abs Fourier");
-    plotarray2[s] = plot(frequency, abs.(Fctrlr), xlim=(-fmax,fmax), yscale= :log10, lab= labstr, title=titlestr, size = (1000, 500))
-    # imag part
-    ctrli = splinefcn.(td,s+Nsubpl-1)
-    Fctrli = fftshift( fft(ctrli) ) / nplot
-    labstr = string("Im");
-    plot!(frequency, abs.(Fctrli), xlim=(-fmax,fmax), yscale= :log10, lab= labstr, xaxis="Freq [GHz]")
-  end
-
-  # one figure for all cntrl functions
-  pl2 = plot(plotarray2..., layout = (Nsubpl,1))
-
-  return pl1,pl2
-end
 
 #------------------------------------------------------------
 function  testbcarrier(D1::Int64 = 5, kpar::Int64 = 5)

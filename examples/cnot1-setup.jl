@@ -43,17 +43,17 @@ H0, Hsym_ops, Hanti_ops = hamiltonians_one_sys(Ness=Ne, Nguard=Ng, freq01=fa, an
 maxctrl = 0.001*2*pi * 10.0 #  10.0 MHz (approx) max amplitude for each (p & q) control function
 
 # calculate resonance frequencies
-om, maxMask, Utrans = get_resonances(Ness=Ne, Nguard=Ng, Hsys=H0, Hsym_ops=Hsym_ops)
+om, Nfreq, Utrans = get_resonances(Ness=Ne, Nguard=Ng, Hsys=H0, Hsym_ops=Hsym_ops)
 
-Nctrl = size(om, 1)
-Nfreq = size(om, 2)
+Nctrl = length(om)
+
 println("Nctrl = ", Nctrl, " Nfreq = ", Nfreq)
 
-maxAmp = maxctrl/Nfreq .* maxMask
+maxAmp = [maxctrl/Nfreq[1]] # Note: Here we only have one control Hamiltonian
 
 for q = 1:Nctrl
-     println("Carrier frequencies in ctrl Hamiltonian # ", q, " [GHz]: ", om[q,:]./(2*pi))
-     println("Amplitude bounds for p & q-functions in system # ", q, " [GHz]: ", maxAmp[q,:]./(2*pi))
+     println("Carrier frequencies in ctrl Hamiltonian # ", q, " [GHz]: ", om[q]./(2*pi))
+     # println("Amplitude bounds for p & q-functions in system # ", q, " [GHz]: ", maxAmp[q,:]./(2*pi))
  end
 
 T = 100.0 # Duration of gate
@@ -77,9 +77,10 @@ linear_solver = Juqbox.lsolver_object(solver=Juqbox.JACOBI_SOLVER, max_iter=100,
 
 # number of B-splines per ctrl/freq/real-imag
 D1 = 10
-nCoeff = 2*D1*Nctrl*Nfreq
+NfreqTot = sum(Nfreq)
+nCoeff = 2*D1*NfreqTot
 
-maxrand = 0.05*maxctrl/Nfreq  # amplitude of the random control vector
+maxrand = 0.05*maxctrl/Nfreq[1]  # amplitude of the random control vector
 pcof0 = init_control(Nctrl=Nctrl, Nfreq=Nfreq, maxrand=maxrand, nCoeff=nCoeff, seed=2345)
 
 params = Juqbox.objparams(Ne, Ng, T, nsteps, Uinit=U0, Utarget=utarget, Cfreq=om, Rfreq=rot_freq, Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, linear_solver=linear_solver, nCoeff=length(pcof0))

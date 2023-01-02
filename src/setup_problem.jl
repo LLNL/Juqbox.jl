@@ -234,17 +234,13 @@ function hamiltonians_three_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, fre
     return H0, Hsym_ops, Hanti_ops
 end
 # initial parameter guess
-function init_control(;Nctrl::Int64, Nfreq::Int64, maxrand::Float64, nCoeff::Int64, startFile::String = "", seed::Int64 = -1)
+function init_control(;Nctrl::Int64, Nfreq::Vector{Int64}, maxrand::Float64, nCoeff::Int64, startFile::String = "", seed::Int64 = -1)
     # Nctrl = size(params.Cfreq,1)
     # Nfreq = size(params.Cfreq,2)
-
-    D1 = div(nCoeff, 2*Nctrl*Nfreq)
 
     if seed >= 0
         Random.seed!(seed)
     end
-
-    nCoeff = 2*Nctrl*Nfreq*D1 # factor '2' is for sin/cos
 
     # initial parameter guess: from file or random guess?
     if length(startFile) > 0
@@ -260,11 +256,12 @@ function init_control(;Nctrl::Int64, Nfreq::Int64, maxrand::Float64, nCoeff::Int
     return pcof0
 end
 
-function control_bounds(params::objparams, maxAmp::Matrix{Float64}, nCoeff::Int64, zeroCtrlBC::Bool)
-    Nctrl  = size(params.Cfreq,1)
-    Nfreq  = size(params.Cfreq,2)
+function control_bounds(params::objparams, maxAmp::Vector{Float64}, nCoeff::Int64, zeroCtrlBC::Bool)
+    Nctrl  = length(params.Cfreq)
+    Nfreq  = params.Nfreq
+    NfreqTot  = params.NfreqTot
 
-    D1 = div(nCoeff, 2*Nctrl*Nfreq)
+    D1 = div(nCoeff, 2*NfreqTot)
 
     if zeroCtrlBC
         @assert D1 >= 5 "D1 smaller than 5 does not work with zero start & end conditions"
@@ -273,7 +270,7 @@ function control_bounds(params::objparams, maxAmp::Matrix{Float64}, nCoeff::Int6
     end
 
     # min and max coefficient values, maxamp[Nctrl]
-    minCoeff, maxCoeff = Juqbox.assign_thresholds_ctrl_freq(params, D1, maxAmp)
+    minCoeff, maxCoeff = Juqbox.assign_thresholds(params, D1, maxAmp)
     
     if zeroCtrlBC
         zero_start_end!(Nctrl, Nfreq, D1, minCoeff, maxCoeff) # maxCoeff stores the bounds for the controls amplitudes (zero at the boundary)
@@ -523,22 +520,17 @@ function get_resonances(;Ness::Vector{Int64}, Nguard::Vector{Int64}, Hsys::Matri
         push!(resonances, resonances_a)
     end
 
-    # Make sure we have the same number of frequencies for all controls
-    maxlen = maximum(length.(resonances[:]))
+    # Return the number of frequencies for each control 
+    Nfreq = zeros(Int64, Nctrl)
+    
+    # Allocate Vector of pointers to the carrier frequencies
+    om = Vector{Vector{Float64}}(undef, Nctrl)
 
-    Nfreq = maxlen
-    maxMask = ones(Int64, Nctrl, Nfreq)
-    om = zeros(Nctrl, Nfreq)
-
-    # println("maxlen = ", maxlen)
+    # copy over resonances[]
     for q in 1:Nctrl
-        orig_len = length(resonances[q])
-        #println("q = ", q, " orig_len = ", orig_len, " Nfreq = ", Nfreq)
-        om[q, 1:orig_len] .= resonances[q]
-        if orig_len < Nfreq
-            om[q, orig_len+1:Nfreq] .= 0.0
-            maxMask[q, orig_len+1:Nfreq] .= 0
-        end
+        Nfreq[q] = length(resonances[q])
+        om[q] = zeros(Nfreq[q])
+        om[q] .= resonances[q]
     end
 
     # Convert carrier frequencies to radians
@@ -554,7 +546,7 @@ function get_resonances(;Ness::Vector{Int64}, Nguard::Vector{Int64}, Hsys::Matri
     # end
     # println("typeof(Utrans): ", typeof(Utrans))
     println()
-    return om, maxMask, Utrans
+    return om, Nfreq, Utrans
 end
 
 function transformHamiltonians!(H0::Matrix{Float64}, Hsym_ops::Vector{Matrix{Float64}}, Hanti_ops::Vector{Matrix{Float64}}, Utrans::Matrix{Float64})

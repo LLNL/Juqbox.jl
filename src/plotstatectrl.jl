@@ -250,11 +250,12 @@ function evalctrl(params::objparams, pcof0:: Array{Float64, 1}, td:: Array{Float
         nCoeff = length(pcof0)
     end
     pcof = pcof0[1:nCoeff]
-    D1 = div(nCoeff, 2*(params.Ncoupled + params.Nunc)*params.Nfreq)  # number of B-spline coeff per control function
+    #D1 = div(nCoeff, 2*(params.Ncoupled + params.Nunc)*params.Nfreq)  # number of B-spline coeff per control function
+    D1 = div(nCoeff, 2*params.NfreqTot)  # number of B-spline coeff per control function
 
     if (params.use_bcarrier)
         # B-splines with carrier waves
-        splinepar = bcparams(params.T, D1, params.Ncoupled, params.Nunc, params.Cfreq, pcof)
+        splinepar = bcparams(params.T, D1, params.Cfreq, pcof)
     else
         # regular B-splines
         splinepar = splineparams(params.T, D1, 2*(params.Ncoupled + params.Nunc), pcof)
