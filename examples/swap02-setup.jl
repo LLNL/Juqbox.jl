@@ -28,19 +28,19 @@ Base.show(io::IO, f::Float64) = @printf(io, "%20.13e", f)
 
 using Juqbox # quantum control module
 
-Ne = [4] # Number of essential energy levels
+Ne = [3] # Number of essential energy levels
 Ng = [2] # Number of extra guard levels
 Ntot = prod(Ne + Ng) # Total number of energy levels
 
 # frequencies (in GHz, will be multiplied by 2*pi to get angular frequencies in the Hamiltonian matrix)
-fa = [4.10336]
-xa = [-0.2198]
+fa = [3.445779438]
+xa = [-0.208343564]
 rot_freq = copy(fa)
 
 # form the Hamiltonian matrices
 H0, Hsym_ops, Hanti_ops = hamiltonians_one_sys(Ness=Ne, Nguard=Ng, freq01=fa, anharm=xa, rot_freq=rot_freq)
 
-maxctrl = 0.001*2*pi * 15.0 #  15.0 MHz (approx) max amplitude for each (p & q) control function
+maxctrl = 0.001*2*pi * 3.0 #  15.0 MHz (approx) max amplitude for each (p & q) control function
 
 # calculate resonance frequencies
 om, Nfreq, Utrans = get_resonances(Ness=Ne, Nguard=Ng, Hsys=H0, Hsym_ops=Hsym_ops)
@@ -56,34 +56,35 @@ for q = 1:Nctrl
      # println("Amplitude bounds for p & q-functions in system # ", q, " [GHz]: ", maxAmp[q,:]./(2*pi))
  end
 
-T = 100.0 # Duration of gate
+T = 250.0 # Duration of gate
 # Estimate time step
 nsteps = calculate_timestep(T, H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, maxCoupled=maxAmp, Pmin=40)
 println("Duration T = ", T, " # time steps: ", nsteps)
 
 # CNOT target
-gate_cnot =  zeros(ComplexF64, Ne[1], Ne[1])
-gate_cnot[1,1] = 1.0
-gate_cnot[2,2] = 1.0
-gate_cnot[3,4] = 1.0
-gate_cnot[4,3] = 1.0
+gate_swap02 =  zeros(ComplexF64, Ne[1], Ne[1])
+gate_swap02[1,3] = 1.0
+gate_swap02[2,2] = 1.0
+gate_swap02[3,1] = 1.0
 
 # Initial basis with guard levels
 U0 = initial_cond(Ne, Ng)
-utarget = U0 * gate_cnot # Add zero rows for the guard levels
+utarget = U0 * gate_swap02 # Add zero rows for the guard levels
 
 # create a linear solver object
 linear_solver = Juqbox.lsolver_object(solver=Juqbox.JACOBI_SOLVER, max_iter=100, tol=1e-12, nrhs=prod(Ne))
 
 # number of B-splines per ctrl/freq/real-imag
-D1 = 10
+D1 = 78
 NfreqTot = sum(Nfreq)
 nCoeff = 2*D1*NfreqTot
 
-maxrand = 0.05*maxctrl/Nfreq[1]  # amplitude of the random control vector
-pcof0 = init_control(Nctrl=Nctrl, Nfreq=Nfreq, maxrand=maxrand, nCoeff=nCoeff, seed=2345)
+maxrand = 0.01*maxctrl/Nfreq[1]  # amplitude of the random control vector
+pcof0 = init_control(Nctrl=Nctrl, Nfreq=Nfreq, maxrand=maxrand, nCoeff=nCoeff, seed=12456)
 
 params = Juqbox.objparams(Ne, Ng, T, nsteps, Uinit=U0, Utarget=utarget, Cfreq=om, Rfreq=rot_freq, Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, linear_solver=linear_solver, nCoeff=length(pcof0))
+
+params.tik0 = 1e-2
 
 println("*** Settings ***")
 println("Number of coefficients per spline = ", D1, " Total number of control parameters = ", length(pcof0))

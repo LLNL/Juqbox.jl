@@ -256,10 +256,11 @@ function init_control(;Nctrl::Int64, Nfreq::Vector{Int64}, maxrand::Float64, nCo
     return pcof0
 end
 
-function control_bounds(params::objparams, maxAmp::Vector{Float64}, nCoeff::Int64, zeroCtrlBC::Bool)
+function control_bounds(params::objparams, maxAmp::Vector{Float64}, zeroCtrlBC::Bool)
     Nctrl  = length(params.Cfreq)
     Nfreq  = params.Nfreq
     NfreqTot  = params.NfreqTot
+    nCoeff = params.nCoeff
 
     D1 = div(nCoeff, 2*NfreqTot)
 

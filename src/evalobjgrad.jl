@@ -238,6 +238,8 @@ mutable struct objparams
 
     # temporary storage for time stepping, to be allocated later (by setup_ipopt_problem)
     wa:: working_arrays
+
+    nCoeff :: Int64 # Length of the control vector
     
 # Regular arrays
     function objparams(Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64;
@@ -431,7 +433,7 @@ mutable struct objparams
              zeros(0), zeros(0), zeros(0), zeros(0), 
              linear_solver, objThreshold, traceInfidelityThreshold, 0.0, 0.0, 
              usingPriorCoeffs, priorCoeffs, quiet, Rfreq, false, [],
-             real(my_dVds), imag(my_dVds), my_sv_type, wa
+             real(my_dVds), imag(my_dVds), my_sv_type, wa, nCoeff
             )
 
     end
@@ -1377,7 +1379,8 @@ function zero_start_end!(Nctrl::Int64, Nfreq::Vector{Int64}, D1:: Int64, minCoef
     @assert(Nctrl == length(Nfreq))
     @assert(sum(Nfreq) >= 1)
 
-#    @printf("Ncoupled = %d, Nfreq = %d, D1 = %d, nCoeff = %d\n", Ncoupled, Nfreq, D1, nCoeff)
+    #println("zero_start_end!: Nctrl = ", Nctrl, " Nfreq = ", Nfreq)
+
     baseOffset = 0
     for c in 1:Nctrl  # We assume that either Nunc = 0 or Ncoupled = 0
         for f in 1:Nfreq[c]
@@ -1479,7 +1482,7 @@ Build vector of frequency independent min/max parameter constraints for each con
 # Arguments
 - `params:: objparams`: Struct containing problem definition.
 - `D1:: Int64`: Number of basis functions in each segment.
-- `maxAmp:: Vector{Float64}`: `maxAmp[c]` is the maximum parameter value for ctrl `c`
+- `maxAmp:: Vector{Float64}`: `maxAmp[c]` is the maximum for ctrl function number `c`. Same bounds for p & q.
 """
 function assign_thresholds(params::objparams, D1::Int64, maxAmp::Vector{Float64})
     Nfreq = params.Nfreq
@@ -1499,8 +1502,9 @@ function assign_thresholds(params::objparams, D1::Int64, maxAmp::Vector{Float64}
         for f in 1:Nfreq[c]
             # offset1 = 2*(c-1)*Nfreq*D1 + (f-1)*2*D1
             offset1 = baseOffset + (f-1)*2*D1
-            minCoeff[offset1 + 1:offset1+2*D1] .= -maxAmp[c] # same for p(t) and q(t)
-            maxCoeff[offset1 + 1:offset1+2*D1] .= maxAmp[c]
+            bound = maxAmp[c]/Nfreq[c] # Divide bounds equally between the carrier frequencies for each control
+            minCoeff[offset1 + 1:offset1+2*D1] .= -bound # same for p(t) and q(t)
+            maxCoeff[offset1 + 1:offset1+2*D1] .= bound
         end
         baseOffset += 2*D1*Nfreq[c]
     end
@@ -2151,6 +2155,8 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
     NfreqTot = params.NfreqTot
     Nsig = 2*(Ncoupled + Nunc)
 
+    @assert(Nunc==0)
+    
     linear_solver = params.linear_solver    
 
     Psize = size(pcof,1) #must provide separate coefficients for the real and imaginary parts of the control fcn
@@ -2177,7 +2183,7 @@ function eval_forward(U0::Array{Float64,2}, pcof0::Array{Float64,1}, params::obj
 
     # Here we can choose what kind of control function expansion we want to use
     if (params.use_bcarrier)
-        splinepar = bcparams(T, D1, Ncoupled, Nunc, params.Cfreq, pcof)
+        splinepar = bcparams(T, D1, params.Cfreq, pcof)
     else
         splinepar = splinepar(T, D1, Nsig, pcof)   # parameters for B-splines
     end
