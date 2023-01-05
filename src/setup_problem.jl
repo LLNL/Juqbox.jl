@@ -34,7 +34,7 @@ function hamiltonians_one_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, freq0
 end
 
 
-function hamiltonians_two_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, freq01::Vector{Float64}, anharm::Vector{Float64}, rot_freq::Vector{Float64}, couple_coeff::Float64, couple_type::Int64, msb_order::Bool = true, verbose::Bool = true)
+function hamiltonians_two_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, freq01::Vector{Float64}, anharm::Vector{Float64}, rot_freq::Vector{Float64}, couple_coeff::Vector{Float64}, couple_type::Int64, msb_order::Bool = true, verbose::Bool = true)
     @assert(length(Ness) == 2)
     @assert(length(Nguard) == 2)
     @assert(couple_type == 1 || couple_type == 2)
@@ -100,9 +100,9 @@ function hamiltonians_two_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, freq0
 
     # Coupling Hamiltonian: couple_type = 2 # 1: cross-Kerr, 2: Jaynes-Cummings
     if couple_type == 1
-        Hcouple = couple_coeff*(N1*N2)
+        Hcouple = couple_coeff[1]*(N1*N2)
     elseif couple_type == 2
-        Hcouple = couple_coeff*(bdag * amat + bmat * adag)
+        Hcouple = couple_coeff[1]*(bdag * amat + bmat * adag)
     end
             # System Hamiltonian
     H0 = 2*pi*(  da*N1 + 0.5*x1*(N1*N1-N1) + db*N2 + 0.5*x2*(N2*N2-N2) + Hcouple )
