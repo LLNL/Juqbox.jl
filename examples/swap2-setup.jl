@@ -1,6 +1,6 @@
 #==========================================================
 This routine initializes an optimization problem to recover 
-a CNOT gate on a coupled 2-qubit system with 2 energy 
+a SWAP gate on a coupled 2-qubit system with 2 energy 
 levels on each oscillator (with 1 guard state on one and 
 2 guard states on the other). The drift Hamiltonian in 
 the rotating frame is
@@ -33,137 +33,65 @@ using SparseArrays
 
 Base.show(io::IO, f::Float64) = @printf(io, "%20.13e", f)
 
-using Juqbox
-
-# function my_initial_cond(Ntot, N, Ne, Ng)
-#     Ident = Matrix{Float64}(I, Ntot, Ntot)
-#     U0 = Ident[1:Ntot, 1:N] # Rectangular subset of identity
-#     # adjust the initial guess
-#     if Ng[1] + Ng[2] > 0
-#         Nt = Ne + Ng
-#         # build up a basis for the essential states
-#         col = 0
-#         m = 0
-#         for k2 in 1:Nt[2]
-#             for k1 in 1:Nt[1]
-#                 m += 1
-#                 # is this a guard level?
-#                 guard = (k1 > Ne[1]) || (k2 > Ne[2])
-#                 if !guard
-#                     col += 1
-#                     U0[:,col] = Ident[:,m]
-#                 end # if ! guard
-#             end # for
-#         end # for
-#     end # if
-#     return U0
-# end
+using Juqbox # quantum control module
 
 Ne1 = 2 # essential energy levels per oscillator 
 Ne2 = 2
-Ng1 = 0 # 0 # Osc-1, number of guard states
-Ng2 = 0 # 0 # Osc-2, number of guard states
+Ng1 = 2 # 0 # Osc-1, number of guard states
+Ng2 = 2 # 0 # Osc-2, number of guard states
 
 Ne = [Ne1, Ne2]
 Ng = [Ng1, Ng2]
+Nt = Ne + Ng
 
-N = Ne1*Ne2; # Total number of nonpenalized energy levels
-Ntot = (Ne1+Ng1)*(Ne2+Ng2)
-Nguard = Ntot - N # total number of guard states
-
-Nt1 = Ne1 + Ng1
-Nt2 = Ne2 + Ng2
-
-Tmax = 100.0 # Duration of gate
+N = prod(Ne) # Total number of nonpenalized energy levels
+Ntot = prod(Nt) # Total number of all energy levels
+Nguard = Ntot - N # total number of guard levels
 
 # frequencies (in GHz, will be multiplied by 2*pi to get angular frequencies in the Hamiltonian matrix)
-fa = 4.10595    # official
-fb = 4.81526   # official
-rot_freq = [fa, fb] # rotational frequencies
-x1 = 2* 0.1099  # official
-x2 = 2* 0.1126   # official
-x12 = 0.1 # Artificially large to allow coupling. Actual value: 1e-6 
-  
-# construct the lowering and raising matricies: amat, bmat, cmat
-# and the system Hamiltonian: H0
-#
+fa = 4.914  # 4.10595   # official
+fb = 5.114 # 4.81526   # official
+favg = 0.5*(fa+fb)
+rot_freq = [favg, favg]
 
-# Note: The ket psi = ji> = e_j kron e_i.
-# We order the elements in the vector psi such that i varies the fastest with i in [1,Nt1] and j in [1,Nt2]
-# The matrix amat = I kron a1 acts on alpha in psi = beta kron alpha
-# The matrix bmat = a2 kron I acts on beta in psi = beta kron alpha
-a1 = Array(Bidiagonal(zeros(Nt1),sqrt.(collect(1:Nt1-1)),:U))
-a2 = Array(Bidiagonal(zeros(Nt2),sqrt.(collect(1:Nt2-1)),:U))
+#rot_freq = [favg, favg] # rotational frequencies
+x1 = -0.33 # -2* 0.1099  # official
+x2 = -0.23 # -2* 0.1126   # official
+x12 = [-0.1] # Artificially large to allow fast coupling. Actual value: 1e-6 
+couple_type = 1 # cross-Kerr
+msb_order = false # true: original Juqbox, false: Quandary
+println("Hamiltonian is setup for ", (msb_order ? "MSB" : "LSB"), " ordering")
 
-I1 = Array{Float64, 2}(I, Nt1, Nt1)
-I2 = Array{Float64, 2}(I, Nt2, Nt2)
-
-# create the a, a^\dag, b and b^\dag vectors
-amat = kron(I2, a1)
-bmat = kron(a2, I1)
-
-adag = Array(transpose(amat))
-bdag = Array(transpose(bmat))
-
-# number ops
-num1 = Diagonal(collect(0:Nt1-1))
-num2 = Diagonal(collect(0:Nt2-1))
-
-# number operators
-N1 = Diagonal(kron(I2, num1) )
-N2 = Diagonal(kron(num2, I1) )
-
-# System Hamiltonian
-H0 = -2*pi*( x1/2*(N1*N1-N1) + x2/2*(N2*N2-N2) + x12*(N1*N2) )
+# setup the Hamiltonian matrices
+H0, Hsym_ops, Hanti_ops = hamiltonians_two_sys(Ness=Ne, Nguard=Ng, freq01=[fa, fb], anharm=[x1, x2], rot_freq=rot_freq, couple_coeff=x12, couple_type=couple_type, msb_order=msb_order)
 
 # max coefficients, rotating frame
-amax = 0.02 # max amplitude ctrl func for Hamiltonian #1
-bmax = 0.025 # max amplitude ctrl func for Hamiltonian #2
-maxpar = [amax, bmax]
+maxctrl = 50.0 * 2*pi * 1e-3 # 50 MHz max amplitude for each (p & q) ctrl function
 
-# estimate max magnitude of eigenvalue
-K1 =  H0 +
-    (amax.*(amat +  amat') + 1im*amax.*(amat -  amat') +
-     bmax.*(bmat + bmat') + 1im*bmax.*(bmat - bmat'))
-lamb = eigvals(K1)
-maxeig = maximum(abs.(lamb))
+# calculate resonance frequencies & diagonalizing transformation
+om, Nfreq, Utrans = get_resonances(Ness=Ne, Nguard=Ng, Hsys=H0, Hsym_ops=Hsym_ops, msb_order=msb_order)
 
-# Estimate time step
-Pmin = 40 # should be 20 or higher
-samplerate1 = maxeig*Pmin/(2*pi)
-nsteps = ceil(Int64,Tmax*samplerate1)
+Nctrl = length(om)
 
-println("Number of time steps = ", nsteps)
+println("Nctrl = ", Nctrl, " Nfreq = ", Nfreq)
 
-# package the lowering and raising matrices together into an one-dimensional array of two-dimensional arrays
-# Here we choose dense or sparse representation
-use_sparse = true
-# use_sparse = false
+maxAmp = maxctrl*ones(Nctrl)
 
-# dense matrices run faster, but take more memory
-Hsym_ops=[Array(amat+adag), Array(bmat+bdag)]
-Hanti_ops=[Array(amat-adag), Array(bmat-bdag)]
-H0 = Array(H0)
-
-Nfreq = 2 # number of carrier frequencies
-
-Ncoupled = length(Hsym_ops)
-om = zeros(Ncoupled, Nfreq) # Allocate space for the carrier wave frequencies
-
-@assert(Nfreq==1 || Nfreq==2 || Nfreq==3)
-if Nfreq == 2
-    om[1:Ncoupled,2] .= -2.0*pi*x12 # coupling freq for both ctrl funcs (re/im)
-elseif Nfreq == 3
-    om[1,2] = -2.0*pi*x1 # 1st ctrl, re
-    om[2,2] = -2.0*pi*x2 # 2nd ctrl, re
-    om[1:Ncoupled,3] .= -2.0*pi*x12 # coupling freq for both ctrl funcs (re/im)
+for q = 1:Nctrl
+    println("Carrier frequencies in ctrl Hamiltonian # ", q, " [GHz]: ", om[q,:]./(2*pi))
+    #println("Amplitude bounds for p & q-functions in system # ", q, " [GHz]: ", maxAmp[q,:]./(2*pi))
 end
 
-println("Carrier frequencies 1st ctrl Hamiltonian [GHz]: ", om[1,:]./(2*pi))
-println("Carrier frequencies 2nd ctrl Hamiltonian [GHz]: ", om[2,:]./(2*pi))
+use_diagonal_H0 = true # false
+if use_diagonal_H0 # transformation to diagonalize the system Hamiltonian
+    transformHamiltonians!(H0, Hsym_ops, Hanti_ops, Utrans)
+end
 
-#U0 = my_initial_cond(Ntot, N, Ne, Ng)
-U0 = initial_cond(Ne, Ng)
+Tmax = 150.0 # Duration of gate
+# estimate time step
+Pmin = 40 # should be 20 or higher
+nsteps = calculate_timestep(Tmax, H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, maxCoupled=maxAmp, Pmin=Pmin)
+println("Duration T = ", Tmax, " Number of time steps = ", nsteps)
 
 # SWAP target for the essential levels
 gate_swap =  zeros(ComplexF64, N, N)
@@ -172,90 +100,32 @@ gate_swap[2,3] = 1.0
 gate_swap[3,2] = 1.0
 gate_swap[4,4] = 1.0
 
+# Initial basis with guard levels
+U0 = initial_cond(Ne, Ng, msb_order)
 utarget = U0 * gate_swap
 
-# rotation matrices
-omega1, omega2 = Juqbox.setup_rotmatrices(Ne, Ng, rot_freq)
+# create a linear solver object
+linear_solver = Juqbox.lsolver_object(solver=Juqbox.JACOBI_SOLVER,max_iter=100,tol=1e-12,nrhs=N)
 
-# Compute Ra*Rb*utarget
-rot1 = Diagonal(exp.(im*omega1*Tmax))
-rot2 = Diagonal(exp.(im*omega2*Tmax))
-
-vtarget = rot1*rot2*utarget # target in the rotating frame
-
-# assemble problem description for the optimization
-params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
-                          Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, use_sparse=use_sparse)
-
-# initial parameter guess
-startFromScratch = true # false
-startFile = "swap2-pcof-opt.dat"
+# Here we choose dense or sparse representation
+# use_sparse = true
+use_sparse = false
 
 # dimensions for the parameter vector
-D1 = 10 # number of B-spline coeff per oscillator, freq and sin/cos
+D1 = 20 # number of B-spline coeff per oscillator, freq and sin/cos
+nCoeff = 2*D1*sum(Nfreq) # Total number of parameters.
 
-nCoeff = 2*Ncoupled*Nfreq*D1 # Total number of parameters.
+maxrand = 8e-3  # amplitude of the random control vector. Here Nfreq[1]=Nfreq[2]
+pcof0 = init_control(Nctrl=Nctrl, Nfreq=Nfreq, maxrand=maxrand, nCoeff=nCoeff, seed=2456)
+println("Starting from RANDOM control vector with amplitude = ", maxrand)
 
-Random.seed!(2456)
-if startFromScratch
-  pcof0 = amax*0.01 * rand(nCoeff)
-  println("*** Starting from pcof with random amplitude ", amax*0.01)
-else
-  pcof0 = vec(readdlm(startFile))
-  println("*** Starting from B-spline coefficients in file: ", startFile)
-
-  nCoeff = length(pcof0)
-  D1 = div(nCoeff, 2*Ncoupled*Nfreq)  # number of B-spline coeff per control function
-end
-
-samplerate = 32 # for plotting
-casename = "cnot2" # for constructing file names
-
-# min and max B-spline coefficient values
-useBarrier = true
-minCoeff, maxCoeff = Juqbox.assign_thresholds(params,D1,maxpar)
-println("Number of min coeff: ", length(minCoeff), "Max Coeff: ", length(maxCoeff))
-
-maxIter = 150 # 0 #250 #50 # optional argument
-lbfgsMax = 250 # optional argument
+params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=utarget, Cfreq=om, Rfreq=rot_freq, Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, nCoeff=length(pcof0), linear_solver=linear_solver, use_sparse=use_sparse, msb_order=msb_order)
 
 println("*** Settings ***")
-# output run information
-println("Frequencies: fa = ", fa, " fb = ", fb)
-println("Coefficients in the Hamiltonian: x1 = ", x1, " x2 = ", x2, " x12 = ", x12)
-println("Essential states in osc = ", [Ne1, Ne2], " Guard states in osc = ", [Ng1, Ng2])
-println("Total number of states, Ntot = ", Ntot, " Total number of guard states, Nguard = ", Nguard)
-println("Number of B-spline parameters per spline = ", D1, " Total number of parameters = ", nCoeff)
-println("Max parameter amplitudes: maxpar = ", maxpar)
-println("Tikhonov regularization tik0 (L2) = ", params.tik0)
-if use_sparse
-    println("Using a sparse representation of the Hamiltonian matrices")
-else
-    println("Using a dense representation of the Hamiltonian matrices")
-end
-
-params.save_pcof_hist = true
-
-# Allocate all working arrays
-wa = Juqbox.Working_Arrays(params, nCoeff)
-prob = Juqbox.setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff, maxIter=maxIter, lbfgsMax=lbfgsMax, startFromScratch=startFromScratch)
-
-#uncomment to run the gradient checker for the initial pcof
-#=
-if @isdefined addOption
-    addOption( prob, "derivative_test", "first-order"); # for testing the gradient
-else
-    AddIpoptStrOption( prob, "derivative_test", "first-order")
-end
-=#
-
-#uncomment to change print level
-#=
-if @isdefined addOption
-    addOption(prob, "print_level", 0); # for testing the gradient
-else
-    AddIpoptIntOption(prob, "print_level", 0)
-end
-=#
-println("Initial coefficient vector stored in 'pcof0'")
+println("Number of coefficients per spline = ", D1, " Total number of control parameters = ", length(pcof0))
+println("Tikhonov coefficients: tik0 = ", params.tik0)
+println()
+println("Problem setup (Hamiltonian, carrier freq's, time-stepper, etc) is stored in 'params' object")
+println("Initial coefficient vector is stored in 'pcof0' vector")
+println("Max control amplitudes is stored in 'maxAmp' vector")
 

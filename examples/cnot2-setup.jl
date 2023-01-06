@@ -126,6 +126,7 @@ nCoeff = 2*D1*sum(Nfreq) # Total number of parameters.
 
 maxrand = 0.01*maxctrl/Nfreq[1]  # amplitude of the random control vector. Here Nfreq[1]=Nfreq[2]
 pcof0 = init_control(Nctrl=Nctrl, Nfreq=Nfreq, maxrand=maxrand, nCoeff=nCoeff, seed=2456)
+println("Starting from RANDOM control vector with amplitude = ", maxrand)
 
 params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=utarget, Cfreq=om, Rfreq=rot_freq, Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, nCoeff=length(pcof0), linear_solver=linear_solver, use_sparse=use_sparse, msb_order=msb_order)
 
