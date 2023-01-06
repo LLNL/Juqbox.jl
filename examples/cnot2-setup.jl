@@ -57,7 +57,7 @@ rot_freq = [favg, favg]
 #rot_freq = [favg, favg] # rotational frequencies
 x1 = -2* 0.1099  # official
 x2 = -2* 0.1126   # official
-x12 = -0.1 # Artificially large to allow fast coupling. Actual value: 1e-6 
+x12 = [-0.1] # Artificially large to allow fast coupling. Actual value: 1e-6 
 couple_type = 1 # cross-Kerr
 msb_order = false # true: original Juqbox, false: Quandary
 println("Hamiltonian is setup for ", (msb_order ? "MSB" : "LSB"), " ordering")
@@ -66,18 +66,20 @@ println("Hamiltonian is setup for ", (msb_order ? "MSB" : "LSB"), " ordering")
 H0, Hsym_ops, Hanti_ops = hamiltonians_two_sys(Ness=Ne, Nguard=Ng, freq01=[fa, fb], anharm=[x1, x2], rot_freq=rot_freq, couple_coeff=x12, couple_type=couple_type, msb_order=msb_order)
 
 # max coefficients, rotating frame
-amax = 2*pi * 0.015 # 15 MHz max amplitude for each (p & q) ctrl function
+maxctrl = 2*pi * 0.015 # 15 MHz max amplitude for each (p & q) ctrl function
 
 # calculate resonance frequencies & diagonalizing transformation
-om, maxAmp, Utrans = get_resonances(Ness=Ne, Nguard=Ng, Hsys=H0, Hsym_ops=Hsym_ops, maxCtrl_pq=amax, msb_order=msb_order)
+om, Nfreq, Utrans = get_resonances(Ness=Ne, Nguard=Ng, Hsys=H0, Hsym_ops=Hsym_ops, msb_order=msb_order)
 
-Nctrl = size(om, 1)
-Nfreq = size(om, 2)
+Nctrl = length(om)
+
 println("Nctrl = ", Nctrl, " Nfreq = ", Nfreq)
+
+maxAmp = maxctrl*ones(Nctrl)
 
 for q = 1:Nctrl
     println("Carrier frequencies in ctrl Hamiltonian # ", q, " [GHz]: ", om[q,:]./(2*pi))
-    println("Amplitude bounds for p & q-functions in system # ", q, " [GHz]: ", maxAmp[q,:]./(2*pi))
+    #println("Amplitude bounds for p & q-functions in system # ", q, " [GHz]: ", maxAmp[q,:]./(2*pi))
 end
 
 use_diagonal_H0 = true # false
@@ -89,7 +91,7 @@ Tmax = 50.0 # Duration of gate
 # estimate time step
 Pmin = 40 # should be 20 or higher
 nsteps = calculate_timestep(Tmax, H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, maxCoupled=maxAmp, Pmin=Pmin)
-println("Duration T = ", T, " Number of time steps = ", nsteps)
+println("Duration T = ", Tmax, " Number of time steps = ", nsteps)
 
 # CNOT target for the essential levels
 gate_cnot =  zeros(ComplexF64, N, N)
@@ -115,17 +117,17 @@ utarget = U0 * gate_cnot
 linear_solver = Juqbox.lsolver_object(solver=Juqbox.JACOBI_SOLVER,max_iter=100,tol=1e-12,nrhs=N)
 
 # Here we choose dense or sparse representation
-use_sparse = true
-# use_sparse = false
-
-params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=utarget, Cfreq=om, Rfreq=rot_freq, Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, linear_solver=linear_solver, use_sparse=use_sparse, msb_order=msb_order)
+# use_sparse = true
+use_sparse = false
 
 # dimensions for the parameter vector
 D1 = 10 # number of B-spline coeff per oscillator, freq and sin/cos
-nCoeff = 2*Nctrl*Nfreq*D1 # Total number of parameters.
+nCoeff = 2*D1*sum(Nfreq) # Total number of parameters.
 
-maxrand = 0.01*amax/Nfreq  # amplitude of the random control vector
-pcof0 = init_control(params, maxrand=maxrand, nCoeff=nCoeff, seed=2456)
+maxrand = 0.01*maxctrl/Nfreq[1]  # amplitude of the random control vector. Here Nfreq[1]=Nfreq[2]
+pcof0 = init_control(Nctrl=Nctrl, Nfreq=Nfreq, maxrand=maxrand, nCoeff=nCoeff, seed=2456)
+
+params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=utarget, Cfreq=om, Rfreq=rot_freq, Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, nCoeff=length(pcof0), linear_solver=linear_solver, use_sparse=use_sparse, msb_order=msb_order)
 
 println("*** Settings ***")
 println("Number of coefficients per spline = ", D1, " Total number of control parameters = ", length(pcof0))
