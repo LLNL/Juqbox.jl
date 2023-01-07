@@ -241,6 +241,11 @@ mutable struct objparams
 
     nCoeff :: Int64 # Length of the control vector
     
+    freq01::   Vector{Float64} 
+    self_kerr:: Vector{Float64}
+    couple_coeff:: Vector{Float64}
+    couple_type:: Int64
+
 # Regular arrays
     function objparams(Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64;
                        Uinit::Array{Float64,2}, Utarget::Array{Complex{Float64},2}, # keyword args w/o default values (must be assigned)
@@ -253,7 +258,7 @@ mutable struct objparams
                        objFuncType:: Int64 = 1, leak_ubound:: Float64=1.0e-3,
                        wmatScale::Float64 = 1.0, use_sparse::Bool = false, use_custom_forbidden::Bool = false,
                        linear_solver::lsolver_object = lsolver_object(nrhs=prod(Ne)), msb_order::Bool = true,
-                       dVds::Array{ComplexF64,2}= Array{ComplexF64}(undef,0,0), nCoeff::Int)
+                       dVds::Array{ComplexF64,2}= Array{ComplexF64}(undef,0,0), nCoeff::Int, freq01::Vector{Float64} = Vector{Float64}[], self_kerr::Vector{Float64} = Vector{Float64}[], couple_coeff::Vector{Float64} = Vector{Float64}[], couple_type::Int64 = 0)
         pFidType = 2
         Nosc   = length(Ne) # number of subsystems
         N      = prod(Ne)
@@ -433,7 +438,8 @@ mutable struct objparams
              zeros(0), zeros(0), zeros(0), zeros(0), 
              linear_solver, objThreshold, traceInfidelityThreshold, 0.0, 0.0, 
              usingPriorCoeffs, priorCoeffs, quiet, Rfreq, false, [],
-             real(my_dVds), imag(my_dVds), my_sv_type, wa, nCoeff
+             real(my_dVds), imag(my_dVds), my_sv_type, wa, nCoeff,
+             freq01, self_kerr, couple_coeff, couple_type # Add some checks for these ones!
             )
 
     end
@@ -1502,7 +1508,7 @@ function assign_thresholds(params::objparams, D1::Int64, maxAmp::Vector{Float64}
         for f in 1:Nfreq[c]
             # offset1 = 2*(c-1)*Nfreq*D1 + (f-1)*2*D1
             offset1 = baseOffset + (f-1)*2*D1
-            bound = maxAmp[c]/Nfreq[c] # Divide bounds equally between the carrier frequencies for each control
+            bound = maxAmp[c]/(sqrt(2)*Nfreq[c]) # Divide bounds equally between the carrier frequencies for each control
             minCoeff[offset1 + 1:offset1+2*D1] .= -bound # same for p(t) and q(t)
             maxCoeff[offset1 + 1:offset1+2*D1] .= bound
         end
