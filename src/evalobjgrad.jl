@@ -482,7 +482,7 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, verbose::Bool
     Nunc  = params.Nunc # Number of uncoupled control functions.
     Nosc  = params.Nosc
     Nfreq = params.Nfreq
-    Nsig  = 2*(Ncoupled + Nunc) # Updated for uncoupled ctrl
+    Nsig  = 2*(Ncoupled + Nunc) # Only uses for regular B-splines
 
     linear_solver = params.linear_solver    
 
@@ -553,10 +553,9 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, verbose::Bool
 
     Psize = size(pcof,1) #must provide separate coefficients for real,imaginary, and uncoupled parts of the control fcn
     #
-    # NOTE: Nsig  = 2*(Ncoupled + Nunc)
     #
-    if Psize%Nsig != 0 || Psize < 3*Nsig
-        error("pcof must have an even number of elements >= ",3*Nsig,", not ", Psize)
+    if Psize%2 != 0
+        error("pcof must have an even number of elements, not ", Psize)
     end
     if params.use_bcarrier
         # NOTE: Nsig  = 2*(Ncoupled + Nunc)
@@ -565,6 +564,7 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, verbose::Bool
         D1 = div(Psize, 2*params.NfreqTot)  # 
         Psize = 2*D1*params.NfreqTot # active part of the parameter array
     else
+        # NOTE: Nsig  = 2*(Ncoupled + Nunc)
         D1 = div(Psize, Nsig)
         Psize = D1*Nsig # active part of the parameter array
     end
@@ -909,7 +909,7 @@ end # if evaladjoint
 if verbose
     tikhonovpenalty = tikhonov_pen(pcof, params)
 
-    println("Total objective func: ", objfv)
+    println("Total objective func: ", objfv+tikhonovpenalty)
     println("Primary objective func: ", primaryobjf, " Guard state penalty: ", secondaryobjf, " Tikhonov penalty: ", tikhonovpenalty)
     if evaladjoint
         println("Norm of adjoint gradient = ", norm(gradobjfadj))
