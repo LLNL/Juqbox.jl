@@ -152,9 +152,9 @@ function hamiltonians_three_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, fre
     dc = freq01[3] - rot_freq[3]
 
     # single system lowering ops
-    a1 = Array(Bidiagonal(zeros(Nt1),sqrt.(collect(1:Nt[1]-1)),:U))
-    a2 = Array(Bidiagonal(zeros(Nt2),sqrt.(collect(1:Nt[2]-1)),:U))
-    a3 = Array(Bidiagonal(zeros(Nt2),sqrt.(collect(1:Nt[3]-1)),:U))
+    a1 = Array(Bidiagonal(zeros(Nt[1]),sqrt.(collect(1:Nt[1]-1)),:U))
+    a2 = Array(Bidiagonal(zeros(Nt[2]),sqrt.(collect(1:Nt[2]-1)),:U))
+    a3 = Array(Bidiagonal(zeros(Nt[3]),sqrt.(collect(1:Nt[3]-1)),:U))
 
     I1 = Array{Float64, 2}(I, Nt[1], Nt[1])
     I2 = Array{Float64, 2}(I, Nt[2], Nt[2])
@@ -233,10 +233,137 @@ function hamiltonians_three_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, fre
     end
     return H0, Hsym_ops, Hanti_ops
 end
+
+function hamiltonians_four_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, freq01::Vector{Float64}, anharm::Vector{Float64}, rot_freq::Vector{Float64}, couple_coeff::Vector{Float64}, couple_type::Int64, msb_order::Bool = true, verbose::Bool = true)
+    @assert(length(Ness) == 4)
+    @assert(length(Nguard) == 4)
+    @assert(length(anharm) == 4)
+    @assert(length(freq01) == 4)
+    @assert(length(rot_freq) == 4)
+    @assert(length(couple_coeff) == 6)
+    @assert(couple_type == 1 || couple_type == 2)
+
+    Nt = Ness + Nguard
+    N = prod(Ness); # Total number of nonpenalized energy levels
+    Ntot = prod(Nt)
+    #Nguard = Ntot - N # total number of guard states
+
+
+    # frequencies (in GHz, will be multiplied by 2*pi to get angular frequencies 
+    # in the Hamiltonian matrix)
+    xa = anharm[1]
+    xb = anharm[2]
+    xc = anharm[3]
+    xd = anharm[4]
+
+    xab = couple_coeff[1]
+    xac = couple_coeff[2]
+    xad = couple_coeff[3]
+    xbc = couple_coeff[4]
+    xbd = couple_coeff[5]
+    xcd = couple_coeff[6]
+
+    # detuning frequencies
+    da = freq01[1] - rot_freq[1]
+    db = freq01[2] - rot_freq[2]
+    dc = freq01[3] - rot_freq[3]
+    dd = freq01[4] - rot_freq[4]
+
+    # single system lowering ops
+    a1 = Array(Bidiagonal(zeros(Nt[1]),sqrt.(collect(1:Nt[1]-1)),:U))
+    a2 = Array(Bidiagonal(zeros(Nt[2]),sqrt.(collect(1:Nt[2]-1)),:U))
+    a3 = Array(Bidiagonal(zeros(Nt[3]),sqrt.(collect(1:Nt[3]-1)),:U))
+    a4 = Array(Bidiagonal(zeros(Nt[4]),sqrt.(collect(1:Nt[4]-1)),:U))
+
+    I1 = Array{Float64, 2}(I, Nt[1], Nt[1])
+    I2 = Array{Float64, 2}(I, Nt[2], Nt[2])
+    I3 = Array{Float64, 2}(I, Nt[3], Nt[3])
+    I4 = Array{Float64, 2}(I, Nt[4], Nt[4])
+
+    # single system number ops
+    num1 = Diagonal(collect(0:Nt[1]-1))
+    num2 = Diagonal(collect(0:Nt[2]-1))
+    num3 = Diagonal(collect(0:Nt[3]-1))
+    num4 = Diagonal(collect(0:Nt[4]-1))
+
+    if msb_order
+        # MSB ordering: Let the elements in the state vector be
+        # |psi> = sum a_{kji} (|k> kron |j> kron |i>, 
+        # for i in [1,Nt1], j in [1,Nt2], , k in [1,Nt3]
+        # We order the elements in the vector psi such that i varies the fastest 
+        # The matrix amat = I kron I kron a1 acts on alpha in psi = gamma kron beta kron alpha
+        # The matrix bmat = I kron a2 kron I acts on beta in psi = gamma kron beta kron alpha
+        # The matrix cmat = a3 kron I2 kron I1 acts on gamma in psi = gamma kron beta kron alpha
+
+        # create the combined lowering and raising ops
+        amat = kron(I4, kron(I3, kron(I2, a1)))
+        bmat = kron(I4, kron(I3, kron(a2, I1)))
+        cmat = kron(I4, kron(a3, kron(I2, I1)))
+        dmat = kron(a4, kron(I3, kron(I2, I1)))
+
+        adag = Array(transpose(amat))
+        bdag = Array(transpose(bmat))
+        cdag = Array(transpose(cmat))
+        ddag = Array(transpose(dmat))
+
+        # number operators
+        Na = Diagonal(kron(I4, kron(I3, kron(I2, num1))) )
+        Nb = Diagonal(kron(I4, kron(I3, kron(num2, I1))) )
+        Nc = Diagonal(kron(I4, kron(num3, kron(I2, I1))) )
+        Nd = Diagonal(kron(num4, kron(I3, kron(I2, I1))) )
+    else
+        # LSB ordering: Let the elements in the state vector be
+        # |psi> = sum a_{ijk} (|i> kron |j> kron |k>, 
+        # for i in [1,Nt1], j in [1,Nt2], , k in [1,Nt3]
+        # In the vector representation of the state, qubit 1 varies the slowest and qubit 3 varies the fastest in the state vector
+        # create the combined lowering and raising ops
+        amat = kron(a1, kron(I2, kron(I3, I4)))
+        bmat = kron(I1, kron(a2, kron(I3, I4)))
+        cmat = kron(I1, kron(I2, kron(a3, I4)))
+        dmat = kron(I1, kron(I2, kron(I3, a4)))
+        
+        adag = Array(transpose(amat))
+        bdag = Array(transpose(bmat))
+        cdag = Array(transpose(cmat))
+        ddag = Array(transpose(dmat))
+
+        # number operators
+        Na = Diagonal(kron(num1, kron(I2, kron(I3, I4))) )
+        Nb = Diagonal(kron(I1, kron(num2, kron(I3, I4))) )
+        Nc = Diagonal(kron(I1, kron(I2, kron(num3, I4))) )
+        Nd = Diagonal(kron(I1, kron(I2, kron(I3, num4))) )
+    end
+
+    # Coupling Hamiltonian: couple_type = 2 # 1: cross-Kerr, 2: Jaynes-Cummings
+    if couple_type == 1
+        Hcouple = xab*(Na*Nb) + xac*(Na*Nc) + xad*(Na*Nd) + xbc*(Nb*Nc) + xbd*(Nb*Nd) + xcd*(Nc*Nd)
+    elseif couple_type == 2
+        Hcouple = xab*(amat * bdag + adag * bmat) + xac*(amat * cdag + adag * cmat) + xad*(amat * ddag + adag * dmat) + xbc*(bmat * cdag + bdag * cmat) + xbd*(bmat * ddag + bdag * dmat) + xcd*(cmat * ddag + cdag * dmat)
+    end
+
+    # System Hamiltonian
+    H0 = 2*pi*(da*Na + 0.5*xa*(Na*Na-Na) + db*Nb + 0.5*xb*(Nb*Nb-Nb) + dc*Nc + 0.5*xc*(Nc*Nc-Nc) + dd*Nd + 0.5*xd*(Nd*Nd-Nd) + Hcouple )
+
+    H0 = Array(H0)
+
+    # set up control hamiltonians
+    Hsym_ops =[ amat+adag, bmat+bdag, cmat+cdag, dmat+ddag ]
+    Hanti_ops=[ amat-adag, bmat-bdag, cmat-cdag, dmat-ddag ]
+
+    if verbose
+        println("*** Four coupled quantum systems setup ***")
+        println("System Hamiltonian frequencies [GHz]: f01 = ", freq01, " rot. freq = ", rot_freq)
+        println("Anharmonicity = ", anharm)
+        println("Coupling type = ", (couple_type==1) ? "X-Kerr" : "J-C", ". Coupling coeff = ", couple_coeff )
+        println("Number of essential states = ", Ness, " Number of guard states = ", Nguard)
+        println("Hamiltonians are of size ", Ntot, " by ", Ntot)
+    end
+    return H0, Hsym_ops, Hanti_ops
+end
+
+
 # initial parameter guess
-function init_control(;Nctrl::Int64, Nfreq::Vector{Int64}, maxrand::Float64, nCoeff::Int64, startFile::String = "", seed::Int64 = -1)
-    # Nctrl = size(params.Cfreq,1)
-    # Nfreq = size(params.Cfreq,2)
+function init_control(;maxrand::Float64, nCoeff::Int64, startFile::String = "", seed::Int64 = -1)
 
     if seed >= 0
         Random.seed!(seed)
@@ -256,7 +383,7 @@ function init_control(;Nctrl::Int64, Nfreq::Vector{Int64}, maxrand::Float64, nCo
     return pcof0
 end
 
-function control_bounds(params::objparams, maxAmp::Vector{Float64}, zeroCtrlBC::Bool)
+function control_bounds(params::objparams, maxAmp::Vector{Float64})
     Nctrl  = length(params.Cfreq)
     Nfreq  = params.Nfreq
     NfreqTot  = params.NfreqTot
@@ -264,7 +391,7 @@ function control_bounds(params::objparams, maxAmp::Vector{Float64}, zeroCtrlBC::
 
     D1 = div(nCoeff, 2*NfreqTot)
 
-    if zeroCtrlBC
+    if params.zeroCtrlBC
         @assert D1 >= 5 "D1 smaller than 5 does not work with zero start & end conditions"
     else
         @assert D1 >=3 "D1 can not be less than 3"
@@ -273,7 +400,7 @@ function control_bounds(params::objparams, maxAmp::Vector{Float64}, zeroCtrlBC::
     # min and max coefficient values, maxamp[Nctrl]
     minCoeff, maxCoeff = Juqbox.assign_thresholds(params, D1, maxAmp)
     
-    if zeroCtrlBC
+    if params.zeroCtrlBC
         zero_start_end!(Nctrl, Nfreq, D1, minCoeff, maxCoeff) # maxCoeff stores the bounds for the controls amplitudes (zero at the boundary)
     end
 
@@ -359,18 +486,24 @@ function exists(x::Float64, invec::Vector{Float64}, prox_thres::Float64 = 5e-3)
     return id
 end
   
-function identify_essential_levels(Ness::Vector{Int64}, Nt::Vector{Int64}, Nctrl::Int64, msb_order::Bool)
+function identify_essential_levels(Ness::Vector{Int64}, Nt::Vector{Int64}, msb_order::Bool)
     # setup mapping between 1-d and 2-d indexing
+    @assert(length(Ness) == length(Nt))
+    Nosc = length(Nt)
+    @assert(Nosc <= 4)
+
     Ntot = prod(Nt)
     it2i1 = zeros(Int64, Ntot)
     it2i2 = zeros(Int64, Ntot)
     it2i3 = zeros(Int64, Ntot)
+    it2i4 = zeros(Int64, Ntot)
+
     is_ess = Vector{Bool}(undef, Ntot)
     is_ess .= false # initialize
 
     if msb_order # classical Juqbox ordering
 
-        if Nctrl == 1
+        if Nosc == 1
             itot = 0
             for i1=1:Nt[1]
                 itot += 1
@@ -379,7 +512,7 @@ function identify_essential_levels(Ness::Vector{Int64}, Nt::Vector{Int64}, Nctrl
                     is_ess[itot] = true
                 end
             end
-        elseif Nctrl == 2
+        elseif Nosc == 2
             itot = 0
             for i2=1:Nt[2]
                 for i1=1:Nt[1]
@@ -391,7 +524,7 @@ function identify_essential_levels(Ness::Vector{Int64}, Nt::Vector{Int64}, Nctrl
                     end
                 end
             end
-        elseif Nctrl == 3
+        elseif Nosc == 3
             itot = 0
             for i3=1:Nt[3]
                 for i2=1:Nt[2]
@@ -406,10 +539,28 @@ function identify_essential_levels(Ness::Vector{Int64}, Nt::Vector{Int64}, Nctrl
                     end
                 end
             end
-        end
-    else
+        elseif Nosc == 4
+            itot = 0
+            for i4=1:Nt[4]
+                for i3=1:Nt[3]
+                    for i2=1:Nt[2]
+                        for i1=1:Nt[1]
+                            itot += 1
+                            it2i1[itot] = i1-1
+                            it2i2[itot] = i2-1
+                            it2i3[itot] = i3-1
+                            it2i4[itot] = i4-1
+                            if i1 <= Ness[1] && i2 <= Ness[2] && i3 <= Ness[3] && i4 <= Ness[4]
+                                is_ess[itot] = true
+                            end
+                        end
+                    end
+                end
+            end
+        end #end MSB ordering
+    else 
         # LSB ordering
-        if Nctrl == 1
+        if Nosc == 1
             itot = 0
             for i1=1:Nt[1]
                 itot += 1
@@ -418,7 +569,7 @@ function identify_essential_levels(Ness::Vector{Int64}, Nt::Vector{Int64}, Nctrl
                     is_ess[itot] = true
                 end
             end
-        elseif Nctrl == 2
+        elseif Nosc == 2
             itot = 0
             for i1=1:Nt[1]
                 for i2=1:Nt[2]
@@ -430,7 +581,7 @@ function identify_essential_levels(Ness::Vector{Int64}, Nt::Vector{Int64}, Nctrl
                     end
                 end
             end
-        elseif Nctrl == 3
+        elseif Nosc == 3
             itot = 0
             for i1=1:Nt[1]
                 for i2=1:Nt[2]
@@ -445,17 +596,36 @@ function identify_essential_levels(Ness::Vector{Int64}, Nt::Vector{Int64}, Nctrl
                     end
                 end
             end
+        elseif Nosc == 4
+            itot = 0
+            for i1=1:Nt[1]
+                for i2=1:Nt[2]
+                    for i3=1:Nt[3]
+                        for i4=1:Nt[4]
+                            itot += 1
+                            it2i1[itot] = i1-1
+                            it2i2[itot] = i2-1
+                            it2i3[itot] = i3-1
+                            it2i4[itot] = i4-1
+                            if i1 <= Ness[1] && i2 <= Ness[2] && i3 <= Ness[3] && i4 <= Ness[4]
+                                is_ess[itot] = true
+                            end
+                        end
+                    end
+                end
+            end
         end
     end
     # println("is_ess = ", is_ess)
     # println("it2i1= ", it2i1)
     # println("it2i2= ", it2i2)
     # println("it2i3= ", it2i3)
-    return is_ess, it2i1, it2i2, it2i3
+    return is_ess, it2i1, it2i2, it2i3, it2i4
 end
 
 function get_resonances(;Ness::Vector{Int64}, Nguard::Vector{Int64}, Hsys::Matrix{Float64}, Hsym_ops::Vector{Matrix{Float64}}, thres::Float64 = 0.01, msb_order::Bool = true)
-    Nctrl = length(Hsym_ops)
+    @assert(length(Ness) <= 4)
+    Nosc = length(Hsym_ops)
 
     nrows = size(Hsys,1)
     ncols = size(Hsys,2)
@@ -463,7 +633,7 @@ function get_resonances(;Ness::Vector{Int64}, Nguard::Vector{Int64}, Hsys::Matri
     Nt = Ness + Nguard
     Ntot = prod(Nt)
 
-    is_ess, it2i1, it2i2, it2i3 = identify_essential_levels(Ness, Nt, Nctrl, msb_order)
+    is_ess, it2i1, it2i2, it2i3, it2i4 = identify_essential_levels(Ness, Nt, msb_order)
 
     # Note: if Hsys is diagonal, then Hsys_evals = diag(Hsys) and Utrans = IdentityMatrix
     Hsys_evals, Utrans = eigen_and_reorder(Hsys)
@@ -487,7 +657,7 @@ function get_resonances(;Ness::Vector{Int64}, Nguard::Vector{Int64}, Hsys::Matri
     # Note: Only resonances between *essential* levels are considered
 
     resonances = []
-    for q in 1:Nctrl
+    for q in 1:Nosc
         # Transformation of control Hamiltonian (a+adag)
         Hctrl_a = Hsym_ops[q]
         Hctrl_a_trans = Utrans' * Hctrl_a * Utrans
@@ -502,7 +672,7 @@ function get_resonances(;Ness::Vector{Int64}, Nguard::Vector{Int64}, Hsys::Matri
                 if abs(Hctrl_a_trans[i,j]) > thres
                     # Use only essential level transitions
                     if is_ess[i] && is_ess[j]
-                        println(" resonance from (i1 i2 i3) = (", it2i1[j], it2i2[j], it2i3[j], ") to (i1 i2 i3) = (", it2i1[i], it2i2[i], it2i3[i], "), Freq = ", ka_delta[i] - ka_delta[j], " = l_", i, " - l_", j, ", coeff=", Hctrl_a_trans[i,j])
+                        println(" resonance from (i1 i2 i3 i4) = (", it2i1[j], it2i2[j], it2i3[j], it2i4[j], ") to (i1 i2 i3 i4) = (", it2i1[i], it2i2[i], it2i3[i], it2i4[i], "), Freq = ", ka_delta[i] - ka_delta[j], " = l_", i, " - l_", j, ", coeff=", Hctrl_a_trans[i,j])
                         resi = ka_delta[i] - ka_delta[j]
                         if abs(resi) < 1e-10 
                             resi = 0.0
@@ -522,13 +692,13 @@ function get_resonances(;Ness::Vector{Int64}, Nguard::Vector{Int64}, Hsys::Matri
     end
 
     # Return the number of frequencies for each control 
-    Nfreq = zeros(Int64, Nctrl)
+    Nfreq = zeros(Int64, Nosc)
     
     # Allocate Vector of pointers to the carrier frequencies
-    om = Vector{Vector{Float64}}(undef, Nctrl)
+    om = Vector{Vector{Float64}}(undef, Nosc)
 
     # copy over resonances[]
-    for q in 1:Nctrl
+    for q in 1:Nosc
         Nfreq[q] = length(resonances[q])
         om[q] = zeros(Nfreq[q])
         om[q] .= resonances[q]
@@ -569,3 +739,235 @@ function transformHamiltonians!(H0::Matrix{Float64}, Hsym_ops::Vector{Matrix{Flo
         Hanti_ops[q] .= Utrans'*(Hanti_ops[q])*Utrans
     end
 end
+
+function get_H4_gate()
+	# 4-dimensional Discrete Fourier Transform unitary gate
+	gate_H4 =  zeros(ComplexF64, 4, 4)
+	gate_H4[1,1] = 1
+	gate_H4[1,2] = 1
+	gate_H4[1,3] = 1
+	gate_H4[1,4] = 1
+	gate_H4[2,1] = 1
+	gate_H4[2,2] = im
+	gate_H4[2,3] = -1
+	gate_H4[2,4] = -im
+	gate_H4[3,1] = 1
+	gate_H4[3,2] = -1
+	gate_H4[3,3] = 1
+	gate_H4[3,4] = -1
+	gate_H4[4,1] = 1
+	gate_H4[4,2] = -im
+	gate_H4[4,3] = -1
+	gate_H4[4,4] = im
+	gate_H4 .*= 0.5 # Normalize
+
+	return gate_H4
+end
+
+function get_Hd_gate(d::Int64)
+	# Set the target: d-dimensional Discrete Fourier Transform unitary gate 
+    @assert(d>= 2)
+	gate_Hd =  zeros(ComplexF64, d, d)
+    om_d = exp(im*2*pi/d)
+
+    for j=1:d
+        for k = 1:d
+            gate_Hd[j,k] = om_d^((j-1)*(k-1))
+        end
+    end
+	gate_Hd ./= sqrt(d) # Normalize
+
+	return gate_Hd
+end
+
+
+function get_CNOT()
+    gate_H4 =  zeros(ComplexF64, 4, 4)
+    gate_H4[1,1] = 1.0
+    gate_H4[2,2] = 1.0
+    gate_H4[3,4] = 1.0
+    gate_H4[4,3] = 1.0
+    return gate_H4
+end
+
+
+# This returns the threewave Hamiltonian matrix 3x3 or 4x4
+function get_Threewave_Hamiltonian(theta,s, dim=3)
+    v0 = exp.(im*theta)
+    v0p = exp.(-im*theta)
+    v1 = sqrt.(2*(s-1))
+    v2 = sqrt.(2*s)
+    if dim == 3
+        return [0 v0*v1 0;v0p*v1 0 v0*v2;0 v0p*v2 0]
+    elseif dim == 4
+        return [0 v0*v1 0 0;v0p*v1 0 v0*v2 0;0 v0p*v2 0 0; 0 0 0 1]
+    else
+        println("Error in threewave gate setup: dim=", dim, ", but should be 3 or 4. Exiting.\n")
+        stop
+    end
+end
+
+# This returns the threewave gate for stepsize dt 3x3
+function get_Threewave_gate(dt, dim=3)
+    theta = pi/2
+    s = 2
+    threewave_Ham = get_Threewave_Hamiltonian(theta,s, dim)
+    threewave_gate = exp(-im*dt*threewave_Ham)
+    return threewave_gate
+end
+
+function get_iSWAP()
+    gate =zeros(ComplexF64, 4,4)
+    gate[1,1] = 1.0
+    gate[2,3] = im*1.0
+    gate[3,2] = im*1.0
+    gate[4,4] = 1.0
+end
+
+function get_swap_1d_gate(d::Int64 = 2)
+    if d == 2
+        swap_gate = zeros(ComplexF64, 4, 4)
+        swap_gate[1,1] = 1.0
+        swap_gate[2,3] = 1.0
+        swap_gate[3,2] = 1.0
+        swap_gate[4,4] = 1.0
+    elseif d == 3
+        swap_gate =  zeros(ComplexF64, 8, 8)
+        swap_gate[1,1] = 1.0
+        swap_gate[2,5] = 1.0
+        swap_gate[3,3] = 1.0
+        swap_gate[4,7] = 1.0
+        swap_gate[5,2] = 1.0
+        swap_gate[6,6] = 1.0
+        swap_gate[7,4] = 1.0
+        swap_gate[8,8] = 1.0
+    elseif d == 4
+        swap_gate =  zeros(ComplexF64, 16, 16)
+        swap_gate[1,1] = 1.0
+        swap_gate[2,9] = 1.0
+        swap_gate[3,3] = 1.0
+        swap_gate[4,11] = 1.0
+        swap_gate[5,5] = 1.0
+        swap_gate[6,13] = 1.0
+        swap_gate[7,7] = 1.0
+        swap_gate[8,15] = 1.0
+        swap_gate[9,2] = 1.0
+        swap_gate[10,10] = 1.0
+        swap_gate[11,4] = 1.0
+        swap_gate[12,12] = 1.0
+        swap_gate[13,6] = 1.0
+        swap_gate[14,14] = 1.0
+        swap_gate[15,8] = 1.0
+        swap_gate[16,16] = 1.0
+    else
+        @assert false "Only implemented swap1d gates for d={2,3}"
+    end
+    return swap_gate
+end
+
+function get_swap_13_1()
+    # (0,0): 1, 0, 0, 0, 0, 0, 0, 0, 
+    # (1,0): 0, 0, 1, 0, 0, 0, 0, 0, 
+    # (2,0): 0, 1, 0, 0, 0, 0, 0, 0, 
+    # (3,0): 0, 0, 0, 0, 1, 0, 0, 0, 
+    # (4,0): 0, 0, 0, 1, 0, 0, 0, 0, 
+    # (5,0): 0, 0, 0, 0, 0, 0, 1, 0, 
+    # (6,0): 0, 0, 0, 0, 0, 1, 0, 0, 
+    # (7,0): 0, 0, 0, 0, 0, 0, 0, 1, 
+    swap_gate =  zeros(ComplexF64, 8, 8)
+    swap_gate[1,1] = 1.0
+    swap_gate[2,3] = 1.0
+    swap_gate[3,2] = 1.0
+    swap_gate[4,5] = 1.0
+    swap_gate[5,4] = 1.0
+    swap_gate[6,7] = 1.0
+    swap_gate[7,6] = 1.0
+    swap_gate[8,8] = 1.0
+    return swap_gate
+end
+
+function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float64}, xi::Vector{Float64}, couple_coeff::Vector{Float64}, couple_type::Int64, rot_freq::Vector{Float64}, T::Float64, D1::Int64, gate_final::Matrix{ComplexF64}; maxctrl_MHz::Float64=10.0, msb_order::Bool = true, Pmin::Int64 = 40, rand_amp::Float64=1e-3, pcofFileName::String="", zeroCtrlBC::Bool = true)
+
+    # enforce inequality constraint on the leakage?
+    useLeakIneq = false # true
+    leakThreshold = 1e-3
+  
+    # convert maxctrl_MHz to rad/ns per frequency
+    # This is (approximately) the max amplitude of each control function (p & q)
+    maxctrl_radns = 2*pi * maxctrl_MHz * 1e-3 
+  
+    pdim = length(Ne)
+    @assert pdim <= 4 "Hamiltonian setup only implemented for up to 4 sub-systems"
+    if pdim==1
+      Hsys, Hsym_ops, Hanti_ops = hamiltonians_one_sys(Ness=Ne, Nguard=Ng, freq01=f01, anharm=xi, rot_freq=rot_freq)
+      #    Hsys, Hsym_ops, Hanti_ops, om, rot_freq = setup_free(Ne[1], Ng[1], f[1], xi[1], rfreq)
+    elseif pdim == 2
+      Hsys, Hsym_ops, Hanti_ops = hamiltonians_two_sys(Ness=Ne, Nguard=Ng, freq01=f01, anharm=xi, rot_freq=rot_freq, couple_coeff=couple_coeff, couple_type=couple_type, msb_order=msb_order)
+      # Hsys, Hsym_ops, Hanti_ops, om, rot_freq = setup_twoqubit_free(Ne, Ng, f, xi, couple_coeff, couple_type)
+    elseif pdim == 3
+      Hsys, Hsym_ops, Hanti_ops = hamiltonians_three_sys(Ness=Ne, Nguard=Ng, freq01=f01, anharm=xi, rot_freq=rot_freq, couple_coeff=couple_coeff, couple_type=couple_type, msb_order = msb_order)
+    elseif pdim == 4
+        Hsys, Hsym_ops, Hanti_ops = hamiltonians_four_sys(Ness=Ne, Nguard=Ng, freq01=f01, anharm=xi, rot_freq=rot_freq, couple_coeff=couple_coeff, couple_type=couple_type, msb_order = msb_order)  
+    end
+
+  
+    om, Nfreq, Utrans = get_resonances(Ness=Ne, Nguard=Ng, Hsys=Hsys, Hsym_ops=Hsym_ops, msb_order=msb_order)
+  
+    Ness = prod(Ne)
+    Nosc = length(om) # Nosc should equal pdim
+    println("D1 = ", D1, " Ness = ", Ness, " Nosc = ", Nosc, " Nfreq = ", Nfreq)
+  
+    # Amplitude bounds to be imposed during optimization
+    maxAmp = maxctrl_radns * ones(Nosc) # internally scaled by 1/(sqrt(2)*Nfreq[q]) in setup_ipopt() and Quandary
+  
+    for q = 1:Nosc
+      println("Ctrl Hamiltonian # ", q, ", carrier frequencies: ", om[q]./(2*pi), "[GHz]")
+    end
+  
+    use_diagonal_H0 = false  # For comparisson with Quandary: use original Hamiltonian
+    if use_diagonal_H0 # transformation to diagonalize the system Hamiltonian
+      transformHamiltonians!(Hsys, Hsym_ops, Hanti_ops, Utrans) 
+    end
+  
+    # Set up the initial control vector
+    nCoeff = 2*D1*sum(Nfreq) # factor '2' is for Re/Im parts of ctrl vector
+  
+    # Set up the initial control parameter  
+    if length(pcofFileName) == 0
+      pcof0 = init_control(maxrand=rand_amp, nCoeff=nCoeff, seed=2345)
+      println("*** Starting from RANDOM control vector with amplitude = ", rand_amp)
+    else
+      # test 
+      pcof0 = read_pcof(pcofFileName)
+    end
+  
+    # Estimate time step based on the number of time steps per shortest period
+  
+    # Note: calculate_timestep expects maxCoupled to have Nosc elements
+    nsteps = calculate_timestep(T, Hsys, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, maxCoupled=maxAmp, Pmin=Pmin)
+    println("Starting point: nsteps = ", nsteps, " maxAmp = ", maxAmp, " [rad/ns]")
+  
+    # Set the initial condition: Basis with guard levels
+    Ubasis = initial_cond(Ne, Ng, msb_order) # Ubasis holds the basis that will be used as initial cond. 
+  
+    # create a linear solver object
+    linear_solver = Juqbox.lsolver_object(solver=Juqbox.JACOBI_SOLVER, max_iter=100, tol=1e-12, nrhs=prod(Ne))
+  
+    # Set up parameter struct using the free evolution target
+    if useLeakIneq
+      params = Juqbox.objparams(Ne, Ng, T, nsteps, Uinit=Ubasis, Utarget=Ubasis*gate_final, Cfreq=om, Rfreq=rot_freq, Hconst=Hsys, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, linear_solver=linear_solver, objFuncType=3, leak_ubound=leakThreshold, nCoeff=nCoeff, msb_order=msb_order)
+    else
+      params = Juqbox.objparams(Ne, Ng, T, nsteps, Uinit=Ubasis, Utarget=Ubasis*gate_final, Cfreq=om, Rfreq=rot_freq, Hconst=Hsys, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, linear_solver=linear_solver, nCoeff=nCoeff, freq01=f01, self_kerr=xi, couple_coeff=couple_coeff, couple_type=couple_type, msb_order=msb_order, zeroCtrlBC=zeroCtrlBC)
+    end
+  
+    println("*** Settings ***")
+    println("Number of coefficients per spline = ", D1, " Total number of control parameters = ", length(pcof0))
+    println()
+    println("Returning problem setup as a tuple (params, pcof0, maxAmp)")
+    println("params::objparams: object holding the Hamiltonians, carrier freq's, time-stepper, etc")
+    println("pcof0:: Vector{Float64}: Initial coefficient vector is stored in 'pcof0' vector")
+    println("maxAmp:: Vector{Float64}: Approximate max control amplitude for the p(t) and q(t) control function for each control Hamiltonian")
+  
+  
+    return params, pcof0, maxAmp
+  end

@@ -246,6 +246,8 @@ mutable struct objparams
     couple_coeff:: Vector{Float64}
     couple_type:: Int64
 
+    msb_order:: Bool # false: Least significant bit ordering of state vector:| i1 i2 i3 i4 >
+    zeroCtrlBC:: Bool
 # Regular arrays
     function objparams(Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64;
                        Uinit::Array{Float64,2}, Utarget::Array{Complex{Float64},2}, # keyword args w/o default values (must be assigned)
@@ -258,7 +260,7 @@ mutable struct objparams
                        objFuncType:: Int64 = 1, leak_ubound:: Float64=1.0e-3,
                        wmatScale::Float64 = 1.0, use_sparse::Bool = false, use_custom_forbidden::Bool = false,
                        linear_solver::lsolver_object = lsolver_object(nrhs=prod(Ne)), msb_order::Bool = true,
-                       dVds::Array{ComplexF64,2}= Array{ComplexF64}(undef,0,0), nCoeff::Int, freq01::Vector{Float64} = Vector{Float64}[], self_kerr::Vector{Float64} = Vector{Float64}[], couple_coeff::Vector{Float64} = Vector{Float64}[], couple_type::Int64 = 0)
+                       dVds::Array{ComplexF64,2}= Array{ComplexF64}(undef,0,0), nCoeff::Int, freq01::Vector{Float64} = Vector{Float64}[], self_kerr::Vector{Float64} = Vector{Float64}[], couple_coeff::Vector{Float64} = Vector{Float64}[], couple_type::Int64 = 0,zeroCtrlBC::Bool = true)
         pFidType = 2
         Nosc   = length(Ne) # number of subsystems
         N      = prod(Ne)
@@ -439,7 +441,8 @@ mutable struct objparams
              linear_solver, objThreshold, traceInfidelityThreshold, 0.0, 0.0, 
              usingPriorCoeffs, priorCoeffs, quiet, Rfreq, false, [],
              real(my_dVds), imag(my_dVds), my_sv_type, wa, nCoeff,
-             freq01, self_kerr, couple_coeff, couple_type # Add some checks for these ones!
+             freq01, self_kerr, couple_coeff, couple_type, # Add some checks for these ones!
+             msb_order, zeroCtrlBC
             )
 
     end
@@ -1056,7 +1059,7 @@ leakage into higher energy forbidden states
 function wmatsetup(Ne::Array{Int64,1}, Ng::Array{Int64,1}, msb_order::Bool = true)
     Nt = Ne + Ng
     Ndim = length(Ne)
-    @assert(Ndim == 1 || Ndim == 2 || Ndim ==3)
+    @assert(Ndim == 1 || Ndim == 2 || Ndim ==3 || Ndim ==4)
     
     Ntot = prod(Nt)
     w = zeros(Ntot)
@@ -1149,7 +1152,54 @@ function wmatsetup(Ne::Array{Int64,1}, Ng::Array{Int64,1}, msb_order::Bool = tru
 
                 # normalize by the number of entries with w=1
                 coeff = 10.0/nForb # was 1/nForb
-            end # if ndim == 3
+                # end Ndim == 3
+            elseif Ndim == 4
+                fact = 1e-3 #  0.1 # for more emphasis on the "forbidden" states. Old value: 0.1
+                nForb = 0 # number of states with the highest index in at least one dimension
+                q = 0
+                for i4 = 1:Nt[4]
+                    for i3 = 1:Nt[3]
+                        for i2 = 1:Nt[2]
+                            for i1 = 1:Nt[1]
+                                q += 1
+                                # initialize temp variables
+                                temp1 = 0.0
+                                temp2 = 0.0
+                                temp3 = 0.0
+                                temp4 = 0.0
+                                if i1 <= Ne[1] && i2 <= Ne[2] && i3 <= Ne[3] && i4 <= Ne[4]
+                                    w[q] = 0.0
+                                else
+                                    # determine and assign the largest penalty
+                                    if i1 > Ne[1]   #only included if at a guard level
+                                        temp1 = fact^(Nt[1]-i1)
+                                    end
+                                    if i2 > Ne[2]   #only included if at a guard level
+                                        temp2 = fact^(Nt[2]-i2)
+                                    end
+                                    if i3 > Ne[3]   #only included if at a guard level
+                                        temp3 = fact^(Nt[3]-i3)
+                                    end
+                                    if i4 > Ne[4]   #only included if at a guard level
+                                        temp4 = fact^(Nt[4]-i4)
+                                    end
+
+                                    forbFact=1.0
+                                    w[q] = forbFact*max(temp1, temp2, temp3, temp4)
+
+                                    if i1 == Nt[1] || i2 == Nt[2] || i3 == Nt[3] || i4 == Nt[4]
+                                        nForb += 1
+                                    end
+
+                                end # if
+                            end # for i1
+                        end # for i2
+                    end # for i3
+                end # for i4
+
+                # normalize by the number of entries with w=1
+                coeff = 10.0/nForb # was 1/nForb
+            end # if ndim == 4
         else # msb_order = false
             if Ndim == 1
                 fact = 0.1
@@ -1191,6 +1241,7 @@ function wmatsetup(Ne::Array{Int64,1}, Ng::Array{Int64,1}, msb_order::Bool = tru
 
                 # normalize by the number of entries with w=1
                 coeff = 1.0/nForb # was 1/nForb
+                # end Ndim == 2
             elseif Ndim == 3
                 fact = 1e-3 #  0.1 # for more emphasis on the "forbidden" states. Old value: 0.1
                 nForb = 0 # number of states with the highest index in at least one dimension
@@ -1232,7 +1283,54 @@ function wmatsetup(Ne::Array{Int64,1}, Ng::Array{Int64,1}, msb_order::Bool = tru
 
                 # normalize by the number of entries with w=1
                 coeff = 10.0/nForb # was 1/nForb
-            end # if ndim == 3
+                # end Ndim == 3
+            elseif Ndim == 4
+                fact = 1e-3 #  0.1 # for more emphasis on the "forbidden" states. Old value: 0.1
+                nForb = 0 # number of states with the highest index in at least one dimension
+                q = 0
+                for i1 = 1:Nt[1]
+                    for i2 = 1:Nt[2]
+                        for i3 = 1:Nt[3]
+                            for i4 = 1:Nt[4]            
+                                q += 1
+                                # initialize temp variables
+                                temp1 = 0.0
+                                temp2 = 0.0
+                                temp3 = 0.0
+                                temp4 = 0.0
+                                if i1 <= Ne[1] && i2 <= Ne[2] && i3 <= Ne[3] && i4 <= Ne[4]
+                                    w[q] = 0.0
+                                else
+                                    # determine and assign the largest penalty
+                                    if i1 > Ne[1]   #only included if at a guard level
+                                        temp1 = fact^(Nt[1]-i1)
+                                    end
+                                    if i2 > Ne[2]   #only included if at a guard level
+                                        temp2 = fact^(Nt[2]-i2)
+                                    end
+                                    if i3 > Ne[3]   #only included if at a guard level
+                                        temp3 = fact^(Nt[3]-i3)
+                                    end
+                                    if i4 > Ne[4]   #only included if at a guard level
+                                        temp4 = fact^(Nt[4]-i4)
+                                    end
+
+                                    forbFact=1.0
+                                    w[q] = forbFact*max(temp1, temp2, temp3, temp4)
+
+                                    if i1 == Nt[1] || i2 == Nt[2] || i3 == Nt[3] || i4 == Nt[4]
+                                        nForb += 1
+                                    end
+
+                                end # if
+                            end # for i1
+                        end # for i2
+                    end # for i3
+                end # for i4
+
+                # normalize by the number of entries with w=1
+                coeff = 10.0/nForb # was 1/nForb
+            end # if ndim == 4
         end # lsb ordering
         # println("wmatsetup: Number of forbidden states = ", nForb, " scaling coeff = ", coeff)
     end # if sum(Ng) > 0
@@ -2551,7 +2649,8 @@ Setup a basis of canonical unit vectors that span the essential Hilbert space, s
 function initial_cond(Ne::Vector{Int64}, Ng::Vector{Int64}, msb_order::Bool = true)
     Nt = Ne + Ng
     Ntot = prod(Nt)
-    @assert length(Nt) <= 3 "ERROR: initial_cond(): only length(Nt) <= 3 is implemented"
+    @assert(length(Ne) == length(Ng))
+    @assert length(Nt) <= 4 "ERROR: initial_cond(): only <= 4 sub-systems is implemented"
     NgTot = sum(Ng)
     N = prod(Ne)
     Ident = Matrix{Float64}(I, Ntot, Ntot)
@@ -2559,7 +2658,27 @@ function initial_cond(Ne::Vector{Int64}, Ng::Vector{Int64}, msb_order::Bool = tr
 
     #adjust initial guess if there are ghost points
     if msb_order
-        if length(Nt) == 3
+        if length(Nt) == 4
+            if NgTot > 0
+                col = 0
+                m = 0
+                for k4 in 1:Nt[4]
+                    for k3 in 1:Nt[3]
+                        for k2 in 1:Nt[2]
+                            for k1 in 1:Nt[1]
+                                m += 1
+                                # is this a guard level?
+                                guard = (k1 > Ne[1]) || (k2 > Ne[2]) || (k3 > Ne[3]) || (k4 > Ne[4])
+                                if !guard
+                                    col = col+1
+                                    U0[:,col] = Ident[:,m]
+                                end # if ! guard
+                            end #for
+                        end # for
+                    end # for k3
+                end # for k4        
+            end # if  
+        elseif length(Nt) == 3
             if NgTot > 0
                 col = 0
                 m = 0
@@ -2596,7 +2715,28 @@ function initial_cond(Ne::Vector{Int64}, Ng::Vector{Int64}, msb_order::Bool = tr
             end # if
         end
     else
-        if length(Nt) == 3
+        # LSB ordering
+        if length(Nt) == 4
+            if NgTot > 0
+                col = 0
+                m = 0
+                for k1 in 1:Nt[1]
+                    for k2 in 1:Nt[2]
+                        for k3 in 1:Nt[3]
+                            for k4 in 1:Nt[4]    
+                                m += 1
+                                # is this a guard level?
+                                guard = (k1 > Ne[1]) || (k2 > Ne[2]) || (k3 > Ne[3]) || (k4 > Ne[4])
+                                if !guard
+                                    col = col+1
+                                    U0[:,col] = Ident[:,m]
+                                end # if ! guard
+                            end # for k4
+                        end #for
+                    end # for
+                end # for            
+            end # if  
+        elseif length(Nt) == 3
             if NgTot > 0
                 col = 0
                 m = 0

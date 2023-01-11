@@ -288,44 +288,46 @@ level in the simulation.
 - `custom:: Int64`: A nonzero value gives a special stirap pulses case
 """
 function identify_guard_levels(params::Juqbox.objparams, custom:: Int64 = 0)
-    # identify all guard levels
-    Ntot = params.N+params.Nguard
-    guardlev = fill(false, Ntot)
+    # identify all guard levels by first identifying the essential ones
+    ess_lev, _, _, _, _ = identify_essential_levels(params.Ne, params.Nt, params.msb_order)
+    guard_lev = .!ess_lev
+    # Ntot = params.N+params.Nguard
+    # guardlev = fill(false, Ntot)
 
-    if params.Nosc == 1
-        if custom == 0
-            guardlev[params.N+1:Ntot] .= true
-        else # special case for stirap pulses
-            guardlev[2] = true
-            guardlev[4] = true
-        end
-    elseif params.Nosc == 2
-        for q2 in 1:params.Nt[2]
-            for q1 in 1:params.Nt[1]
-                if q1 > params.Ne[1] || q2 > params.Ne[2]
-                    guardlev[(q2-1)*params.Nt[1] + q1] = true
-                end
-            end
-        end
-    elseif params.Nosc == 3
-        for q3 in 1:params.Nt[3]
-            for q2 in 1:params.Nt[2]
-                for q1 in 1:params.Nt[1]
-                    if q1 > params.Ne[1] || q2 > params.Ne[2] || q3 > params.Ne[3]
-                        guardlev[(q3-1)*params.Nt[1]*params.Nt[2] + (q2-1)*params.Nt[1] + q1] = true
-                    end
-                end
-            end
-        end
-    end
-    return guardlev
+    # if params.Nosc == 1
+    #     if custom == 0
+    #         guardlev[params.N+1:Ntot] .= true
+    #     else # special case for stirap pulses
+    #         guardlev[2] = true
+    #         guardlev[4] = true
+    #     end
+    # elseif params.Nosc == 2
+    #     for q2 in 1:params.Nt[2]
+    #         for q1 in 1:params.Nt[1]
+    #             if q1 > params.Ne[1] || q2 > params.Ne[2]
+    #                 guardlev[(q2-1)*params.Nt[1] + q1] = true
+    #             end
+    #         end
+    #     end
+    # elseif params.Nosc == 3
+    #     for q3 in 1:params.Nt[3]
+    #         for q2 in 1:params.Nt[2]
+    #             for q1 in 1:params.Nt[1]
+    #                 if q1 > params.Ne[1] || q2 > params.Ne[2] || q3 > params.Ne[3]
+    #                     guardlev[(q3-1)*params.Nt[1]*params.Nt[2] + (q2-1)*params.Nt[1] + q1] = true
+    #                 end
+    #             end
+    #         end
+    #     end
+    # end
+    return convert(Vector{Bool},guard_lev)
 end #identify_guard_levels
 
 """
     forbiddenlev = identify_forbidden_levels(params[, custom = 0])
 
 Build a Bool array indicating which energy levels are forbidden levels in the state vector. The
-forbidden levels in a state vector are defined as thos corresponding to the highest energy level in
+forbidden levels in a state vector are defined as those corresponding to the highest energy level in
 at least one of its subsystems.
  
 # Arguments
@@ -337,6 +339,8 @@ function identify_forbidden_levels(params:: Juqbox.objparams, custom::Int64 = 0)
     Ntot = params.N+params.Nguard
     Ng = params.Ng
     forbiddenlev = fill(false, Ntot)
+
+    # NOTE: Need to implement msb_order = false
 
     if params.Nosc == 1
         if custom != 0 & Ntot >= 4 # Special case for stirap pulses
@@ -363,6 +367,20 @@ function identify_forbidden_levels(params:: Juqbox.objparams, custom::Int64 = 0)
                     k += 1
                     if  (Ng[1]>0 && q1 == params.Nt[1]) || (Ng[2]>0 && q2 == params.Nt[2]) || ( Ng[3]>0  && q3 == params.Nt[3])
                         forbiddenlev[k] = true
+                    end
+                end
+            end
+        end
+    elseif params.Nosc == 4
+        k=0
+        for q4 in 1:params.Nt[4]
+            for q3 in 1:params.Nt[3]
+                for q2 in 1:params.Nt[2]
+                    for q1 in 1:params.Nt[1]
+                        k += 1
+                        if  (Ng[1]>0 && q1 == params.Nt[1]) || (Ng[2]>0 && q2 == params.Nt[2]) || ( Ng[3]>0  && q3 == params.Nt[3]) || (Ng[4]>0 && q4 == params.Nt[4])
+                            forbiddenlev[k] = true
+                        end
                     end
                 end
             end

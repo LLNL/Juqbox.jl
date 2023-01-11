@@ -333,7 +333,7 @@ function intermediate_par(
 end
 
 """
-    prob = ipopt_setup(params, nCoeff, maxAmp; zeroCtrlBC, maxIter, lbfgsMax, coldStart, ipTol, acceptTol, acceptIter, nodes=[0.0], weights=[1.0])
+    prob = ipopt_setup(params, nCoeff, maxAmp; maxIter, lbfgsMax, coldStart, ipTol, acceptTol, acceptIter, nodes=[0.0], weights=[1.0])
 
 Setup structure containing callback functions and convergence criteria for 
 optimization via IPOPT. Note the last two inputs, `nodes', and 
@@ -344,7 +344,6 @@ where the fundamental frequency is random.
 - `params:: objparams`: Struct with problem definition
 - `nCoeff:: Int64`: Number of parameters in optimization
 - `maxAmp:: Vector{Float64}`: Maximum amplitude for each control function (size Nctrl) 
-- `zeroCtrlBC:: Bool`: true start and end each control function with zero amplitude (keyword arg)
 - `maxIter:: Int64`: Maximum number of iterations to be taken by optimizer (keyword arg)
 - `lbfgsMax:: Int64`: Maximum number of past iterates for Hessian approximation by L-BFGS (keyword arg)
 - `coldStart:: Bool`: true (default): start a new optimization with ipopt, false: continue a previous optimization (keyword arg)
@@ -354,9 +353,9 @@ where the fundamental frequency is random.
 - `nodes:: Array{Float64, 1}`: Risk-neutral opt: User specified quadrature nodes on the interval [-ϵ,ϵ] for some ϵ (optinal keyword arg)
 - `weights:: Array{Float64, 1}`: Risk-neutral opt: User specified quadrature weights on the interval [-ϵ,ϵ] for some ϵ (optional keyword arg)
 """
-function ipopt_setup(params:: Juqbox.objparams, nCoeff:: Int64, maxAmp:: Vector{Float64}; zeroCtrlBC::Bool, maxIter:: Int64, lbfgsMax:: Int64, coldStart:: Bool, ipTol:: Float64, acceptTol:: Float64, acceptIter:: Int64, nodes::AbstractArray=[0.0], weights::AbstractArray=[1.0])
+function ipopt_setup(params:: Juqbox.objparams, nCoeff:: Int64, maxAmp:: Vector{Float64}; maxIter:: Int64, lbfgsMax:: Int64, coldStart:: Bool, ipTol:: Float64, acceptTol:: Float64, acceptIter:: Int64, nodes::AbstractArray=[0.0], weights::AbstractArray=[1.0])
 
-    minCoeff, maxCoeff = control_bounds(params, maxAmp, zeroCtrlBC)
+    minCoeff, maxCoeff = control_bounds(params, maxAmp)
 
     intermediate(alg_mod, iter_count, obj_value, inf_pr, inf_du, mu,
                 d_norm, regularization_size, alpha_du, alpha_pr, ls_trials) =
@@ -494,7 +493,7 @@ end # ipopt_setup
 
 
 """
-    pcof = run_optimizer(params, pcof0, maxAmp; zeroCtrlBC=true, maxIter=50, lbfgsMax=200, coldStart=true, ipTol=1e-5, acceptTol=1e-5, acceptIter=15, print_level=5, print_frequency_iter=1, nodes=[0.0], weights=[1.0])
+    pcof = run_optimizer(params, pcof0, maxAmp; maxIter=50, lbfgsMax=200, coldStart=true, ipTol=1e-5, acceptTol=1e-5, acceptIter=15, print_level=5, print_frequency_iter=1, nodes=[0.0], weights=[1.0])
 
 Call IPOPT to  optimizize the control functions.
 
@@ -502,7 +501,6 @@ Call IPOPT to  optimizize the control functions.
 - `params:: objparams`: Struct with problem definition
 - `pcof0:: Vector{Float64}`: Initial guess for the control vector
 - `maxAmp:: Vector{Float64}`: Maximum amplitude for each control function (size Nctrl)
-- `zeroCtrlBC:: Bool`: (Optional-kw) true (default) start and end each control function at zero amplitude
 - `maxIter:: Int64`: (Optional-kw) Maximum number of iterations to be taken by optimizer
 - `lbfgsMax:: Int64`: (Optional-kw) Maximum number of past iterates for Hessian approximation by L-BFGS
 - `coldStart:: Bool`: (Optional-kw) true (default): start a new optimization with ipopt; false: continue a previous optimization
@@ -515,11 +513,11 @@ Call IPOPT to  optimizize the control functions.
 - `weights:: AbstractArray`: (Optional-kw) Risk-neutral opt: User specified quadrature weights on the interval [-ϵ,ϵ] for some ϵ
 - `derivative_test:: Bool`: (Optional-kw) Set to true to check the gradient against a FD approximation (default is false)
 """
-function run_optimizer(params:: objparams, pcof0:: Vector{Float64}, maxAmp:: Vector{Float64}; zeroCtrlBC::Bool = true, maxIter::Int64 = 50, lbfgsMax:: Int64=200, coldStart:: Bool=true, ipTol:: Float64=1e-5, acceptTol:: Float64=1e-5, acceptIter:: Int64=15, print_level:: Int64=5, print_frequency_iter:: Int64=1, nodes::AbstractArray=[0.0], weights::AbstractArray=[1.0], derivative_test::Bool=false)
+function run_optimizer(params:: objparams, pcof0:: Vector{Float64}, maxAmp:: Vector{Float64}; maxIter::Int64 = 50, lbfgsMax:: Int64=200, coldStart:: Bool=true, ipTol:: Float64=1e-5, acceptTol:: Float64=1e-5, acceptIter:: Int64=15, print_level:: Int64=5, print_frequency_iter:: Int64=1, nodes::AbstractArray=[0.0], weights::AbstractArray=[1.0], derivative_test::Bool=false)
     
     # start by setting up the Ipopt object: prob
     println("Ipopt initialization timing:")
-    @time prob = Juqbox.ipopt_setup(params, length(pcof0), maxAmp, zeroCtrlBC=zeroCtrlBC, maxIter=maxIter, lbfgsMax=lbfgsMax, coldStart=coldStart, ipTol=ipTol, acceptTol=acceptTol, acceptIter=acceptIter, nodes=nodes, weights=weights)
+    @time prob = Juqbox.ipopt_setup(params, length(pcof0), maxAmp, maxIter=maxIter, lbfgsMax=lbfgsMax, coldStart=coldStart, ipTol=ipTol, acceptTol=acceptTol, acceptIter=acceptIter, nodes=nodes, weights=weights)
 
     AddIpoptIntOption(prob, "print_level", print_level)
     AddIpoptIntOption(prob, "print_frequency_iter", print_frequency_iter)

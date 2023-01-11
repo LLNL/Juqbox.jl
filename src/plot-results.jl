@@ -46,66 +46,68 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
     tstring = casename * "-control-vector"
     plcof = scatter(pcof, lab="", title=tstring, xlabel="Index", ylabel="rad/ns")
 
-    guardlev = Juqbox.identify_guard_levels(params, custom)
-    forbiddenlev = Juqbox.identify_forbidden_levels(params, custom)
+    if params.Nosc <= 3
+        guardlev = Juqbox.identify_guard_levels(params, custom)
+        forbiddenlev = Juqbox.identify_forbidden_levels(params, custom)
 
-    # make plots of the evolution of probabilities
-    pl1 = Juqbox.plotunitary(unitaryhistory, params, guardlev)
-    pl3 = Juqbox.plotspecified(unitaryhistory, params, guardlev, forbiddenlev)
+        # make plots of the evolution of probabilities
+        pl1 = Juqbox.plotunitary(unitaryhistory, params, guardlev)
+        pl3 = Juqbox.plotspecified(unitaryhistory, params, guardlev, forbiddenlev)
 
-    if savefiles
-        # save the figure with the state probabilities
-        probname = casename * "-prob" * ".png"
-        Plots.savefig(pl1,probname)
-        println("Saved state population plot on file '", probname, "'");
+        if savefiles
+            # save the figure with the state probabilities
+            probname = casename * "-prob" * ".png"
+            Plots.savefig(pl1,probname)
+            println("Saved state population plot on file '", probname, "'");
 
-        # save the figure with the forbidden state
-        forbname = casename * "-forb" * ".png"
-        Plots.savefig(pl3,forbname)
-        println("Saved forbidden state population plot on file '", forbname, "'");
-    end
-
-    if params.Nosc == 3 # Generalize to Nosc = 2
-        # evaluate marginalized probabilities
-        mp = Juqbox.marginalize3(params, unitaryhistory);
-        # plot them
-        nsteps1=size(unitaryhistory,3)
-        tm = range(0, stop = params.T, length = nsteps1);
-        # one subfigure for each initial condition
-        plotarray = Array{Plots.Plot}(undef, params.N) #empty array for separate plots
-
-        for col in 1:params.N # One plot for each initial condition
-            #  params.Nosc == 3
-            # Example: Ne[3] = 2, Ne[2] = 3, Ne[1]=4 
-            #     0,    1,     2,    3,    4,     5,     6,    7,     8,    9,   10,   11,   12,   13,   14,  15,   16,   17,   18,  19,   20,   21,   22,   23  (col-1)
-            # 000, 001, 002, 003, 010, 011, 012, 013, 020, 021, 022, 023,  100, 101, 102, 103, 110, 111, 112, 113, 120, 121, 122, 123
-            s3 = div((col-1), params.Ne[1]*params.Ne[2])
-            s12 = (col-1) % (params.Ne[1]*params.Ne[2])
-            s2 = div(s12, params.Ne[1])
-            s1 = s12 %  params.Ne[1]
-            statestr = string( s3, s2, s1 )
-
-            local titlestr = latexstring("From\\ state\\ |", statestr, "\\rangle")
-#            local titlestr = raw"Evolution from state $|" * statestr * raw"\rangle$"
-            h = Plots.plot(title = titlestr)
-
-            for row in 1:params.Nt[3]
-                labstr = "S-state " * string(row-1)
-                Plots.plot!(tm, mp[row,col,:], lab = labstr, xlabel = "Time [ns]", ylabel="Marg. prob.", legend= :outerright)
-            end # for row
-            plotarray[col] = h
-        end # for col
-        if params.N <= 2
-            plm = Plots.plot(plotarray..., layout = (params.N,1))
-        else
-            plm = Plots.plot(plotarray..., layout = params.N)
+            # save the figure with the forbidden state
+            forbname = casename * "-forb" * ".png"
+            Plots.savefig(pl3,forbname)
+            println("Saved forbidden state population plot on file '", forbname, "'");
         end
-    end
+
+        if params.Nosc == 3 # Generalize to Nosc = 2
+            # evaluate marginalized probabilities
+            mp = Juqbox.marginalize3(params, unitaryhistory);
+            # plot them
+            nsteps1=size(unitaryhistory,3)
+            tm = range(0, stop = params.T, length = nsteps1);
+            # one subfigure for each initial condition
+            plotarray = Array{Plots.Plot}(undef, params.N) #empty array for separate plots
+
+            for col in 1:params.N # One plot for each initial condition
+                #  params.Nosc == 3
+                # Example: Ne[3] = 2, Ne[2] = 3, Ne[1]=4 
+                #     0,    1,     2,    3,    4,     5,     6,    7,     8,    9,   10,   11,   12,   13,   14,  15,   16,   17,   18,  19,   20,   21,   22,   23  (col-1)
+                # 000, 001, 002, 003, 010, 011, 012, 013, 020, 021, 022, 023,  100, 101, 102, 103, 110, 111, 112, 113, 120, 121, 122, 123
+                s3 = div((col-1), params.Ne[1]*params.Ne[2])
+                s12 = (col-1) % (params.Ne[1]*params.Ne[2])
+                s2 = div(s12, params.Ne[1])
+                s1 = s12 %  params.Ne[1]
+                statestr = string( s3, s2, s1 )
+
+                local titlestr = latexstring("From\\ state\\ |", statestr, "\\rangle")
+    #            local titlestr = raw"Evolution from state $|" * statestr * raw"\rangle$"
+                h = Plots.plot(title = titlestr)
+
+                for row in 1:params.Nt[3]
+                    labstr = "S-state " * string(row-1)
+                    Plots.plot!(tm, mp[row,col,:], lab = labstr, xlabel = "Time [ns]", ylabel="Marg. prob.", legend= :outerright)
+                end # for row
+                plotarray[col] = h
+            end # for col
+            if params.N <= 2
+                plm = Plots.plot(plotarray..., layout = (params.N,1))
+            else
+                plm = Plots.plot(plotarray..., layout = params.N)
+            end
+        end # end if Nosc == 3
+
+        plen = plot_energy(unitaryhistory, params)
+    end # end if Nosc <=3
 
     # final unitary plotted in matrix form
     pluf = plot_final_unitary(unitaryhistory[:,:,end], params, fidelity)
-
-    plen = plot_energy(unitaryhistory, params)
 
     # Evaluate the ctrl functions on this grid in time
     nplot = round(Int64, params.T*samplerate)
@@ -247,9 +249,14 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
     # final solution matrix
     # ufinal = unitaryhistory[:,:,end]
 
-    # Return an array of plot objects
-    return [pl1, pl2, pl3, pl4, pl5, pl6, plcof, pconv, pluf, plen]
-
+    # Return a tuple of plot objects
+    if params.Nosc <= 3
+        println("Returning 10 plot objects (ess-pop, ctrl-rot, guard-pop, ctrl-lab, ctrl-FFT, ctrl-FFT-log, ctrl-pcof, convergence, final-unitary, exp-energy")
+        return [pl1, pl2, pl3, pl4, pl5, pl6, plcof, pconv, pluf, plen]
+    else
+        println("Returning 7 plot objects (ctrl-rot, ctrl-lab, ctrl-FFT, ctrl-FFT-log, ctrl-pcof, convergence, final-unitary")
+        return [pl2, pl4, pl5, pl6, plcof, pconv, pluf]
+    end
 end
 
 
