@@ -209,9 +209,9 @@ function eval_f_par1(pcof::Vector{Float64}, params:: Juqbox.objparams,
     params.lastLeakIntegral = f2
 
     # Add in Tikhonov regularization
-    tikhonovpenalty = Juqbox.tikhonov_pen(pcof, params)
+    #tikhonovpenalty = Juqbox.tikhonov_pen(pcof, params)
 
-    return f .+ tikhonovpenalty
+    return f #.+ tikhonovpenalty
   end
 
   # for objFuncType == 1
@@ -256,10 +256,10 @@ function eval_grad_f_par1(pcof::Vector{Float64}, grad_f::Vector{Float64}, params
     params.lastLeakIntegral = f2
 
     # Add in Tikhonov regularization gradient term
-    wa = params.wa # use pre-allocated torage
+    #wa = params.wa # use pre-allocated torage
     #wa.gr .= 0.0
-    Juqbox.tikhonov_grad!(pcof, params, wa.gr)  
-    axpy!(1.0, wa.gr, grad_f)
+    #Juqbox.tikhonov_grad!(pcof, params, wa.gr)  
+    #axpy!(1.0, wa.gr, grad_f)
 
     # Save intermediate parameter vectors
     if params.save_pcof_hist

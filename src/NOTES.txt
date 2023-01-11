@@ -16,6 +16,8 @@ Both MSB and LSB ordering are implemented in
 4. initial_cond() in src/evalobjgrad.jl
 
 Updated test cases in the examples folder
-1. cnot1-setup.jl
-2. cnot1-leakieq-setup.jl
+1. swap12-std-setup.jl # 2 systems, cross-Kerr coupling
+2. swap12-jc-setup.jl  # 2 systems, JC coupling
+3. swap13-std-setup.jl # 3 systems, cross-Kerr coupling
+4. swap14-std-setup.jl # 4 systems, cross-Kerr coupling
 

@@ -886,7 +886,7 @@ function get_swap_13_1()
     return swap_gate
 end
 
-function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float64}, xi::Vector{Float64}, couple_coeff::Vector{Float64}, couple_type::Int64, rot_freq::Vector{Float64}, T::Float64, D1::Int64, gate_final::Matrix{ComplexF64}; maxctrl_MHz::Float64=10.0, msb_order::Bool = true, Pmin::Int64 = 40, rand_amp::Float64=1e-3, pcofFileName::String="", zeroCtrlBC::Bool = true)
+function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float64}, xi::Vector{Float64}, couple_coeff::Vector{Float64}, couple_type::Int64, rot_freq::Vector{Float64}, T::Float64, D1::Int64, gate_final::Matrix{ComplexF64}; maxctrl_MHz::Float64=10.0, msb_order::Bool = true, Pmin::Int64 = 40, rand_amp::Float64=1e-3, pcofFileName::String="", zeroCtrlBC::Bool = true, use_eigenbasis::Bool = false)
 
     # enforce inequality constraint on the leakage?
     useLeakIneq = false # true
@@ -910,7 +910,6 @@ function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float
         Hsys, Hsym_ops, Hanti_ops = hamiltonians_four_sys(Ness=Ne, Nguard=Ng, freq01=f01, anharm=xi, rot_freq=rot_freq, couple_coeff=couple_coeff, couple_type=couple_type, msb_order = msb_order)  
     end
 
-  
     om, Nfreq, Utrans = get_resonances(Ness=Ne, Nguard=Ng, Hsys=Hsys, Hsym_ops=Hsym_ops, msb_order=msb_order)
   
     Ness = prod(Ne)
@@ -924,10 +923,23 @@ function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float
       println("Ctrl Hamiltonian # ", q, ", carrier frequencies: ", om[q]./(2*pi), "[GHz]")
     end
   
-    use_diagonal_H0 = false  # For comparisson with Quandary: use original Hamiltonian
-    if use_diagonal_H0 # transformation to diagonalize the system Hamiltonian
-      transformHamiltonians!(Hsys, Hsym_ops, Hanti_ops, Utrans) 
+    # Set the initial condition: Basis with guard levels
+    Ubasis = initial_cond(Ne, Ng, msb_order) # Ubasis holds the basis that will be used as initial cond. 
+
+    # NOTE:
+    # To impose the target transformation in the eigenbasis, keep the Hamiltonians the same
+    # but change the target to be Utrans*Ubasis*gate_final
+
+    if use_eigenbasis
+        Utarget = Utrans * Ubasis * gate_final
+    else
+        Utarget = Ubasis * gate_final
     end
+
+    # use_diagonal_H0 = false  # For comparisson with Quandary: use original Hamiltonian
+    # if use_diagonal_H0 # transformation to diagonalize the system Hamiltonian
+    #   transformHamiltonians!(Hsys, Hsym_ops, Hanti_ops, Utrans) 
+    # end
   
     # Set up the initial control vector
     nCoeff = 2*D1*sum(Nfreq) # factor '2' is for Re/Im parts of ctrl vector
@@ -946,18 +958,16 @@ function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float
     # Note: calculate_timestep expects maxCoupled to have Nosc elements
     nsteps = calculate_timestep(T, Hsys, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, maxCoupled=maxAmp, Pmin=Pmin)
     println("Starting point: nsteps = ", nsteps, " maxAmp = ", maxAmp, " [rad/ns]")
-  
-    # Set the initial condition: Basis with guard levels
-    Ubasis = initial_cond(Ne, Ng, msb_order) # Ubasis holds the basis that will be used as initial cond. 
-  
+    
     # create a linear solver object
     linear_solver = Juqbox.lsolver_object(solver=Juqbox.JACOBI_SOLVER, max_iter=100, tol=1e-12, nrhs=prod(Ne))
   
+
     # Set up parameter struct using the free evolution target
     if useLeakIneq
-      params = Juqbox.objparams(Ne, Ng, T, nsteps, Uinit=Ubasis, Utarget=Ubasis*gate_final, Cfreq=om, Rfreq=rot_freq, Hconst=Hsys, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, linear_solver=linear_solver, objFuncType=3, leak_ubound=leakThreshold, nCoeff=nCoeff, msb_order=msb_order)
+      params = Juqbox.objparams(Ne, Ng, T, nsteps, Uinit=Ubasis, Utarget=Utarget, Cfreq=om, Rfreq=rot_freq, Hconst=Hsys, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, linear_solver=linear_solver, objFuncType=3, leak_ubound=leakThreshold, nCoeff=nCoeff, msb_order=msb_order)
     else
-      params = Juqbox.objparams(Ne, Ng, T, nsteps, Uinit=Ubasis, Utarget=Ubasis*gate_final, Cfreq=om, Rfreq=rot_freq, Hconst=Hsys, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, linear_solver=linear_solver, nCoeff=nCoeff, freq01=f01, self_kerr=xi, couple_coeff=couple_coeff, couple_type=couple_type, msb_order=msb_order, zeroCtrlBC=zeroCtrlBC)
+      params = Juqbox.objparams(Ne, Ng, T, nsteps, Uinit=Ubasis, Utarget=Utarget, Cfreq=om, Rfreq=rot_freq, Hconst=Hsys, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, linear_solver=linear_solver, nCoeff=nCoeff, freq01=f01, self_kerr=xi, couple_coeff=couple_coeff, couple_type=couple_type, msb_order=msb_order, zeroCtrlBC=zeroCtrlBC)
     end
   
     println("*** Settings ***")

@@ -726,6 +726,10 @@ end
 secondaryobjf = objfv
 objfv = primaryobjf + secondaryobjf
 
+if params.objFuncType == 1
+    objfv += tikhonov_pen(pcof, params)
+end
+
 if evaladjoint && verbose
     # salpha1 = tracefidcomplex(wr, -wi, vtargetr, vtargeti)
     salpha1 = tracefidcomplex(wr, -wi, dVds_r, dVds_i)
@@ -746,7 +750,6 @@ end
 
 vfinalr = copy(vr)
 vfinali = copy(-vi)
-
 
 traceInfidelity = 1.0 - tracefidabs2(vfinalr, vfinali, vtargetr, vtargeti)
 
@@ -891,28 +894,28 @@ if evaladjoint
         # totalgrad = zeros(Psize) # allocate array to return the gradient
         # totalgrad[:] = gradobjfadj[:]
     else
-        totalgrad = zeros(Psize) # allocate array to return the gradient
-        totalgrad[:] = gradobjfadj[:]
+        # totalgrad = zeros(Psize) # allocate array to return the gradient
+        # totalgrad[:] = gradobjfadj[:] # deep copy        
+        totalgrad = gradobjfadj # use a shallow copy for improved efficiency
     end
 
     if params.objFuncType != 1
         leakgrad = zeros(size(totalgrad));
         if pFidType == 3 
-            push!(infidelgrad,primObjGradPhase) 
+            push!(infidelgrad,primObjGradPhase) # push!() is slow
         end
-        leakgrad .= totalgrad - infidelgrad
+        leakgrad .= totalgrad - infidelgrad # deep copy
     else
-        #This is needed because when params.objFuncType == 1, 
-        #We assume that the infidelgrad stores the totalgrad in ipopt interface
-        infidelgrad = totalgrad 
+        # add in Tikhonov gradient
+        tikhonov_grad!(pcof, params, params.wa.gr)  
+        axpy!(1.0, wa.gr, totalgrad)
     end
    
 end # if evaladjoint
 
 if verbose
-    tikhonovpenalty = tikhonov_pen(pcof, params)
-
-    println("Total objective func: ", objfv+tikhonovpenalty)
+    tikhonovpenalty = objfv - primaryobjf - secondaryobjf
+    println("Total objective func: ", objfv)
     println("Primary objective func: ", primaryobjf, " Guard state penalty: ", secondaryobjf, " Tikhonov penalty: ", tikhonovpenalty)
     if evaladjoint
         println("Norm of adjoint gradient = ", norm(gradobjfadj))
