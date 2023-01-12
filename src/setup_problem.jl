@@ -377,7 +377,7 @@ function init_control(;maxrand::Float64, nCoeff::Int64, startFile::String = "", 
         @assert(nCoeff == length(pcof0))
     else
         pcof0 = maxrand * 2 .* (rand(nCoeff) .- 0.5)
-        println("*** Starting from random pcof with amplitude ", maxrand)
+        println("*** Starting from RANDOM control vector with amplitude ", maxrand)
     end
 
     return pcof0
@@ -404,7 +404,7 @@ function control_bounds(params::objparams, maxAmp::Vector{Float64})
         zero_start_end!(Nctrl, Nfreq, D1, minCoeff, maxCoeff) # maxCoeff stores the bounds for the controls amplitudes (zero at the boundary)
     end
 
-    println("control_bounds: Number of coefficients per spline = ", D1, " Total number of parameters = ", nCoeff)
+    #println("Number of coefficients per spline = ", D1, " Total number of parameters = ", nCoeff)
 
     return minCoeff, maxCoeff
 end
@@ -945,13 +945,7 @@ function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float
     nCoeff = 2*D1*sum(Nfreq) # factor '2' is for Re/Im parts of ctrl vector
   
     # Set up the initial control parameter  
-    if length(pcofFileName) == 0
-      pcof0 = init_control(maxrand=rand_amp, nCoeff=nCoeff, seed=2345)
-      println("*** Starting from RANDOM control vector with amplitude = ", rand_amp)
-    else
-      # test 
-      pcof0 = read_pcof(pcofFileName)
-    end
+    pcof0 = init_control(maxrand=rand_amp, nCoeff=nCoeff, startFile=pcofFileName, seed=2345)
   
     # Estimate time step based on the number of time steps per shortest period
   
@@ -977,7 +971,7 @@ function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float
     println("params::objparams: object holding the Hamiltonians, carrier freq's, time-stepper, etc")
     println("pcof0:: Vector{Float64}: Initial coefficient vector is stored in 'pcof0' vector")
     println("maxAmp:: Vector{Float64}: Approximate max control amplitude for the p(t) and q(t) control function for each control Hamiltonian")
-  
+    println("")
   
     return params, pcof0, maxAmp
   end

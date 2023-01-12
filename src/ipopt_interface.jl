@@ -353,10 +353,11 @@ where the fundamental frequency is random.
 - `nodes:: Array{Float64, 1}`: Risk-neutral opt: User specified quadrature nodes on the interval [-ϵ,ϵ] for some ϵ (optinal keyword arg)
 - `weights:: Array{Float64, 1}`: Risk-neutral opt: User specified quadrature weights on the interval [-ϵ,ϵ] for some ϵ (optional keyword arg)
 """
-function ipopt_setup(params:: Juqbox.objparams, nCoeff:: Int64, maxAmp:: Vector{Float64}; maxIter:: Int64, lbfgsMax:: Int64, coldStart:: Bool, ipTol:: Float64, acceptTol:: Float64, acceptIter:: Int64, nodes::AbstractArray=[0.0], weights::AbstractArray=[1.0])
+function ipopt_setup(params:: Juqbox.objparams, nCoeff:: Int64, maxAmp:: Vector{Float64}; maxIter:: Int64, lbfgsMax:: Int64, coldStart:: Bool, ipTol:: Float64, acceptTol:: Float64, acceptIter:: Int64, nodes::AbstractArray=[0.0], weights::AbstractArray=[1.0], traceInfThreshold:: Float64)
 
     minCoeff, maxCoeff = control_bounds(params, maxAmp)
-
+    params.traceInfidelityThreshold = traceInfThreshold
+    
     intermediate(alg_mod, iter_count, obj_value, inf_pr, inf_du, mu,
                 d_norm, regularization_size, alpha_du, alpha_pr, ls_trials) =
                     intermediate_par(alg_mod, iter_count, obj_value, inf_pr, inf_du, mu,
@@ -513,11 +514,12 @@ Call IPOPT to  optimizize the control functions.
 - `weights:: AbstractArray`: (Optional-kw) Risk-neutral opt: User specified quadrature weights on the interval [-ϵ,ϵ] for some ϵ
 - `derivative_test:: Bool`: (Optional-kw) Set to true to check the gradient against a FD approximation (default is false)
 """
-function run_optimizer(params:: objparams, pcof0:: Vector{Float64}, maxAmp:: Vector{Float64}; maxIter::Int64 = 50, lbfgsMax:: Int64=200, coldStart:: Bool=true, ipTol:: Float64=1e-5, acceptTol:: Float64=1e-5, acceptIter:: Int64=15, print_level:: Int64=5, print_frequency_iter:: Int64=1, nodes::AbstractArray=[0.0], weights::AbstractArray=[1.0], derivative_test::Bool=false)
+function run_optimizer(params:: objparams, pcof0:: Vector{Float64}, maxAmp:: Vector{Float64}; maxIter::Int64 = 50, lbfgsMax:: Int64=200, coldStart:: Bool=true, ipTol:: Float64=1e-5, acceptTol:: Float64=1e-5, acceptIter:: Int64=15, print_level:: Int64=5, print_frequency_iter:: Int64=1, nodes::AbstractArray=[0.0], weights::AbstractArray=[1.0], derivative_test::Bool=false, traceInfThreshold::Float64=1e-4 )
     
     # start by setting up the Ipopt object: prob
-    println("Ipopt initialization timing:")
-    @time prob = Juqbox.ipopt_setup(params, length(pcof0), maxAmp, maxIter=maxIter, lbfgsMax=lbfgsMax, coldStart=coldStart, ipTol=ipTol, acceptTol=acceptTol, acceptIter=acceptIter, nodes=nodes, weights=weights)
+    #println("Ipopt initialization timing:")
+    #@time 
+    prob = Juqbox.ipopt_setup(params, length(pcof0), maxAmp, maxIter=maxIter, lbfgsMax=lbfgsMax, coldStart=coldStart, ipTol=ipTol, acceptTol=acceptTol, acceptIter=acceptIter, nodes=nodes, weights=weights, traceInfThreshold=traceInfThreshold)
 
     AddIpoptIntOption(prob, "print_level", print_level)
     AddIpoptIntOption(prob, "print_frequency_iter", print_frequency_iter)
