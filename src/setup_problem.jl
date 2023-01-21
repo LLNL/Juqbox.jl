@@ -439,14 +439,14 @@ function eigen_and_reorder(H0::Union{Matrix{ComplexF64},Matrix{Float64}})
     for j in 1:Ntot
         maxrow[j] = argmax(abs.(H0_eigen.vectors[:,j]));
     end
-    println("maxrow: ", maxrow)
+    #println("maxrow: ", maxrow)
 
     # find inverse of maxrow
     perm = zeros(Int64, Ntot) 
     for j in 1:Ntot
         perm[j] = argmin(abs.(maxrow .- j))
     end
-    println("perm: ", perm)
+    #println("perm: ", perm)
 
     Utrans = H0_eigen.vectors[:,perm[:]]
     # make sure all diagonal elements in Utrans are positive
@@ -623,7 +623,7 @@ function identify_essential_levels(Ness::Vector{Int64}, Nt::Vector{Int64}, msb_o
     return is_ess, it2i1, it2i2, it2i3, it2i4
 end
 
-function get_resonances(;Ness::Vector{Int64}, Nguard::Vector{Int64}, Hsys::Matrix{Float64}, Hsym_ops::Vector{Matrix{Float64}}, thres::Float64 = 0.01, msb_order::Bool = true)
+function get_resonances(;Ness::Vector{Int64}, Nguard::Vector{Int64}, Hsys::Matrix{Float64}, Hsym_ops::Vector{Matrix{Float64}}, Hanti_ops::Vector{Matrix{Float64}}, msb_order::Bool = true, cw_amp_thres::Float64, cw_prox_thres::Float64)
     @assert(length(Ness) <= 4)
     Nosc = length(Hsym_ops)
 
@@ -656,31 +656,33 @@ function get_resonances(;Ness::Vector{Int64}, Nguard::Vector{Int64}, Hsys::Matri
     ## Identify resonances for all controls ## 
     # Note: Only resonances between *essential* levels are considered
 
+    println("\nget_resonances: Ignoring couplings slower than (ad_coeff): ", cw_amp_thres, " and frequencies closer than: ", cw_prox_thres, " [GHz]")
+        
     resonances = []
     for q in 1:Nosc
-        # Transformation of control Hamiltonian (a+adag)
-        Hctrl_a = Hsym_ops[q]
-        Hctrl_a_trans = Utrans' * Hctrl_a * Utrans
+        # Transformation of control Hamiltonian (a+adag) - (a-adag) = 2*adag
+        Hctrl_ad = Hsym_ops[q] - Hanti_ops[q] # raising op
+        Hctrl_ad_trans = Utrans' * Hctrl_ad * Utrans
 
         #initialize
         resonances_a =zeros(0)
 
         # identify resonant couplings in 'a+adag'
-        println("\nResonances in ctrl ", q, ":")
+        println("\nResonances in oscillator # ", q, " Ignoring transitions with ad_coeff <: ", cw_amp_thres)
         for i in 1:nrows
             for j in 1:i # Only consider transitions from lower to higher levels
-                if abs(Hctrl_a_trans[i,j]) > thres
+                if abs(Hctrl_ad_trans[i,j]) >= cw_amp_thres
                     # Use only essential level transitions
                     if is_ess[i] && is_ess[j]
-                        println(" resonance from (i1 i2 i3 i4) = (", it2i1[j], it2i2[j], it2i3[j], it2i4[j], ") to (i1 i2 i3 i4) = (", it2i1[i], it2i2[i], it2i3[i], it2i4[i], "), Freq = ", ka_delta[i] - ka_delta[j], " = l_", i, " - l_", j, ", coeff=", Hctrl_a_trans[i,j])
-                        resi = ka_delta[i] - ka_delta[j]
-                        if abs(resi) < 1e-10 
-                            resi = 0.0
+                        delta_f = ka_delta[i] - ka_delta[j]
+                        if abs(delta_f) < 1e-10 
+                            delta_f = 0.0
                         end
-                        if exists(resi, resonances_a) < 0
-                            append!(resonances_a, resi)
-                        else
-                            println("Info, skipping frequency: ", resi, " Too close to previous frequencies")
+                        if exists(delta_f, resonances_a, cw_prox_thres) < 0
+                            append!(resonances_a, delta_f)
+                            println(" resonance from (i1 i2 i3 i4) = (", it2i1[j], it2i2[j], it2i3[j], it2i4[j], ") to (i1 i2 i3 i4) = (", it2i1[i], it2i2[i], it2i3[i], it2i4[i], "), Freq = ", delta_f, " = l_", i, " - l_", j, ", ad_coeff=", Hctrl_ad_trans[i,j])
+                        # else
+                        #     println("Info, skipping frequency: ", delta_f, " Too close to previous frequencies")
                         end
                     end
                 end
@@ -780,7 +782,6 @@ function get_Hd_gate(d::Int64)
 	return gate_Hd
 end
 
-
 function get_CNOT()
     gate_H4 =  zeros(ComplexF64, 4, 4)
     gate_H4[1,1] = 1.0
@@ -790,6 +791,23 @@ function get_CNOT()
     return gate_H4
 end
 
+function get_CpNOT(p::Int64 = 1)
+    # Number of qubits = p+1
+    # First p qubits control qubit p+1
+    # Unitary has size d = N x N, N = 2^(p+1)
+    N = 2^(p+1)
+
+    # Initialize as identity matrix
+    gate = Matrix{ComplexF64}(I,N,N)
+
+    # correct the final 2x2 block
+    gate[N-1,N-1] = 0.0
+    gate[N-1,N] = 1.0
+    gate[N,N-1] = 1.0
+    gate[N,N] = 0.0
+
+    return gate
+end
 
 # This returns the threewave Hamiltonian matrix 3x3 or 4x4
 function get_Threewave_Hamiltonian(theta,s, dim=3)
@@ -886,7 +904,7 @@ function get_swap_13_1()
     return swap_gate
 end
 
-function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float64}, xi::Vector{Float64}, couple_coeff::Vector{Float64}, couple_type::Int64, rot_freq::Vector{Float64}, T::Float64, D1::Int64, gate_final::Matrix{ComplexF64}; maxctrl_MHz::Float64=10.0, msb_order::Bool = true, Pmin::Int64 = 40, rand_amp::Float64=1e-3, pcofFileName::String="", zeroCtrlBC::Bool = true, use_eigenbasis::Bool = false)
+function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float64}, xi::Vector{Float64}, couple_coeff::Vector{Float64}, couple_type::Int64, rot_freq::Vector{Float64}, T::Float64, D1::Int64, gate_final::Matrix{ComplexF64}; maxctrl_MHz::Float64=10.0, msb_order::Bool = true, Pmin::Int64 = 40, rand_amp::Float64=1e-3, pcofFileName::String="", zeroCtrlBC::Bool = true, use_eigenbasis::Bool = false, cw_amp_thres::Float64=5e-2, cw_prox_thres::Float64=2e-3)
 
     # enforce inequality constraint on the leakage?
     useLeakIneq = false # true
@@ -910,7 +928,7 @@ function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float
         Hsys, Hsym_ops, Hanti_ops = hamiltonians_four_sys(Ness=Ne, Nguard=Ng, freq01=f01, anharm=xi, rot_freq=rot_freq, couple_coeff=couple_coeff, couple_type=couple_type, msb_order = msb_order)  
     end
 
-    om, Nfreq, Utrans = get_resonances(Ness=Ne, Nguard=Ng, Hsys=Hsys, Hsym_ops=Hsym_ops, msb_order=msb_order)
+    om, Nfreq, Utrans = get_resonances(Ness=Ne, Nguard=Ng, Hsys=Hsys, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, msb_order=msb_order, cw_amp_thres=cw_amp_thres, cw_prox_thres=cw_prox_thres)
   
     Ness = prod(Ne)
     Nosc = length(om) # Nosc should equal pdim
@@ -920,7 +938,7 @@ function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float
     maxAmp = maxctrl_radns * ones(Nosc) # internally scaled by 1/(sqrt(2)*Nfreq[q]) in setup_ipopt() and Quandary
   
     for q = 1:Nosc
-      println("Ctrl Hamiltonian # ", q, ", carrier frequencies: ", om[q]./(2*pi), "[GHz]")
+      println("Ctrl Hamiltonian # ", q, ", lab frame carrier frequencies: ", rot_freq[q] .+ om[q]./(2*pi), "[GHz]")
     end
   
     # Set the initial condition: Basis with guard levels
