@@ -25,7 +25,7 @@ export save_pcof, read_pcof, juq2qis
 export lsolver_object
 export hamiltonians_one_sys, get_resonances, init_control, control_bounds
 export hamiltonians_two_sys, transformHamiltonians!, hamiltonians_three_sys
-export setup_std_model, get_CNOT, get_Hd_gate, get_swap_1d_gate, get_swap_13_1
+export setup_std_model, get_CNOT, get_Hd_gate, get_swap_1d_gate, get_ident_kron_swap23
 
 # Julia versions prior to v"1.3.1" can't use LinearAlgebra's 5 argument mul!, routines
 # included here for backwards compatability

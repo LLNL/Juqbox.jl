@@ -470,7 +470,11 @@ function eigen_and_reorder(H0::Union{Matrix{ComplexF64},Matrix{Float64}})
     # end
     # Check orthonormality
     Id_tot = Array{Float64, 2}(I, Ntot, Ntot)
-    println("Orthonormality check: norm( Utrans' Utrans - I) :", norm(Utrans' * Utrans - Id_tot) )
+    uniTest = norm(Utrans' * Utrans - Id_tot)
+    println("Orthonormality check: norm( Utrans' Utrans - I) :", uniTest )
+    if uniTest > 1e-9 
+        throw(error("Something went wrong with the diagonalization"))
+    end
 
     return H0_eigen.values[perm[:]], Utrans
 end
@@ -659,6 +663,7 @@ function get_resonances(;Ness::Vector{Int64}, Nguard::Vector{Int64}, Hsys::Matri
     println("\nget_resonances: Ignoring couplings slower than (ad_coeff): ", cw_amp_thres, " and frequencies closer than: ", cw_prox_thres, " [GHz]")
         
     resonances = []
+    speed = []
     for q in 1:Nosc
         # Transformation of control Hamiltonian (a+adag) - (a-adag) = 2*adag
         Hctrl_ad = Hsym_ops[q] - Hanti_ops[q] # raising op
@@ -666,6 +671,7 @@ function get_resonances(;Ness::Vector{Int64}, Nguard::Vector{Int64}, Hsys::Matri
 
         #initialize
         resonances_a =zeros(0)
+        speed_a = zeros(0)
 
         # identify resonant couplings in 'a+adag'
         println("\nResonances in oscillator # ", q, " Ignoring transitions with ad_coeff <: ", cw_amp_thres)
@@ -678,9 +684,11 @@ function get_resonances(;Ness::Vector{Int64}, Nguard::Vector{Int64}, Hsys::Matri
                         if abs(delta_f) < 1e-10 
                             delta_f = 0.0
                         end
+                        # Use all sufficiently separated resonance frequencies
                         if exists(delta_f, resonances_a, cw_prox_thres) < 0
                             append!(resonances_a, delta_f)
-                            println(" resonance from (i1 i2 i3 i4) = (", it2i1[j], it2i2[j], it2i3[j], it2i4[j], ") to (i1 i2 i3 i4) = (", it2i1[i], it2i2[i], it2i3[i], it2i4[i], "), Freq = ", delta_f, " = l_", i, " - l_", j, ", ad_coeff=", Hctrl_ad_trans[i,j])
+                            append!(speed_a, abs(Hctrl_ad_trans[i,j]))
+                            println(" resonance from (i1 i2 i3 i4) = (", it2i1[j], it2i2[j], it2i3[j], it2i4[j], ") to (i1 i2 i3 i4) = (", it2i1[i], it2i2[i], it2i3[i], it2i4[i], "), Freq = ", delta_f, " = l_", i, " - l_", j, ", ad_coeff=", abs(Hctrl_ad_trans[i,j]))
                         # else
                         #     println("Info, skipping frequency: ", delta_f, " Too close to previous frequencies")
                         end
@@ -691,6 +699,7 @@ function get_resonances(;Ness::Vector{Int64}, Nguard::Vector{Int64}, Hsys::Matri
     
         # Store the result
         push!(resonances, resonances_a)
+        push!(speed, speed_a)
     end
 
     # Return the number of frequencies for each control 
@@ -698,12 +707,14 @@ function get_resonances(;Ness::Vector{Int64}, Nguard::Vector{Int64}, Hsys::Matri
     
     # Allocate Vector of pointers to the carrier frequencies
     om = Vector{Vector{Float64}}(undef, Nosc)
-
+    rate = Vector{Vector{Float64}}(undef, Nosc)
     # copy over resonances[]
     for q in 1:Nosc
         Nfreq[q] = length(resonances[q])
         om[q] = zeros(Nfreq[q])
         om[q] .= resonances[q]
+        rate[q] = zeros(Nfreq[q])
+        rate[q] .= speed[q]
     end
 
     # Convert carrier frequencies to radians
@@ -719,7 +730,7 @@ function get_resonances(;Ness::Vector{Int64}, Nguard::Vector{Int64}, Hsys::Matri
     # end
     # println("typeof(Utrans): ", typeof(Utrans))
     println()
-    return om, Nfreq, Utrans
+    return om, rate, Utrans
 end
 
 function transformHamiltonians!(H0::Matrix{Float64}, Hsym_ops::Vector{Matrix{Float64}}, Hanti_ops::Vector{Matrix{Float64}}, Utrans::Matrix{Float64})
@@ -883,12 +894,13 @@ function get_swap_1d_gate(d::Int64 = 2)
     return swap_gate
 end
 
-function get_swap_13_1()
+function get_ident_kron_swap23()
+    # I kron Swap: Do a swap between osc 2 & 3, and the identity on osc 1
     # (0,0): 1, 0, 0, 0, 0, 0, 0, 0, 
     # (1,0): 0, 0, 1, 0, 0, 0, 0, 0, 
     # (2,0): 0, 1, 0, 0, 0, 0, 0, 0, 
-    # (3,0): 0, 0, 0, 0, 1, 0, 0, 0, 
-    # (4,0): 0, 0, 0, 1, 0, 0, 0, 0, 
+    # (3,0): 0, 0, 0, 1, 0, 0, 0, 0, 
+    # (4,0): 0, 0, 0, 0, 1, 0, 0, 0, 
     # (5,0): 0, 0, 0, 0, 0, 0, 1, 0, 
     # (6,0): 0, 0, 0, 0, 0, 1, 0, 0, 
     # (7,0): 0, 0, 0, 0, 0, 0, 0, 1, 
@@ -896,8 +908,8 @@ function get_swap_13_1()
     swap_gate[1,1] = 1.0
     swap_gate[2,3] = 1.0
     swap_gate[3,2] = 1.0
-    swap_gate[4,5] = 1.0
-    swap_gate[5,4] = 1.0
+    swap_gate[4,4] = 1.0
+    swap_gate[5,5] = 1.0
     swap_gate[6,7] = 1.0
     swap_gate[7,6] = 1.0
     swap_gate[8,8] = 1.0
@@ -928,17 +940,72 @@ function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float
         Hsys, Hsym_ops, Hanti_ops = hamiltonians_four_sys(Ness=Ne, Nguard=Ng, freq01=f01, anharm=xi, rot_freq=rot_freq, couple_coeff=couple_coeff, couple_type=couple_type, msb_order = msb_order)  
     end
 
-    om, Nfreq, Utrans = get_resonances(Ness=Ne, Nguard=Ng, Hsys=Hsys, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, msb_order=msb_order, cw_amp_thres=cw_amp_thres, cw_prox_thres=cw_prox_thres)
-  
+    om, rate, Utrans = get_resonances(Ness=Ne, Nguard=Ng, Hsys=Hsys, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, msb_order=msb_order, cw_amp_thres=cw_amp_thres, cw_prox_thres=cw_prox_thres)
+    
     Ness = prod(Ne)
     Nosc = length(om) # Nosc should equal pdim
+    Nfreq = zeros(Int64,Nosc) # Number of frequencies per control Hamiltonian
+    for q=1:Nosc
+        Nfreq[q] = length(om[q])
+    end
+
     println("D1 = ", D1, " Ness = ", Ness, " Nosc = ", Nosc, " Nfreq = ", Nfreq)
   
     # Amplitude bounds to be imposed during optimization
     maxAmp = maxctrl_radns * ones(Nosc) # internally scaled by 1/(sqrt(2)*Nfreq[q]) in setup_ipopt() and Quandary
   
+    println("Original CW freq's:")
     for q = 1:Nosc
-      println("Ctrl Hamiltonian # ", q, ", lab frame carrier frequencies: ", rot_freq[q] .+ om[q]./(2*pi), "[GHz]")
+      println("Ctrl Hamiltonian # ", q, ", lab frame carrier frequencies: ", rot_freq[q] .+ om[q]./(2*pi), " [GHz]")
+      println("Ctrl Hamiltonian # ", q, ",                   growth rate: ", rate[q], " [1/ns]")
+    end
+
+    # allocate and sort the vectors (ascending order)
+    om_p = Vector{Vector{Float64}}(undef, Nosc)
+    rate_p = Vector{Vector{Float64}}(undef, Nosc)
+    use_p = Vector{Vector{Int64}}(undef, Nosc)
+    for q = 1:Nosc
+        om_p[q] = zeros(Nfreq[q])
+        rate_p[q] = zeros(Nfreq[q])
+        use_p[q] = ones(Int64,Nfreq[q])
+        p = sortperm(om[q]) # sortperm(rate[q],rev=true)
+        om_p[q] .= om[q][p]
+        rate_p[q] .= rate[q][p]
+    end
+
+    println("Sorted CW freq's:")
+    for q = 1:Nosc
+      println("Ctrl Hamiltonian # ", q, ", lab frame carrier frequencies: ", rot_freq[q] .+ om_p[q]./(2*pi), " [GHz]")
+      println("Ctrl Hamiltonian # ", q, ",                   growth rate: ", rate_p[q], " [1/ns]")
+    end
+
+    # Try to identify groups of almost equal frequencies
+    for q = 1:Nosc
+        rge_q = maximum(om_p[q]) - minimum(om_p[q]) # this is the range of frequencies
+        k0 = 1
+        for k = 2:Nfreq[q]
+            delta_k = om_p[q][k] - om_p[q][k0]
+            if delta_k < 0.1*rge_q
+                use_p[q][k] = 0 # don't use that element
+            else
+                k0 = k # start a new group
+            end
+        end
+        # cull out unused frequencies
+        om[q] = zeros(sum(use_p[q]))
+        j = 0
+        for k=1:Nfreq[q]
+            if use_p[q][k] == 1
+                j += 1
+                om[q][j] = om_p[q][k]
+            end
+        end
+        Nfreq[q] = j
+    end
+
+    println("Sorted and culled CW freq's:")
+    for q = 1:Nosc
+      println("Ctrl Hamiltonian # ", q, ", lab frame carrier frequencies: ", rot_freq[q] .+ om[q]./(2*pi), " [GHz]")
     end
   
     # Set the initial condition: Basis with guard levels
