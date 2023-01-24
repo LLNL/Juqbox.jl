@@ -77,10 +77,6 @@ function hamiltonians_two_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, freq0
         amat = Array(kron(I2, a1))
         bmat = Array(kron(a2, I1))
 
-        adag = Array(transpose(amat))
-        bdag = Array(transpose(bmat))
-
-
         # number operators
         N1 = Diagonal(kron(I2, num1) )
         N2 = Diagonal(kron(num2, I1) )
@@ -90,13 +86,13 @@ function hamiltonians_two_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, freq0
         amat = Array(kron(a1, I2))
         bmat = Array(kron(I1, a2))
 
-        adag = Array(transpose(amat))
-        bdag = Array(transpose(bmat))
-
         # number operators
         N1 = Diagonal(kron(num1, I2) )
         N2 = Diagonal(kron(I1, num2) )
     end
+
+    adag = Array(transpose(amat))
+    bdag = Array(transpose(bmat))
 
     # Coupling Hamiltonian: couple_type = 2 # 1: cross-Kerr, 2: Jaynes-Cummings
     if couple_type == 1
@@ -179,10 +175,6 @@ function hamiltonians_three_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, fre
         bmat = kron(I3, kron(a2, I1))
         cmat = kron(a3, kron(I2, I1))
 
-        adag = Array(transpose(amat))
-        bdag = Array(transpose(bmat))
-        cdag = Array(transpose(cmat))
-
         # number operators
         Na = Diagonal(kron(I3, kron(I2, num1)) )
         Nb = Diagonal(kron(I3, kron(num2, I1)) )
@@ -197,15 +189,15 @@ function hamiltonians_three_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, fre
         bmat = kron(I1, kron(a2, I3))
         cmat = kron(I1, kron(I2, a3))
 
-        adag = Array(transpose(amat))
-        bdag = Array(transpose(bmat))
-        cdag = Array(transpose(cmat))
-
         # number operators
         Na = Diagonal(kron(num1, kron(I2, I3)) )
         Nb = Diagonal(kron(I1, kron(num2, I3)) )
         Nc = Diagonal(kron(I1, kron(I2, num3)) )
     end
+
+    adag = Array(transpose(amat))
+    bdag = Array(transpose(bmat))
+    cdag = Array(transpose(cmat))
 
     # Coupling Hamiltonian: couple_type = 2 # 1: cross-Kerr, 2: Jaynes-Cummings
     if couple_type == 1
@@ -954,11 +946,11 @@ function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float
     # Amplitude bounds to be imposed during optimization
     maxAmp = maxctrl_radns * ones(Nosc) # internally scaled by 1/(sqrt(2)*Nfreq[q]) in setup_ipopt() and Quandary
   
-    println("Original CW freq's:")
-    for q = 1:Nosc
-      println("Ctrl Hamiltonian # ", q, ", lab frame carrier frequencies: ", rot_freq[q] .+ om[q]./(2*pi), " [GHz]")
-      println("Ctrl Hamiltonian # ", q, ",                   growth rate: ", rate[q], " [1/ns]")
-    end
+    # println("Original CW freq's:")
+    # for q = 1:Nosc
+    #   println("Ctrl Hamiltonian # ", q, ", lab frame carrier frequencies: ", rot_freq[q] .+ om[q]./(2*pi), " [GHz]")
+    #   println("Ctrl Hamiltonian # ", q, ",                   growth rate: ", rate[q], " [1/ns]")
+    # end
 
     # allocate and sort the vectors (ascending order)
     om_p = Vector{Vector{Float64}}(undef, Nosc)
@@ -967,7 +959,7 @@ function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float
     for q = 1:Nosc
         om_p[q] = zeros(Nfreq[q])
         rate_p[q] = zeros(Nfreq[q])
-        use_p[q] = ones(Int64,Nfreq[q])
+        use_p[q] = zeros(Int64,Nfreq[q]) # By default, don't use any freq's
         p = sortperm(om[q]) # sortperm(rate[q],rev=true)
         om_p[q] .= om[q][p]
         rate_p[q] .= rate[q][p]
@@ -981,16 +973,33 @@ function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float
 
     # Try to identify groups of almost equal frequencies
     for q = 1:Nosc
+        seg = 0
         rge_q = maximum(om_p[q]) - minimum(om_p[q]) # this is the range of frequencies
         k0 = 1
         for k = 2:Nfreq[q]
             delta_k = om_p[q][k] - om_p[q][k0]
-            if delta_k < 0.1*rge_q
-                use_p[q][k] = 0 # don't use that element
-            else
+            if delta_k > 0.1*rge_q
+                seg += 1
+                # find the highest rate within the range [k0,k-1]
+                rge = k0:k-1
+                om_avg = sum(om_p[q][rge])/length(rge)
+                println("Osc # ", q, " segment # ", seg, " Freq-range: ", (maximum(om_p[q][rge]) - minimum(om_p[q][rge]))/(2*pi), " Freq-avg: ", om_avg/(2*pi) + rot_freq[q])
+                # kmax = argmax(rate_p[q][rge])
+                use_p[q][k0] = 1
+                # average the cw frequency over the segment
+                om_p[q][k0] = om_avg 
                 k0 = k # start a new group
             end
         end
+        # find the highest rate within the last range [k0,Nfreq[q]]
+        seg += 1
+        rge = k0:Nfreq[q]
+        om_avg = sum(om_p[q][rge])/length(rge)
+        println("Osc # ", q, " segment # ", seg, " Freq-range: ", (maximum(om_p[q][rge]) - minimum(om_p[q][rge]))/(2*pi), " Freq-avg: ", om_avg/(2*pi) + rot_freq[q])
+        # kmax = argmax(rate_p[q][rge])
+        use_p[q][k0] = 1
+        om_p[q][k0] = om_avg 
+
         # cull out unused frequencies
         om[q] = zeros(sum(use_p[q]))
         j = 0
@@ -1003,7 +1012,7 @@ function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float
         Nfreq[q] = j
     end
 
-    println("Sorted and culled CW freq's:")
+    println("\nSorted and culled CW freq's:")
     for q = 1:Nosc
       println("Ctrl Hamiltonian # ", q, ", lab frame carrier frequencies: ", rot_freq[q] .+ om[q]./(2*pi), " [GHz]")
     end
