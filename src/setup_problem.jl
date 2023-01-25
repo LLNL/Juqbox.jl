@@ -908,6 +908,28 @@ function get_ident_kron_swap23()
     return swap_gate
 end
 
+function get_swap12_kron_ident()
+    # I kron Swap: Do a swap between osc 2 & 3, and the identity on osc 1
+    # (0,0): 1, 0, 0, 0, 0, 0, 0, 0, 
+    # (1,0): 0, 1, 0, 0, 0, 0, 0, 0, 
+    # (2,0): 0, 0, 0, 0, 1, 0, 0, 0, 
+    # (3,0): 0, 0, 0, 0, 0, 1, 0, 0, 
+    # (4,0): 0, 0, 1, 0, 0, 0, 0, 0, 
+    # (5,0): 0, 0, 0, 1, 0, 0, 0, 0, 
+    # (6,0): 0, 0, 0, 0, 0, 0, 1, 0, 
+    # (7,0): 0, 0, 0, 0, 0, 0, 0, 1, 
+    swap_gate =  zeros(ComplexF64, 8, 8)
+    swap_gate[1,1] = 1.0
+    swap_gate[2,2] = 1.0
+    swap_gate[3,5] = 1.0
+    swap_gate[4,6] = 1.0
+    swap_gate[5,3] = 1.0
+    swap_gate[6,4] = 1.0
+    swap_gate[7,7] = 1.0
+    swap_gate[8,8] = 1.0
+    return swap_gate
+end
+
 function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float64}, xi::Vector{Float64}, couple_coeff::Vector{Float64}, couple_type::Int64, rot_freq::Vector{Float64}, T::Float64, D1::Int64, gate_final::Matrix{ComplexF64}; maxctrl_MHz::Float64=10.0, msb_order::Bool = true, Pmin::Int64 = 40, rand_amp::Float64=1e-3, pcofFileName::String="", zeroCtrlBC::Bool = true, use_eigenbasis::Bool = false, cw_amp_thres::Float64=5e-2, cw_prox_thres::Float64=2e-3)
 
     # enforce inequality constraint on the leakage?
