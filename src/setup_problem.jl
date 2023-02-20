@@ -930,7 +930,7 @@ function get_swap12_kron_ident()
     return swap_gate
 end
 
-function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float64}, xi::Vector{Float64}, couple_coeff::Vector{Float64}, couple_type::Int64, rot_freq::Vector{Float64}, T::Float64, D1::Int64, gate_final::Matrix{ComplexF64}; maxctrl_MHz::Float64=10.0, msb_order::Bool = true, Pmin::Int64 = 40, rand_amp::Float64=1e-3, pcofFileName::String="", zeroCtrlBC::Bool = true, use_eigenbasis::Bool = false, cw_amp_thres::Float64=5e-2, cw_prox_thres::Float64=2e-3)
+function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float64}, xi::Vector{Float64}, couple_coeff::Vector{Float64}, couple_type::Int64, rot_freq::Vector{Float64}, T::Float64, D1::Int64, gate_final::Matrix{ComplexF64}; maxctrl_MHz::Float64=10.0, msb_order::Bool = true, Pmin::Int64 = 40, rand_amp::Float64=0.0, rand_seed::Int64=2345, pcofFileName::String="", zeroCtrlBC::Bool = true, use_eigenbasis::Bool = false, cw_amp_thres::Float64=5e-2, cw_prox_thres::Float64=2e-3)
 
     # enforce inequality constraint on the leakage?
     useLeakIneq = false # true
@@ -1061,7 +1061,7 @@ function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float
     nCoeff = 2*D1*sum(Nfreq) # factor '2' is for Re/Im parts of ctrl vector
   
     # Set up the initial control parameter  
-    pcof0 = init_control(maxrand=rand_amp, nCoeff=nCoeff, startFile=pcofFileName, seed=2345)
+    pcof0 = init_control(maxrand=rand_amp, nCoeff=nCoeff, startFile=pcofFileName, seed=rand_seed)
   
     # Estimate time step based on the number of time steps per shortest period
   

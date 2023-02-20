@@ -148,8 +148,7 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
         pmax = maximum(abs.(pfunc))
         qmax = maximum(abs.(qfunc))
         # first plot for control function for the symmetric Hamiltonian
-        local titlestr = "Rotating frame ctrl - " * string(q) * " Max-p=" *@sprintf("%.3e", pmax) * " Max-q=" *
-            @sprintf("%.3e", qmax) * " " * unitStr
+        local titlestr = "Rotating frame ctrl - " * string(q) # * " Max-p=" *@sprintf("%.3e", pmax) * " Max-q=" *@sprintf("%.3e", qmax) * " " * unitStr
         plotarray[q] = Plots.plot(td, pfunc, lab=L"p(t)", title = titlestr, xlabel="Time [ns]",
                                   ylabel=unitStr, legend= :outerright)
         # add in the control function for the anti-symmetric Hamiltonian
@@ -172,8 +171,8 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
         Fdr_lab = fftshift( fft(labdrive) ) / nFFT
 
         local titlestr = "Spectrum, lab frame ctrl - " * string(q)
-        plotarray_fft[q] = Plots.plot(freq, abs.(Fdr_lab), lab="", title = titlestr, size = (650, 350), xlabel="Frequency [GHz]",
-                                      ylabel="Amplitude " * unitStr, framestyle = :box) #, grid = :hide
+        plotarray_fft[q] = Plots.plot(freq, abs.(Fdr_lab), lab="", title = titlestr, size = (650, 350), xlabel="Freq. [GHz]",
+                                      ylabel="Amp.", framestyle = :box) #, grid = :hide
 
         fmin = 0.5*minimum(params.Rfreq) 
         fmax = maximum(params.Rfreq) + 0.5
@@ -181,8 +180,8 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
 
         # log-scale spectrum
         mag_Fdr_lab = abs.(Fdr_lab)
-        plotarray_fftlog[q] = Plots.plot(title = titlestr, xlabel="Frequency [GHz]",
-                                         ylabel="Amplitude " * unitStr, yaxis=:log10, framestyle = :box)
+        plotarray_fftlog[q] = Plots.plot(title = titlestr, xlabel="Freq. [GHz]",
+                                         ylabel="Amp.", yaxis=:log10, framestyle = :box)
         if minimum(mag_Fdr_lab) > 0.0
             Plots.plot!(freq, mag_Fdr_lab, lab="")
             xlims!((fmin, fmax))
