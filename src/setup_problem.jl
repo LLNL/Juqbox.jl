@@ -355,7 +355,9 @@ end
 
 
 # initial parameter guess
-function init_control(;maxrand::Float64, nCoeff::Int64, startFile::String = "", seed::Int64 = -1)
+function init_control(;rand_frac::Float64, maxAmp::Vector{Float64}, D1::Int64, Nfreq::Vector{Int64}, startFile::String = "", seed::Int64 = -1)
+    Nosc = length(Nfreq)
+    nCoeff = 2*D1*sum(Nfreq)
 
     if seed >= 0
         Random.seed!(seed)
@@ -368,8 +370,18 @@ function init_control(;maxrand::Float64, nCoeff::Int64, startFile::String = "", 
         println("*** Starting from B-spline coefficients in file: ", startFile)
         @assert(nCoeff == length(pcof0))
     else
-        pcof0 = maxrand * 2 .* (rand(nCoeff) .- 0.5)
-        println("*** Starting from RANDOM control vector with amplitude ", maxrand)
+        pcof0 = zeros(nCoeff)
+        offset = 0
+        for q=1:Nosc
+            if Nfreq[q] > 0
+                maxrand = rand_frac*maxAmp[q]/sqrt(2)/Nfreq[q]
+                Nq = 2*D1*Nfreq[q]
+                pcof0[offset+1:offset+Nq] = maxrand * 2 * (rand(Nq) .- 0.5)
+                offset += Nq
+            end
+        end
+        #pcof0 = maxrand * 2 .* (rand(nCoeff) .- 0.5)
+        println("*** Starting from RANDOM control vector with rand_frac = ", rand_frac)
     end
 
     return pcof0
@@ -930,7 +942,7 @@ function get_swap12_kron_ident()
     return swap_gate
 end
 
-function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float64}, xi::Vector{Float64}, couple_coeff::Vector{Float64}, couple_type::Int64, rot_freq::Vector{Float64}, T::Float64, D1::Int64, gate_final::Matrix{ComplexF64}; maxctrl_MHz::Float64=10.0, msb_order::Bool = true, Pmin::Int64 = 40, rand_amp::Float64=0.0, rand_seed::Int64=2345, pcofFileName::String="", zeroCtrlBC::Bool = true, use_eigenbasis::Bool = false, cw_amp_thres::Float64=5e-2, cw_prox_thres::Float64=2e-3)
+function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float64}, xi::Vector{Float64}, couple_coeff::Vector{Float64}, couple_type::Int64, rot_freq::Vector{Float64}, T::Float64, D1::Int64, gate_final::Matrix{ComplexF64}; maxctrl_MHz::Float64=10.0, msb_order::Bool = true, Pmin::Int64 = 40, rand_frac::Float64=0.0, rand_seed::Int64=2345, pcofFileName::String="", zeroCtrlBC::Bool = true, use_eigenbasis::Bool = false, cw_amp_thres::Float64=5e-2, cw_prox_thres::Float64=2e-3)
 
     # enforce inequality constraint on the leakage?
     useLeakIneq = false # true
@@ -967,12 +979,6 @@ function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float
   
     # Amplitude bounds to be imposed during optimization
     maxAmp = maxctrl_radns * ones(Nosc) # internally scaled by 1/(sqrt(2)*Nfreq[q]) in setup_ipopt() and Quandary
-  
-    # println("Original CW freq's:")
-    # for q = 1:Nosc
-    #   println("Ctrl Hamiltonian # ", q, ", lab frame carrier frequencies: ", rot_freq[q] .+ om[q]./(2*pi), " [GHz]")
-    #   println("Ctrl Hamiltonian # ", q, ",                   growth rate: ", rate[q], " [1/ns]")
-    # end
 
     # allocate and sort the vectors (ascending order)
     om_p = Vector{Vector{Float64}}(undef, Nosc)
@@ -1061,7 +1067,7 @@ function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float
     nCoeff = 2*D1*sum(Nfreq) # factor '2' is for Re/Im parts of ctrl vector
   
     # Set up the initial control parameter  
-    pcof0 = init_control(maxrand=rand_amp, nCoeff=nCoeff, startFile=pcofFileName, seed=rand_seed)
+    pcof0 = init_control(rand_frac = rand_frac, maxAmp=maxAmp, D1=D1, Nfreq=Nfreq, startFile=pcofFileName, seed=rand_seed)
   
     # Estimate time step based on the number of time steps per shortest period
   
