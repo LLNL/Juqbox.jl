@@ -353,6 +353,93 @@ function hamiltonians_four_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, freq
     return H0, Hsym_ops, Hanti_ops
 end
 
+function hamiltonians(;Nsys::Int64, Ness::Vector{Int64}, Nguard::Vector{Int64}, freq01::Vector{Float64}, anharm::Vector{Float64}, rot_freq::Vector{Float64}, couple_coeff::Vector{Float64}, couple_type::Int64, msb_order::Bool = false, verbose::Bool = true)
+    @assert(Nsys>=1)
+    @assert(length(Ness) == Nsys)
+    @assert(length(Nguard) == Nsys)
+    @assert(length(anharm) == Nsys)
+    @assert(length(freq01) == Nsys)
+    @assert(length(rot_freq) == Nsys)
+    @assert(length(couple_coeff) == div(Nsys^2 - Nsys,2)) # general number of coupling coeff's?
+    @assert(couple_type == 1 || couple_type == 2)
+
+    # inline functions for making identity, number, and lowering matrices for the sub-systems
+    ident(n::Int64) = diagm(ones(n))
+    lowering(n::Int64) = Bidiagonal(zeros(n),sqrt.(collect(1:n-1)),:U)
+    number(n::Int64) = Diagonal(collect(0:n-1))
+
+    Nt = Ness + Nguard
+    N = prod(Ness); # Total number of nonpenalized energy levels
+    Ntot = prod(Nt) # Total number of energy levels
+
+    # Number and lowering ops 
+    Num = Vector{Matrix{Float64}}(undef,Nsys)
+    Amat = Vector{Matrix{Float64}}(undef,Nsys)
+    for q=1:Nsys
+        preIdent = ident.(Nt[1:q-1])
+        numq = foldr(kron,preIdent,init=number(Nt[q])) # Number op for system 'q'
+        lowq = foldr(kron,preIdent,init=lowering(Nt[q]))
+        if q<Nsys
+            postIdent = ident.(Nt[q+1:Nsys])
+            Num[q]  = foldl(kron,postIdent,init=numq) # Full size number operator
+            Amat[q] = foldl(kron,postIdent,init=lowq)
+        else
+            Num[q]  = numq # Full size number operator
+            Amat[q] = lowq
+        end
+    end
+
+
+    # System Hamiltonian (Duffing oscillator)
+    H0 = zeros(Ntot,Ntot)
+    for q=1:Nsys
+        H0 += (freq01[q] - rot_freq[q]) * Num[q] + 0.5*anharm[q] * (Num[q]*Num[q] - Num[q])
+    end
+    # H0 = 2*pi*(da*Na + 0.5*xa*(Na*Na-Na) + db*Nb + 0.5*xb*(Nb*Nb-Nb) + dc*Nc + 0.5*xc*(Nc*Nc-Nc) + dd*Nd + 0.5*xd*(Nd*Nd-Nd) + Hcouple )
+
+    # Coupling terms
+    if couple_type == 1
+        k=0
+        for q=1:Nsys
+            for p=q+1:Nsys
+                k += 1
+                H0 += couple_coeff[k]*Num[q]*Num[p]
+            end
+        end
+        #Hcouple = xab*(Na*Nb) + xac*(Na*Nc) + xad*(Na*Nd) + xbc*(Nb*Nc) + xbd*(Nb*Nd) + xcd*(Nc*Nd)
+    elseif couple_type == 2
+        k=0
+        for q=1:Nsys
+            for p=q+1:Nsys
+                k += 1
+                H0 += couple_coeff[k] * (Amat[q]*(Amat[p])' + (Amat[q])'*Amat[p])
+            end
+        end
+        #Hcouple = xab*(amat * bdag + adag * bmat) + xac*(amat * cdag + adag * cmat) + xad*(amat * ddag + adag * dmat) + xbc*(bmat * cdag + bdag * cmat) + xbd*(bmat * ddag + bdag * dmat) + xcd*(cmat * ddag + cdag * dmat)
+    end
+    
+    H0 = 2*pi*Array(H0) # Mult by 2*pi to get to rad/ns
+
+    # set up control hamiltonians
+    Hsym_ops  = Vector{Matrix{Float64}}(undef,Nsys)
+    Hanti_ops = Vector{Matrix{Float64}}(undef,Nsys)
+    for q=1:Nsys
+        Hsym_ops[q]  = Amat[q] + (Amat[q])'
+        Hanti_ops[q] = Amat[q] - (Amat[q])'
+    end
+    # Hsym_ops =[ amat+adag, bmat+bdag, cmat+cdag, dmat+ddag ]
+    # Hanti_ops=[ amat-adag, bmat-bdag, cmat-cdag, dmat-ddag ]
+
+    if verbose
+        println("*** ", Nsys, " coupled quantum systems setup ***")
+        println("System Hamiltonian frequencies [GHz]: f01 = ", freq01, " rot. freq = ", rot_freq)
+        println("Anharmonicity = ", anharm)
+        println("Coupling type = ", (couple_type==1) ? "X-Kerr" : "J-C", ". Coupling coeff = ", couple_coeff )
+        println("Number of essential states = ", Ness, " Number of guard states = ", Nguard)
+        println("Hamiltonians are of size ", Ntot, " by ", Ntot)
+    end
+    return H0, Hsym_ops, Hanti_ops
+end
 
 # initial parameter guess
 function init_control(;rand_frac::Float64, maxAmp::Vector{Float64}, D1::Int64, Nfreq::Vector{Int64}, startFile::String = "", seed::Int64 = -1)
@@ -494,17 +581,15 @@ function exists(x::Float64, invec::Vector{Float64}, prox_thres::Float64 = 5e-3)
     return id
 end
   
-function identify_essential_levels(Ness::Vector{Int64}, Nt::Vector{Int64}, msb_order::Bool)
+function identify_essential_levels_old(Ness::Vector{Int64}, Nt::Vector{Int64}, msb_order::Bool)
     # setup mapping between 1-d and 2-d indexing
     @assert(length(Ness) == length(Nt))
     Nosc = length(Nt)
     @assert(Nosc <= 4)
 
     Ntot = prod(Nt)
-    it2i1 = zeros(Int64, Ntot)
-    it2i2 = zeros(Int64, Ntot)
-    it2i3 = zeros(Int64, Ntot)
-    it2i4 = zeros(Int64, Ntot)
+    it2in = zeros(Int64, Ntot, Nosc) # 2nd index corresponds to the n'th digit
+
 
     is_ess = Vector{Bool}(undef, Ntot)
     is_ess .= false # initialize
@@ -515,7 +600,8 @@ function identify_essential_levels(Ness::Vector{Int64}, Nt::Vector{Int64}, msb_o
             itot = 0
             for i1=1:Nt[1]
                 itot += 1
-                it2i1[itot] = i1-1
+                
+                it2in[itot,1] = i1-1
                 if i1 <= Ness[1] 
                     is_ess[itot] = true
                 end
@@ -525,8 +611,9 @@ function identify_essential_levels(Ness::Vector{Int64}, Nt::Vector{Int64}, msb_o
             for i2=1:Nt[2]
                 for i1=1:Nt[1]
                     itot += 1
-                    it2i1[itot] = i1-1
-                    it2i2[itot] = i2-1
+                    
+                    it2in[itot,1] = i1-1
+                    it2in[itot,2] = i2-1
                     if i1 <= Ness[1] && i2 <= Ness[2]
                     is_ess[itot] = true
                     end
@@ -538,9 +625,10 @@ function identify_essential_levels(Ness::Vector{Int64}, Nt::Vector{Int64}, msb_o
                 for i2=1:Nt[2]
                     for i1=1:Nt[1]
                         itot += 1
-                        it2i1[itot] = i1-1
-                        it2i2[itot] = i2-1
-                        it2i3[itot] = i3-1
+                        
+                        it2in[itot,1] = i1-1
+                        it2in[itot,2] = i2-1
+                        it2in[itot,3] = i3-1
                         if i1 <= Ness[1] && i2 <= Ness[2] && i3 <= Ness[3]
                             is_ess[itot] = true
                         end
@@ -554,10 +642,11 @@ function identify_essential_levels(Ness::Vector{Int64}, Nt::Vector{Int64}, msb_o
                     for i2=1:Nt[2]
                         for i1=1:Nt[1]
                             itot += 1
-                            it2i1[itot] = i1-1
-                            it2i2[itot] = i2-1
-                            it2i3[itot] = i3-1
-                            it2i4[itot] = i4-1
+                            
+                            it2in[itot,1] = i1-1
+                            it2in[itot,2] = i2-1
+                            it2in[itot,3] = i3-1
+                            it2in[itot,4] = i4-1
                             if i1 <= Ness[1] && i2 <= Ness[2] && i3 <= Ness[3] && i4 <= Ness[4]
                                 is_ess[itot] = true
                             end
@@ -572,7 +661,8 @@ function identify_essential_levels(Ness::Vector{Int64}, Nt::Vector{Int64}, msb_o
             itot = 0
             for i1=1:Nt[1]
                 itot += 1
-                it2i1[itot] = i1-1
+               
+                it2in[itot,1] = i1-1
                 if i1 <= Ness[1] 
                     is_ess[itot] = true
                 end
@@ -582,8 +672,9 @@ function identify_essential_levels(Ness::Vector{Int64}, Nt::Vector{Int64}, msb_o
             for i1=1:Nt[1]
                 for i2=1:Nt[2]
                     itot += 1
-                    it2i1[itot] = i1-1
-                    it2i2[itot] = i2-1
+                    
+                    it2in[itot,1] = i1-1
+                    it2in[itot,2] = i2-1
                     if i1 <= Ness[1] && i2 <= Ness[2]
                         is_ess[itot] = true
                     end
@@ -595,9 +686,10 @@ function identify_essential_levels(Ness::Vector{Int64}, Nt::Vector{Int64}, msb_o
                 for i2=1:Nt[2]
                     for i3=1:Nt[3]
                         itot += 1
-                        it2i1[itot] = i1-1
-                        it2i2[itot] = i2-1
-                        it2i3[itot] = i3-1
+                        
+                        it2in[itot,1] = i1-1
+                        it2in[itot,2] = i2-1
+                        it2in[itot,3] = i3-1
                         if i1 <= Ness[1] && i2 <= Ness[2] && i3 <= Ness[3]
                             is_ess[itot] = true
                         end
@@ -611,10 +703,11 @@ function identify_essential_levels(Ness::Vector{Int64}, Nt::Vector{Int64}, msb_o
                     for i3=1:Nt[3]
                         for i4=1:Nt[4]
                             itot += 1
-                            it2i1[itot] = i1-1
-                            it2i2[itot] = i2-1
-                            it2i3[itot] = i3-1
-                            it2i4[itot] = i4-1
+                            
+                            it2in[itot,1] = i1-1
+                            it2in[itot,2] = i2-1
+                            it2in[itot,3] = i3-1
+                            it2in[itot,4] = i4-1
                             if i1 <= Ness[1] && i2 <= Ness[2] && i3 <= Ness[3] && i4 <= Ness[4]
                                 is_ess[itot] = true
                             end
@@ -624,15 +717,52 @@ function identify_essential_levels(Ness::Vector{Int64}, Nt::Vector{Int64}, msb_o
             end
         end
     end
-    # println("is_ess = ", is_ess)
-    # println("it2i1= ", it2i1)
-    # println("it2i2= ", it2i2)
-    # println("it2i3= ", it2i3)
-    return is_ess, it2i1, it2i2, it2i3, it2i4
+
+    return is_ess, it2in
+end
+
+function identify_essential_levels_general(Ness::Vector{Int64}, Nt::Vector{Int64}, msb_order::Bool)
+    # setup mapping between 1-d and 2-d indexing
+    @assert(length(Ness) == length(Nt))
+    Nosc = length(Nt)
+
+    Ntot = prod(Nt)
+    it2in = zeros(Int64, Ntot, Nosc) # Translation between the 1-D index 1:Ntot and zero-based multi-dimensional indices, where dim = Nosc
+
+    is_ess = Vector{Bool}(undef, Ntot)
+    is_ess .= false # initialize
+
+    # See bookmark: Julia: Multidimensional indexing
+    if msb_order
+        t = Tuple(1:x for x in Nt) # Make a tuple t = (1:Nt[1], 1:Nt[2], ..., 1:Nt[Nosc])
+    else
+        t = Tuple(1:x for x in reverse(Nt))
+    end
+    R = CartesianIndices(t) # Setup the CartesianIndices for an Nosc-dimensional array with the above size
+    itot = 0
+    if msb_order
+        for ind in R
+            itot += 1
+            for j = 1:Nosc
+                it2in[itot,j] = ind[j] - 1 # MSB ordering is the default for CartesianIndices
+            end
+        end
+    else
+        for ind in R
+            itot += 1
+            ess = true
+            for j = 1:Nosc
+                it2in[itot,Nosc-j+1] = ind[j] - 1 # LSB ordering needs to be reversal
+                ess = ess && ind[j] <= Ness[Nosc-j+1]
+            end
+            is_ess[itot] = ess
+        end
+    end
+
+    return is_ess, it2in
 end
 
 function get_resonances(;Ness::Vector{Int64}, Nguard::Vector{Int64}, Hsys::Matrix{Float64}, Hsym_ops::Vector{Matrix{Float64}}, Hanti_ops::Vector{Matrix{Float64}}, msb_order::Bool = true, cw_amp_thres::Float64, cw_prox_thres::Float64)
-    @assert(length(Ness) <= 4)
     Nosc = length(Hsym_ops)
 
     nrows = size(Hsys,1)
@@ -641,7 +771,17 @@ function get_resonances(;Ness::Vector{Int64}, Nguard::Vector{Int64}, Hsys::Matri
     Nt = Ness + Nguard
     Ntot = prod(Nt)
 
-    is_ess, it2i1, it2i2, it2i3, it2i4 = identify_essential_levels(Ness, Nt, msb_order)
+    #is_ess2, it2in2 = identify_essential_levels_old(Ness, Nt, msb_order)
+    is_ess, it2in = identify_essential_levels_general(Ness, Nt, msb_order)
+
+    # println("Results from identify_essential_levels:")
+    # for j = 1:length(is_ess)
+    #     println("it2in-orig: ", it2in2[j,:], " new: ", it2in[j,:])
+    # end
+    # for j = 1:length(is_ess)
+    #     println("is_ess-orig: ", is_ess2[j], " new: ", is_ess[j])
+    # end
+    #throw("Temporary breakpoint")
 
     # Note: if Hsys is diagonal, then Hsys_evals = diag(Hsys) and Utrans = IdentityMatrix
     Hsys_evals, Utrans = eigen_and_reorder(Hsys)
@@ -679,7 +819,7 @@ function get_resonances(;Ness::Vector{Int64}, Nguard::Vector{Int64}, Hsys::Matri
 
         # identify resonant couplings in 'a+adag'
         println("\nResonances in oscillator # ", q, " Ignoring transitions with ad_coeff <: ", cw_amp_thres)
-        for i in 1:nrows
+        for i in 1:nrows # Hsys is of size nrows x nrows
             for j in 1:i # Only consider transitions from lower to higher levels
                 if abs(Hctrl_ad_trans[i,j]) >= cw_amp_thres
                     # Use only essential level transitions
@@ -692,7 +832,8 @@ function get_resonances(;Ness::Vector{Int64}, Nguard::Vector{Int64}, Hsys::Matri
                         if exists(delta_f, resonances_a, cw_prox_thres) < 0
                             append!(resonances_a, delta_f)
                             append!(speed_a, abs(Hctrl_ad_trans[i,j]))
-                            println(" resonance from (i1 i2 i3 i4) = (", it2i1[j], it2i2[j], it2i3[j], it2i4[j], ") to (i1 i2 i3 i4) = (", it2i1[i], it2i2[i], it2i3[i], it2i4[i], "), Freq = ", delta_f, " = l_", i, " - l_", j, ", ad_coeff=", abs(Hctrl_ad_trans[i,j]))
+                            #println(" resonance from (i1 i2 i3 i4) = (", it2i1[j], it2i2[j], it2i3[j], it2i4[j], ") to (i1 i2 i3 i4) = (", it2i1[i], it2i2[i], it2i3[i], it2i4[i], "), Freq = ", delta_f, " = l_", i, " - l_", j, ", ad_coeff=", abs(Hctrl_ad_trans[i,j]))
+                            println(" resonance from (j-idx) = (", it2in[j,:], ") to (i-idx) = (", it2in[i,:], "), Freq = ", delta_f, " = l_", i, " - l_", j, ", ad_coeff=", abs(Hctrl_ad_trans[i,j]))
                         # else
                         #     println("Info, skipping frequency: ", delta_f, " Too close to previous frequencies")
                         end
@@ -734,7 +875,7 @@ function get_resonances(;Ness::Vector{Int64}, Nguard::Vector{Int64}, Hsys::Matri
     # end
     # println("typeof(Utrans): ", typeof(Utrans))
     println()
-    return om, rate, Utrans
+    return om, rate, Utrans, is_ess
 end
 
 function transformHamiltonians!(H0::Matrix{Float64}, Hsym_ops::Vector{Matrix{Float64}}, Hanti_ops::Vector{Matrix{Float64}}, Utrans::Matrix{Float64})
@@ -893,7 +1034,7 @@ function get_swap_1d_gate(d::Int64 = 2)
         swap_gate[15,8] = 1.0
         swap_gate[16,16] = 1.0
     else
-        @assert false "Only implemented swap1d gates for d={2,3}"
+        @assert false "Only implemented swap1d gates for d={2,3,4}"
     end
     return swap_gate
 end
@@ -953,23 +1094,27 @@ function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float
     maxctrl_radns = 2*pi * maxctrl_MHz * 1e-3 
   
     pdim = length(Ne)
-    @assert pdim <= 4 "Hamiltonian setup only implemented for up to 4 sub-systems"
-    if pdim==1
-      Hsys, Hsym_ops, Hanti_ops = hamiltonians_one_sys(Ness=Ne, Nguard=Ng, freq01=f01, anharm=xi, rot_freq=rot_freq)
-      #    Hsys, Hsym_ops, Hanti_ops, om, rot_freq = setup_free(Ne[1], Ng[1], f[1], xi[1], rfreq)
-    elseif pdim == 2
-      Hsys, Hsym_ops, Hanti_ops = hamiltonians_two_sys(Ness=Ne, Nguard=Ng, freq01=f01, anharm=xi, rot_freq=rot_freq, couple_coeff=couple_coeff, couple_type=couple_type, msb_order=msb_order)
-      # Hsys, Hsym_ops, Hanti_ops, om, rot_freq = setup_twoqubit_free(Ne, Ng, f, xi, couple_coeff, couple_type)
-    elseif pdim == 3
-      Hsys, Hsym_ops, Hanti_ops = hamiltonians_three_sys(Ness=Ne, Nguard=Ng, freq01=f01, anharm=xi, rot_freq=rot_freq, couple_coeff=couple_coeff, couple_type=couple_type, msb_order = msb_order)
-    elseif pdim == 4
-        Hsys, Hsym_ops, Hanti_ops = hamiltonians_four_sys(Ness=Ne, Nguard=Ng, freq01=f01, anharm=xi, rot_freq=rot_freq, couple_coeff=couple_coeff, couple_type=couple_type, msb_order = msb_order)  
-    end
+    # @assert pdim <= 4 "Hamiltonian setup only implemented for up to 4 sub-systems"
+    # if pdim==1
+    #   Hsys, Hsym_ops, Hanti_ops = hamiltonians_one_sys(Ness=Ne, Nguard=Ng, freq01=f01, anharm=xi, rot_freq=rot_freq)
+    #   #    Hsys, Hsym_ops, Hanti_ops, om, rot_freq = setup_free(Ne[1], Ng[1], f[1], xi[1], rfreq)
+    # elseif pdim == 2
+    #   Hsys, Hsym_ops, Hanti_ops = hamiltonians_two_sys(Ness=Ne, Nguard=Ng, freq01=f01, anharm=xi, rot_freq=rot_freq, couple_coeff=couple_coeff, couple_type=couple_type, msb_order=msb_order)
+    #   # Hsys, Hsym_ops, Hanti_ops, om, rot_freq = setup_twoqubit_free(Ne, Ng, f, xi, couple_coeff, couple_type)
+    # elseif pdim == 3
+    #   Hsys, Hsym_ops, Hanti_ops = hamiltonians_three_sys(Ness=Ne, Nguard=Ng, freq01=f01, anharm=xi, rot_freq=rot_freq, couple_coeff=couple_coeff, couple_type=couple_type, msb_order = msb_order)
+    # elseif pdim == 4
+    #     Hsys, Hsym_ops, Hanti_ops = hamiltonians_four_sys(Ness=Ne, Nguard=Ng, freq01=f01, anharm=xi, rot_freq=rot_freq, couple_coeff=couple_coeff, couple_type=couple_type, msb_order = msb_order)  
+    # end
 
-    om, rate, Utrans = get_resonances(Ness=Ne, Nguard=Ng, Hsys=Hsys, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, msb_order=msb_order, cw_amp_thres=cw_amp_thres, cw_prox_thres=cw_prox_thres)
+    # General case
+    Hsys, Hsym_ops, Hanti_ops = hamiltonians(Nsys=pdim, Ness=Ne, Nguard=Ng, freq01=f01, anharm=xi, rot_freq=rot_freq, couple_coeff=couple_coeff, couple_type=couple_type, msb_order = msb_order)  
+
+    om, rate, Utrans, is_ess = get_resonances(Ness=Ne, Nguard=Ng, Hsys=Hsys, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, msb_order=msb_order, cw_amp_thres=cw_amp_thres, cw_prox_thres=cw_prox_thres)
     
     Ness = prod(Ne)
-    Nosc = length(om) # Nosc should equal pdim
+    Nosc = length(om) 
+    @assert(Nosc == pdim) # Nosc must equal pdim
     Nfreq = zeros(Int64,Nosc) # Number of frequencies per control Hamiltonian
     for q=1:Nosc
         Nfreq[q] = length(om[q])
@@ -1046,7 +1191,11 @@ function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float
     end
   
     # Set the initial condition: Basis with guard levels
-    Ubasis = initial_cond(Ne, Ng, msb_order) # Ubasis holds the basis that will be used as initial cond. 
+    # Ubasis2 = initial_cond_old(Ne, Ng, msb_order) # Ubasis holds the basis that will be used as initial cond.
+    Ubasis = initial_cond_general(is_ess, Ne, Ng)
+
+    #println("Testing initial conditions, norm(U - Unew): ", norm(Ubasis-Ubasis2))
+    #throw("Intentionally stopping here")
 
     # NOTE:
     # To impose the target transformation in the eigenbasis, keep the Hamiltonians the same

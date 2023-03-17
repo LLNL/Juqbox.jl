@@ -2651,7 +2651,7 @@ Setup a basis of canonical unit vectors that span the essential Hilbert space, s
 - `Ng:: Array{Int64}`: Array holding the number of guard levels in each system
 - `msb_order:: Bool`: Most Significant Bit (MSB) ordering: true
 """
-function initial_cond(Ne::Vector{Int64}, Ng::Vector{Int64}, msb_order::Bool = true)
+function initial_cond_old(Ne::Vector{Int64}, Ng::Vector{Int64}, msb_order::Bool = true)
     Nt = Ne + Ng
     Ntot = prod(Nt)
     @assert(length(Ne) == length(Ng))
@@ -2778,5 +2778,39 @@ function initial_cond(Ne::Vector{Int64}, Ng::Vector{Int64}, msb_order::Bool = tr
             end # if
         end
     end
+    return U0
+end
+
+# setup the initial conditions
+"""
+    u_init = initial_cond_general(is_ess, Ne, Ng)
+
+Setup a basis of canonical unit vectors that span the essential Hilbert space, setting all guard levels to zero
+ 
+# Arguments
+- `is_ess:: Vector{Bool}`: Vector is_ess[j]=true if j corresponds to an essential level
+- `Ne:: Array{Int64}`: Array holding the number of essential levels in each system
+- `Ng:: Array{Int64}`: Array holding the number of guard levels in each system
+"""
+function initial_cond_general(is_ess::Vector{Bool}, Ne::Vector{Int64}, Ng::Vector{Int64})
+    Nt = Ne + Ng
+    Ntot = prod(Nt)
+    @assert(length(Ne) == length(Ng))
+    NgTot = sum(Ng)
+    N = prod(Ne)
+    Ident = Matrix{Float64}(I, Ntot, Ntot)
+    U0 = Ident[1:Ntot,1:N] # initial guess
+
+    #adjust initial guess if there are ghost points
+    if NgTot > 0
+        col = 0
+        for j = 1:Ntot
+            if is_ess[j]
+                col += 1
+                U0[:,col] = Ident[:,j]
+            end
+        end
+    end
+
     return U0
 end
