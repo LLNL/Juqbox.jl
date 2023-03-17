@@ -721,7 +721,7 @@ function identify_essential_levels_old(Ness::Vector{Int64}, Nt::Vector{Int64}, m
     return is_ess, it2in
 end
 
-function identify_essential_levels_general(Ness::Vector{Int64}, Nt::Vector{Int64}, msb_order::Bool)
+function identify_essential_levels(Ness::Vector{Int64}, Nt::Vector{Int64}, msb_order::Bool)
     # setup mapping between 1-d and 2-d indexing
     @assert(length(Ness) == length(Nt))
     Nosc = length(Nt)
@@ -762,7 +762,7 @@ function identify_essential_levels_general(Ness::Vector{Int64}, Nt::Vector{Int64
     return is_ess, it2in
 end
 
-function get_resonances(;Ness::Vector{Int64}, Nguard::Vector{Int64}, Hsys::Matrix{Float64}, Hsym_ops::Vector{Matrix{Float64}}, Hanti_ops::Vector{Matrix{Float64}}, msb_order::Bool = true, cw_amp_thres::Float64, cw_prox_thres::Float64)
+function get_resonances(is_ess::Vector{Bool}, it2in::Matrix{Int64};Ness::Vector{Int64}, Nguard::Vector{Int64}, Hsys::Matrix{Float64}, Hsym_ops::Vector{Matrix{Float64}}, Hanti_ops::Vector{Matrix{Float64}}, msb_order::Bool = true, cw_amp_thres::Float64, cw_prox_thres::Float64)
     Nosc = length(Hsym_ops)
 
     nrows = size(Hsys,1)
@@ -771,13 +771,7 @@ function get_resonances(;Ness::Vector{Int64}, Nguard::Vector{Int64}, Hsys::Matri
     Nt = Ness + Nguard
     Ntot = prod(Nt)
 
-    #is_ess2, it2in2 = identify_essential_levels_old(Ness, Nt, msb_order)
-    is_ess, it2in = identify_essential_levels_general(Ness, Nt, msb_order)
-
-    # println("Results from identify_essential_levels:")
-    # for j = 1:length(is_ess)
-    #     println("it2in-orig: ", it2in2[j,:], " new: ", it2in[j,:])
-    # end
+    # is_ess, it2in = identify_essential_levels_old(Ness, Nt, msb_order)
     # for j = 1:length(is_ess)
     #     println("is_ess-orig: ", is_ess2[j], " new: ", is_ess[j])
     # end
@@ -875,7 +869,7 @@ function get_resonances(;Ness::Vector{Int64}, Nguard::Vector{Int64}, Hsys::Matri
     # end
     # println("typeof(Utrans): ", typeof(Utrans))
     println()
-    return om, rate, Utrans, is_ess
+    return om, rate, Utrans
 end
 
 function transformHamiltonians!(H0::Matrix{Float64}, Hsym_ops::Vector{Matrix{Float64}}, Hanti_ops::Vector{Matrix{Float64}}, Utrans::Matrix{Float64})
@@ -896,6 +890,356 @@ function transformHamiltonians!(H0::Matrix{Float64}, Hsym_ops::Vector{Matrix{Flo
         Hsym_ops[q] .= Utrans'*(Hsym_ops[q])*Utrans  # Here the . is not required, but added for consistency
         Hanti_ops[q] .= Utrans'*(Hanti_ops[q])*Utrans
     end
+end
+
+"""
+    wmat = wmatsetup_old(Ne, Ng[, msb_order])
+
+Build the default positive semi-definite weighting matrix W to calculate the 
+leakage into higher energy forbidden states
+ 
+# Arguments
+- `Ne::Array{Int64,1}`: Number of essential energy levels for each subsystem
+- `Ng::Array{Int64,1}`: Number of guard energy levels for each subsystem
+- `msb_order::Bool`: Ordering of the subsystems within the state vector (default is true)
+"""
+function wmatsetup_old(Ne::Array{Int64,1}, Ng::Array{Int64,1}, msb_order::Bool = true)
+
+Nt = Ne + Ng
+Ndim = length(Ne)
+@assert(Ndim == 1 || Ndim == 2 || Ndim ==3 || Ndim ==4)
+
+Ntot = prod(Nt)
+w = zeros(Ntot)
+coeff = 1.0
+
+# reset temp variables
+temp = zeros(length(Ne))
+
+if sum(Ng) > 0
+    nForb = 0 # number of states with the highest index in at least one dimension
+    
+    if msb_order # Classical Juqbox ordering
+        if Ndim == 1
+            fact = 0.1
+            for q in 0:Ng[1]-1
+                w[Ntot-q] = fact^q
+            end
+            nForb = 1
+            coeff = 1.0
+        elseif Ndim == 2
+            fact = 1e-3 # for more emphasis on the "forbidden" states. Old value: 0.1
+            q = 0 # element in the array 'w'
+
+            for i2 = 1:Nt[2]
+                for i1 = 1:Nt[1]
+                    q += 1
+                    # initialize temp variables
+                    temp[1] = 0.0
+                    temp[2] = 0.0
+                    if i1 <= Ne[1] && i2 <= Ne[2]
+                        w[q] = 0.0
+                    else
+                        # determine and assign the largest penalty
+                        if i1 > Ne[1]   #only included if at a guard level
+                            temp[1] = fact^(Nt[1]-i1)
+                        end
+                        if i2 > Ne[2]   #only included if at a guard level
+                            temp[2] = fact^(Nt[2]-i2)
+                        end
+                        if i1 == Nt[1] || i2 == Nt[2]
+                            nForb += 1 
+                        end
+
+                        forbFact=1.0
+                        w[q] = forbFact*maximum(temp)
+        
+                    end # if guard level
+                end # for i1
+            end # for i2
+
+            # normalize by the number of entries with w=1
+            coeff = 1.0/nForb # was 1/nForb
+        elseif Ndim == 3
+            fact = 1e-3 #  0.1 # for more emphasis on the "forbidden" states. Old value: 0.1
+            nForb = 0 # number of states with the highest index in at least one dimension
+            q = 0
+            for i3 = 1:Nt[3]
+                for i2 = 1:Nt[2]
+                    for i1 = 1:Nt[1]
+                        q += 1
+                        # initialize temp variables
+                        temp1 = 0.0
+                        temp2 = 0.0
+                        temp3 = 0.0
+                        if i1 <= Ne[1] && i2 <= Ne[2] && i3 <= Ne[3]
+                            w[q] = 0.0
+                        else
+                            # determine and assign the largest penalty
+                            if i1 > Ne[1]   #only included if at a guard level
+                                temp1 = fact^(Nt[1]-i1)
+                            end
+                            if i2 > Ne[2]   #only included if at a guard level
+                                temp2 = fact^(Nt[2]-i2)
+                            end
+                            if i3 > Ne[3]   #only included if at a guard level
+                                temp3 = fact^(Nt[3]-i3)
+                            end
+
+                            forbFact=1.0
+                            w[q] = forbFact*max(temp1, temp2, temp3)
+
+                            if i1 == Nt[1] || i2 == Nt[2] || i3 == Nt[3]
+                                nForb += 1
+                            end
+
+                        end # if
+                    end # for
+                end # for
+            end # for
+
+            # normalize by the number of entries with w=1
+            coeff = 10.0/nForb # was 1/nForb
+            # end Ndim == 3
+        elseif Ndim == 4
+            fact = 1e-3 #  0.1 # for more emphasis on the "forbidden" states. Old value: 0.1
+            nForb = 0 # number of states with the highest index in at least one dimension
+            q = 0
+            for i4 = 1:Nt[4]
+                for i3 = 1:Nt[3]
+                    for i2 = 1:Nt[2]
+                        for i1 = 1:Nt[1]
+                            q += 1
+                            # initialize temp variables
+                            temp1 = 0.0
+                            temp2 = 0.0
+                            temp3 = 0.0
+                            temp4 = 0.0
+                            if i1 <= Ne[1] && i2 <= Ne[2] && i3 <= Ne[3] && i4 <= Ne[4]
+                                w[q] = 0.0
+                            else
+                                # determine and assign the largest penalty
+                                if i1 > Ne[1]   #only included if at a guard level
+                                    temp1 = fact^(Nt[1]-i1)
+                                end
+                                if i2 > Ne[2]   #only included if at a guard level
+                                    temp2 = fact^(Nt[2]-i2)
+                                end
+                                if i3 > Ne[3]   #only included if at a guard level
+                                    temp3 = fact^(Nt[3]-i3)
+                                end
+                                if i4 > Ne[4]   #only included if at a guard level
+                                    temp4 = fact^(Nt[4]-i4)
+                                end
+
+                                forbFact=1.0
+                                w[q] = forbFact*max(temp1, temp2, temp3, temp4)
+
+                                if i1 == Nt[1] || i2 == Nt[2] || i3 == Nt[3] || i4 == Nt[4]
+                                    nForb += 1
+                                end
+
+                            end # if
+                        end # for i1
+                    end # for i2
+                end # for i3
+            end # for i4
+
+            # normalize by the number of entries with w=1
+            coeff = 10.0/nForb # was 1/nForb
+        end # if ndim == 4
+    else # msb_order = false
+        if Ndim == 1
+            fact = 0.1
+            for q in 0:Ng[1]-1
+                w[Ntot-q] = fact^q
+            end
+            nForb = 1
+            coeff = 1.0
+        elseif Ndim == 2
+            fact = 1e-3 # for more emphasis on the "forbidden" states. Old value: 0.1
+            q = 0 # element in the array 'w'
+
+            for i1 = 1:Nt[1]
+                for i2 = 1:Nt[2]
+                    q += 1
+                    # initialize temp variables
+                    temp[1] = 0.0
+                    temp[2] = 0.0
+                    if i1 <= Ne[1] && i2 <= Ne[2]
+                        w[q] = 0.0
+                    else
+                        # determine and assign the largest penalty
+                        if i1 > Ne[1]   #only included if at a guard level
+                            temp[1] = fact^(Nt[1]-i1)
+                        end
+                        if i2 > Ne[2]   #only included if at a guard level
+                            temp[2] = fact^(Nt[2]-i2)
+                        end
+                        if i1 == Nt[1] || i2 == Nt[2]
+                            nForb += 1 
+                        end
+
+                        forbFact=1.0
+                        w[q] = forbFact*maximum(temp)
+        
+                    end # if guard level
+                end # for i1
+            end # for i2
+
+            # normalize by the number of entries with w=1
+            coeff = 1.0/nForb # was 1/nForb
+            # end Ndim == 2
+        elseif Ndim == 3
+            fact = 1e-3 #  0.1 # for more emphasis on the "forbidden" states. Old value: 0.1
+            nForb = 0 # number of states with the highest index in at least one dimension
+            q = 0
+
+            for i1 = 1:Nt[1]
+                for i2 = 1:Nt[2]
+                    for i3 = 1:Nt[3]
+                        q += 1
+                        # initialize temp variables
+                        temp1 = 0.0
+                        temp2 = 0.0
+                        temp3 = 0.0
+                        if i1 <= Ne[1] && i2 <= Ne[2] && i3 <= Ne[3]
+                            w[q] = 0.0
+                        else
+                            # determine and assign the largest penalty
+                            if i1 > Ne[1]   #only included if at a guard level
+                                temp1 = fact^(Nt[1]-i1)
+                            end
+                            if i2 > Ne[2]   #only included if at a guard level
+                                temp2 = fact^(Nt[2]-i2)
+                            end
+                            if i3 > Ne[3]   #only included if at a guard level
+                                temp3 = fact^(Nt[3]-i3)
+                            end
+
+                            forbFact=1.0
+                            w[q] = forbFact*max(temp1, temp2, temp3)
+
+                            if i1 == Nt[1] || i2 == Nt[2] || i3 == Nt[3]
+                                nForb += 1
+                            end
+
+                        end # if
+                    end # for
+                end # for
+            end # for
+
+            # normalize by the number of entries with w=1
+            coeff = 10.0/nForb # was 1/nForb
+            # end Ndim == 3
+        elseif Ndim == 4
+            fact = 1e-3 #  0.1 # for more emphasis on the "forbidden" states. Old value: 0.1
+            nForb = 0 # number of states with the highest index in at least one dimension
+            q = 0
+            for i1 = 1:Nt[1]
+                for i2 = 1:Nt[2]
+                    for i3 = 1:Nt[3]
+                        for i4 = 1:Nt[4]            
+                            q += 1
+                            # initialize temp variables
+                            temp1 = 0.0
+                            temp2 = 0.0
+                            temp3 = 0.0
+                            temp4 = 0.0
+                            if i1 <= Ne[1] && i2 <= Ne[2] && i3 <= Ne[3] && i4 <= Ne[4]
+                                w[q] = 0.0
+                            else
+                                # determine and assign the largest penalty
+                                if i1 > Ne[1]   #only included if at a guard level
+                                    temp1 = fact^(Nt[1]-i1)
+                                end
+                                if i2 > Ne[2]   #only included if at a guard level
+                                    temp2 = fact^(Nt[2]-i2)
+                                end
+                                if i3 > Ne[3]   #only included if at a guard level
+                                    temp3 = fact^(Nt[3]-i3)
+                                end
+                                if i4 > Ne[4]   #only included if at a guard level
+                                    temp4 = fact^(Nt[4]-i4)
+                                end
+
+                                forbFact=1.0
+                                w[q] = forbFact*max(temp1, temp2, temp3, temp4)
+
+                                if i1 == Nt[1] || i2 == Nt[2] || i3 == Nt[3] || i4 == Nt[4]
+                                    nForb += 1
+                                end
+
+                            end # if
+                        end # for i1
+                    end # for i2
+                end # for i3
+            end # for i4
+
+            # normalize by the number of entries with w=1
+            coeff = 10.0/nForb # was 1/nForb
+        end # if ndim == 4
+    end # lsb ordering
+
+    # println("wmatsetup: Number of forbidden states = ", nForb, " scaling coeff = ", coeff)
+end # if sum(Ng) > 0
+
+wmat = coeff * Diagonal(w) # turn vector into diagonal matrix
+return wmat
+end
+
+function wmatsetup(is_ess::Vector{Bool}, it2in::Matrix{Int64}, Ne::Vector{Int64}, Ng::Vector{Int64})
+
+    @assert(length(Ne) == size(it2in,2))
+    Ndim = length(Ne)
+    Ntot = length(is_ess)
+    w = zeros(Ntot)
+    Nt = Ne + Ng # total # of levels for each dimension
+
+    coeff = 1.0
+
+    if sum(Ng) > 0
+        nForb = 0 # number of states with the highest index in at least one dimension
+        temp = zeros(Ndim) # temp variable
+
+        # Rather ad-hoc to conform with previous implementation
+        if Ndim == 1
+            bfact = 0.1 
+        else
+            bfact = 1e-3 
+        end
+        forbFact = 1.0
+
+        # Re-use the indexing info from is_ess and it2in
+        for q = 1:Ntot
+            if !is_ess[q]
+                temp[:] .= 0.0
+                is_forb = false
+                for k=1:Ndim
+                    ik = it2in[q,k] + 1 # it2in is in [0, Nt[k]-1]
+                    if ik > Ne[k]
+                        temp[k] = bfact^(Nt[k] - ik)
+                    end
+                    is_forb = is_forb || (ik == Nt[k]) 
+                end
+                if is_forb
+                    nForb += 1
+                end
+                w[q] = forbFact*maximum(temp)
+            end
+        end
+        
+        if Ndim <= 2
+            coeff = 1.0/nForb # Normalize with respect to the totl number of forbidden levels
+        else
+            coeff = 10.0/nForb
+        end
+                
+        # println("wmatsetup: Number of forbidden states = ", nForb, " scaling coeff = ", coeff)
+    end # if sum(Ng) > 0
+
+    wmat = coeff * Diagonal(w) # turn vector into diagonal matrix
+    return wmat
 end
 
 function get_H4_gate()
@@ -1110,7 +1454,15 @@ function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float
     # General case
     Hsys, Hsym_ops, Hanti_ops = hamiltonians(Nsys=pdim, Ness=Ne, Nguard=Ng, freq01=f01, anharm=xi, rot_freq=rot_freq, couple_coeff=couple_coeff, couple_type=couple_type, msb_order = msb_order)  
 
-    om, rate, Utrans, is_ess = get_resonances(Ness=Ne, Nguard=Ng, Hsys=Hsys, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, msb_order=msb_order, cw_amp_thres=cw_amp_thres, cw_prox_thres=cw_prox_thres)
+    is_ess, it2in = identify_essential_levels(Ne, Ne+Ng, msb_order)
+
+    println("Results from identify_essential_levels:")
+    for j = 1:length(is_ess)
+        println("it2in: ", it2in[j,:], " is_ess: ", is_ess[j])
+    end
+
+
+    om, rate, Utrans = get_resonances(is_ess, it2in, Ness=Ne, Nguard=Ng, Hsys=Hsys, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, msb_order=msb_order, cw_amp_thres=cw_amp_thres, cw_prox_thres=cw_prox_thres)
     
     Ness = prod(Ne)
     Nosc = length(om) 
@@ -1227,12 +1579,21 @@ function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float
     # create a linear solver object
     linear_solver = Juqbox.lsolver_object(solver=Juqbox.JACOBI_SOLVER, max_iter=100, tol=1e-12, nrhs=prod(Ne))
   
+    # create diagonal W-matrix with weights for suppressing leakage
+    wmatScale = 1.0
+    #w_diag_mat = wmatScale * wmatsetup_old(Ne, Ng, msb_order)
+    w_diag_mat = wmatsetup(is_ess, it2in, Ne, Ng)
+
+    # println("norm(wmat1 - wmat2): ", norm(w_diag_mat-w_diag_2))
+    # println("w_diag_1: ", diag(w_diag_mat))
+    # println("w_diag_2: ", diag(w_diag_2))
+    # println("differen: ", diag(w_diag_mat-w_diag_2))
 
     # Set up parameter struct using the free evolution target
     if useLeakIneq
-      params = Juqbox.objparams(Ne, Ng, T, nsteps, Uinit=Ubasis, Utarget=Utarget, Cfreq=om, Rfreq=rot_freq, Hconst=Hsys, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, linear_solver=linear_solver, objFuncType=3, leak_ubound=leakThreshold, nCoeff=nCoeff, msb_order=msb_order)
+      params = Juqbox.objparams(Ne, Ng, T, nsteps, Uinit=Ubasis, Utarget=Utarget, Cfreq=om, Rfreq=rot_freq, Hconst=Hsys, w_diag_mat=w_diag_mat, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, linear_solver=linear_solver, objFuncType=3, leak_ubound=leakThreshold, nCoeff=nCoeff, msb_order=msb_order)
     else
-      params = Juqbox.objparams(Ne, Ng, T, nsteps, Uinit=Ubasis, Utarget=Utarget, Cfreq=om, Rfreq=rot_freq, Hconst=Hsys, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, linear_solver=linear_solver, nCoeff=nCoeff, freq01=f01, self_kerr=xi, couple_coeff=couple_coeff, couple_type=couple_type, msb_order=msb_order, zeroCtrlBC=zeroCtrlBC)
+      params = Juqbox.objparams(Ne, Ng, T, nsteps, Uinit=Ubasis, Utarget=Utarget, Cfreq=om, Rfreq=rot_freq, Hconst=Hsys, w_diag_mat=w_diag_mat, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, linear_solver=linear_solver, nCoeff=nCoeff, freq01=f01, self_kerr=xi, couple_coeff=couple_coeff, couple_type=couple_type, msb_order=msb_order, zeroCtrlBC=zeroCtrlBC)
     end
   
     println("*** Settings ***")
