@@ -501,45 +501,169 @@ function control_bounds(params::objparams, maxAmp::Vector{Float64})
 end
 
 
-function eigen_and_reorder(H0::Union{Matrix{ComplexF64},Matrix{Float64}})
+function eigen_and_reorder(H0::Union{Matrix{ComplexF64},Matrix{Float64}}, is_ess::Vector{Bool})
     H0_eigen = eigen(H0)
     Ntot = size(H0_eigen.vectors,1)
     @assert(size(H0_eigen.vectors,2) == Ntot) #only square matrices
 
     # test
-    # Vmat = H0_eigen.vectors
-    # H0diag = Vmat' * H0 * Vmat
-    # println("Eigenvectors of H0:")
-    # for i in 1:Ntot
-    #     for j in 1:Ntot
-    #         @printf("%+6.2e, ", Vmat[i,j])
-    #     end
-    #     @printf("\n")
-    # end
-    # println("H0diag = Vmat' * H0 * Vmat:")
-    # for i in 1:Ntot
-    #     for j in 1:Ntot
-    #         @printf("%+6.2e, ", H0diag[i,j])
-    #     end
-    #     @printf("\n")
-    # end
-    # end test
+    # println("H0 eigenvalues:", H0_eigen.values)
 
     # look for the largest element in each column
+    # What if 2 elements have the same magnitude?
     maxrow = zeros(Int64, Ntot)
     for j in 1:Ntot
         maxrow[j] = argmax(abs.(H0_eigen.vectors[:,j]));
     end
     #println("maxrow: ", maxrow)
+    #println()
+    # pl1 = histogram(maxrow,bins=1:Ntot+1,bar_width=0.25, leg=:none)
 
-    # find inverse of maxrow
-    perm = zeros(Int64, Ntot) 
-    for j in 1:Ntot
-        perm[j] = argmin(abs.(maxrow .- j))
+    # loop over all columns and check maxrow for duplicates
+    println()
+    Ndup = 0 
+    for j = 1:Ntot-1 
+        for k = j+1:Ntot
+            if maxrow[j] == maxrow[k]
+                Ndup += 1
+                #println("Warning: detected identical maxrow = ", maxrow[j], " in columns j = ", j, " and k = ", k, " is_ess = (", is_ess[j], is_ess[k], ")")
+            end
+        end
     end
-    #println("perm: ", perm)
 
-    Utrans = H0_eigen.vectors[:,perm[:]]
+    if Ndup > 0
+        println()
+        println("eigen_and_reorder: Found ", Ndup, " duplicate maxrow entries, attempting a correction of maxrow")
+        println()
+        col_pair = zeros(Int64, Ndup, 2)
+        bad_maxrow = zeros(Int64, Ndup)
+        ip = 0
+        for j = 1:Ntot-1 # loop over all columns and record duplicate columns in maxrow
+            for k = j+1:Ntot
+                if maxrow[j] == maxrow[k]
+                    ip += 1
+                    bad_maxrow[ip] = maxrow[j]
+                    col_pair[ip,1] = j
+                    col_pair[ip,2] = k
+                end
+            end
+        end
+
+        println("Offending column pairs:")
+        for q=1:Ndup
+            println("maxrow = ", bad_maxrow[q], " column_pair: ", col_pair[q,:])
+        end
+        println()
+
+        # count missing entries in maxrow
+        Nzero = 0
+        missing_maxrow = Int64[]
+        for j = 1:Ntot
+            nEach = 0
+            for k =1:Ntot
+                if maxrow[k] == j
+                    nEach += 1
+                end
+            end
+            if nEach == 0
+                Nzero += 1
+                println("Zero columns have maxrow index = ", j)
+                push!(missing_maxrow, j)
+            end
+        end
+        println()
+
+        # helper function
+        function find_match_rc(row_order::Vector{Int64}, missing_maxrow::Vector{Int64})
+            println("row_order: ", row_order)
+            println("missing_maxrow:", missing_maxrow)
+            row1 = 0
+            for r in row_order
+                if r in missing_maxrow
+                    # which position in missing_maxrow ?
+                    imr = argmin(abs.(missing_maxrow[:] .- r))
+                    row1 = r
+                    println("found match for row1 = ", row1)
+                    missing_maxrow[imr] = 0; # clear this item from the vector
+                    return row1
+                end
+            end
+            return row1
+        end
+
+        maxRow = 4 # consider this many of the largest elements in each row
+        for q=1:Ndup
+            # find the 2 largest entries in row = maxrow[q]
+            col_order = sortperm(abs.(H0_eigen.vectors[bad_maxrow[q],:]),rev=true)
+            println("q = ", q, " bad_maxrow[q] = ", bad_maxrow[q], " emat[col_order[1:2]] = ", abs.(H0_eigen.vectors[bad_maxrow[q], col_order[1:2]]), " col_order[1:2] = ", col_order[1:2])
+            # find a matching column
+            row1 = 0
+            col1 = 0
+            for c in col_order[1:2]
+                row_order = sortperm(abs.(H0_eigen.vectors[:, c]),rev=true)
+                println("col = ", c, " emat[row_order[1:maxRow]] = ", abs.(H0_eigen.vectors[row_order[1:maxRow], c]), " row_order[1:maxRow] = ", row_order[1:maxRow])
+                row1 = find_match_rc(row_order[1:maxRow], missing_maxrow);
+                col1 = c
+                if row1 > 0 
+                    break;
+                end
+            end
+            # update maxrow for column = col1 to be row1
+            if col1 > 0 && row1 > 0
+                println("Assigning maxrow[", col1, "] = ", row1)
+                println()
+                maxrow[col1] = row1
+            else
+                println("Warning: q = ", q, " col = ", col1, " row = ", row1, " Unable to find matching entry in missing_row")
+            end
+        end
+
+        # count entries in maxrow
+        Nzero = 0
+        Nmulti = 0
+        for j = 1:Ntot
+            nEach = 0
+            for k =1:Ntot
+                if maxrow[k] == j
+                    nEach += 1
+                end
+            end
+            if nEach == 0
+                Nzero += 1
+                println("Zero columns have maxrow index = ", j)
+            elseif nEach >=2
+                Nmulti += 1
+                println(nEach, " columns have maxrow index = ", j)
+            end
+        end
+
+        if Nzero > 0 && Nmulti > 0
+            throw("eigen_and_reorder: Unsuccessful correction of maxrow")
+        else
+            println()
+            println("eigen_and_reorder: Successful correction of maxrow")
+            println()
+        end
+
+        # # look at row j=24
+        # j=36
+        # pl1 = scatter(abs.(H0_eigen.vectors[j,21:40]), lab="Row=36, col=(21:40)")
+        # # columns 25 and 26
+        # k=25
+        # scatter!(abs.(H0_eigen.vectors[21:40,k]), lab="Row=(21:40), col=25")
+        # k=26
+        # scatter!(abs.(H0_eigen.vectors[21:40,k]), lab="Row=(21:40), col=26")
+
+        # pl1 = scatter(sort(maxrow),lab="sort(maxrow)",leg=:top)
+        # pl1 = histogram(maxrow, bins=1:Ntot+1, bar_width=0.25, leg=:none)
+        # display(pl1)
+
+    end # Ndup > 0
+
+    # get the permutation vector
+    s_perm = sortperm(maxrow)
+
+    Utrans = H0_eigen.vectors[:,s_perm[:]]
     # make sure all diagonal elements in Utrans are positive
     for j in 1:Ntot
         if Utrans[j,j]<0.0
@@ -567,7 +691,7 @@ function eigen_and_reorder(H0::Union{Matrix{ComplexF64},Matrix{Float64}})
         throw(error("Something went wrong with the diagonalization"))
     end
 
-    return H0_eigen.values[perm[:]], Utrans
+    return H0_eigen.values[s_perm[:]], Utrans
 end
 
 function exists(x::Float64, invec::Vector{Float64}, prox_thres::Float64 = 5e-3)
@@ -579,146 +703,6 @@ function exists(x::Float64, invec::Vector{Float64}, prox_thres::Float64 = 5e-3)
         end
     end
     return id
-end
-  
-function identify_essential_levels_old(Ness::Vector{Int64}, Nt::Vector{Int64}, msb_order::Bool)
-    # setup mapping between 1-d and 2-d indexing
-    @assert(length(Ness) == length(Nt))
-    Nosc = length(Nt)
-    @assert(Nosc <= 4)
-
-    Ntot = prod(Nt)
-    it2in = zeros(Int64, Ntot, Nosc) # 2nd index corresponds to the n'th digit
-
-
-    is_ess = Vector{Bool}(undef, Ntot)
-    is_ess .= false # initialize
-
-    if msb_order # classical Juqbox ordering
-
-        if Nosc == 1
-            itot = 0
-            for i1=1:Nt[1]
-                itot += 1
-                
-                it2in[itot,1] = i1-1
-                if i1 <= Ness[1] 
-                    is_ess[itot] = true
-                end
-            end
-        elseif Nosc == 2
-            itot = 0
-            for i2=1:Nt[2]
-                for i1=1:Nt[1]
-                    itot += 1
-                    
-                    it2in[itot,1] = i1-1
-                    it2in[itot,2] = i2-1
-                    if i1 <= Ness[1] && i2 <= Ness[2]
-                    is_ess[itot] = true
-                    end
-                end
-            end
-        elseif Nosc == 3
-            itot = 0
-            for i3=1:Nt[3]
-                for i2=1:Nt[2]
-                    for i1=1:Nt[1]
-                        itot += 1
-                        
-                        it2in[itot,1] = i1-1
-                        it2in[itot,2] = i2-1
-                        it2in[itot,3] = i3-1
-                        if i1 <= Ness[1] && i2 <= Ness[2] && i3 <= Ness[3]
-                            is_ess[itot] = true
-                        end
-                    end
-                end
-            end
-        elseif Nosc == 4
-            itot = 0
-            for i4=1:Nt[4]
-                for i3=1:Nt[3]
-                    for i2=1:Nt[2]
-                        for i1=1:Nt[1]
-                            itot += 1
-                            
-                            it2in[itot,1] = i1-1
-                            it2in[itot,2] = i2-1
-                            it2in[itot,3] = i3-1
-                            it2in[itot,4] = i4-1
-                            if i1 <= Ness[1] && i2 <= Ness[2] && i3 <= Ness[3] && i4 <= Ness[4]
-                                is_ess[itot] = true
-                            end
-                        end
-                    end
-                end
-            end
-        end #end MSB ordering
-    else 
-        # LSB ordering
-        if Nosc == 1
-            itot = 0
-            for i1=1:Nt[1]
-                itot += 1
-               
-                it2in[itot,1] = i1-1
-                if i1 <= Ness[1] 
-                    is_ess[itot] = true
-                end
-            end
-        elseif Nosc == 2
-            itot = 0
-            for i1=1:Nt[1]
-                for i2=1:Nt[2]
-                    itot += 1
-                    
-                    it2in[itot,1] = i1-1
-                    it2in[itot,2] = i2-1
-                    if i1 <= Ness[1] && i2 <= Ness[2]
-                        is_ess[itot] = true
-                    end
-                end
-            end
-        elseif Nosc == 3
-            itot = 0
-            for i1=1:Nt[1]
-                for i2=1:Nt[2]
-                    for i3=1:Nt[3]
-                        itot += 1
-                        
-                        it2in[itot,1] = i1-1
-                        it2in[itot,2] = i2-1
-                        it2in[itot,3] = i3-1
-                        if i1 <= Ness[1] && i2 <= Ness[2] && i3 <= Ness[3]
-                            is_ess[itot] = true
-                        end
-                    end
-                end
-            end
-        elseif Nosc == 4
-            itot = 0
-            for i1=1:Nt[1]
-                for i2=1:Nt[2]
-                    for i3=1:Nt[3]
-                        for i4=1:Nt[4]
-                            itot += 1
-                            
-                            it2in[itot,1] = i1-1
-                            it2in[itot,2] = i2-1
-                            it2in[itot,3] = i3-1
-                            it2in[itot,4] = i4-1
-                            if i1 <= Ness[1] && i2 <= Ness[2] && i3 <= Ness[3] && i4 <= Ness[4]
-                                is_ess[itot] = true
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    return is_ess, it2in
 end
 
 function identify_essential_levels(Ness::Vector{Int64}, Nt::Vector{Int64}, msb_order::Bool)
@@ -762,7 +746,7 @@ function identify_essential_levels(Ness::Vector{Int64}, Nt::Vector{Int64}, msb_o
     return is_ess, it2in
 end
 
-function get_resonances(is_ess::Vector{Bool}, it2in::Matrix{Int64};Ness::Vector{Int64}, Nguard::Vector{Int64}, Hsys::Matrix{Float64}, Hsym_ops::Vector{Matrix{Float64}}, Hanti_ops::Vector{Matrix{Float64}}, msb_order::Bool = true, cw_amp_thres::Float64, cw_prox_thres::Float64)
+function get_resonances(is_ess::Vector{Bool}, it2in::Matrix{Int64};Ness::Vector{Int64}, Nguard::Vector{Int64}, Hsys::Matrix{Float64}, Hsym_ops::Vector{Matrix{Float64}}, Hanti_ops::Vector{Matrix{Float64}}, msb_order::Bool = true, cw_amp_thres::Float64, cw_prox_thres::Float64, rot_freq::Vector{Float64})
     Nosc = length(Hsym_ops)
 
     nrows = size(Hsys,1)
@@ -778,7 +762,7 @@ function get_resonances(is_ess::Vector{Bool}, it2in::Matrix{Int64};Ness::Vector{
     #throw("Temporary breakpoint")
 
     # Note: if Hsys is diagonal, then Hsys_evals = diag(Hsys) and Utrans = IdentityMatrix
-    Hsys_evals, Utrans = eigen_and_reorder(Hsys)
+    Hsys_evals, Utrans = eigen_and_reorder(Hsys, is_ess)
 
     # H0diag = Utrans' * Hsys * Utrans
     # println("get_resonances: H0diag = Utrans' * Hsys * Utrans:")
@@ -827,7 +811,7 @@ function get_resonances(is_ess::Vector{Bool}, it2in::Matrix{Int64};Ness::Vector{
                             append!(resonances_a, delta_f)
                             append!(speed_a, abs(Hctrl_ad_trans[i,j]))
                             #println(" resonance from (i1 i2 i3 i4) = (", it2i1[j], it2i2[j], it2i3[j], it2i4[j], ") to (i1 i2 i3 i4) = (", it2i1[i], it2i2[i], it2i3[i], it2i4[i], "), Freq = ", delta_f, " = l_", i, " - l_", j, ", ad_coeff=", abs(Hctrl_ad_trans[i,j]))
-                            println(" resonance from (j-idx) = (", it2in[j,:], ") to (i-idx) = (", it2in[i,:], "), Freq = ", delta_f, " = l_", i, " - l_", j, ", ad_coeff=", abs(Hctrl_ad_trans[i,j]))
+                            println(" resonance from (j-idx) = (", it2in[j,:], ") to (i-idx) = (", it2in[i,:], "), lab-freq = ", rot_freq[q] + delta_f, " = l_", i, " - l_", j, ", ad_coeff=", abs(Hctrl_ad_trans[i,j]))
                         # else
                         #     println("Info, skipping frequency: ", delta_f, " Too close to previous frequencies")
                         end
@@ -1456,13 +1440,13 @@ function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float
 
     is_ess, it2in = identify_essential_levels(Ne, Ne+Ng, msb_order)
 
-    println("Results from identify_essential_levels:")
-    for j = 1:length(is_ess)
-        println("it2in: ", it2in[j,:], " is_ess: ", is_ess[j])
-    end
+    # println("Results from identify_essential_levels:")
+    # for j = 1:length(is_ess)
+    #     println("j: ", j, " it2in[j,:]: ", it2in[j,:], " is_ess[j]: ", is_ess[j])
+    # end
 
 
-    om, rate, Utrans = get_resonances(is_ess, it2in, Ness=Ne, Nguard=Ng, Hsys=Hsys, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, msb_order=msb_order, cw_amp_thres=cw_amp_thres, cw_prox_thres=cw_prox_thres)
+    om, rate, Utrans = get_resonances(is_ess, it2in, Ness=Ne, Nguard=Ng, Hsys=Hsys, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, msb_order=msb_order, cw_amp_thres=cw_amp_thres, cw_prox_thres=cw_prox_thres, rot_freq=rot_freq)
     
     Ness = prod(Ne)
     Nosc = length(om) 
