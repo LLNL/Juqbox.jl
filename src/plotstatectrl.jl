@@ -289,37 +289,8 @@ level in the simulation.
 """
 function identify_guard_levels(params::Juqbox.objparams, custom:: Int64 = 0)
     # identify all guard levels by first identifying the essential ones
-    ess_lev, _, _, _, _ = identify_essential_levels(params.Ne, params.Nt, params.msb_order)
+    ess_lev, it2in = identify_essential_levels(params.Ne, params.Nt, params.msb_order)
     guard_lev = .!ess_lev
-    # Ntot = params.N+params.Nguard
-    # guardlev = fill(false, Ntot)
-
-    # if params.Nosc == 1
-    #     if custom == 0
-    #         guardlev[params.N+1:Ntot] .= true
-    #     else # special case for stirap pulses
-    #         guardlev[2] = true
-    #         guardlev[4] = true
-    #     end
-    # elseif params.Nosc == 2
-    #     for q2 in 1:params.Nt[2]
-    #         for q1 in 1:params.Nt[1]
-    #             if q1 > params.Ne[1] || q2 > params.Ne[2]
-    #                 guardlev[(q2-1)*params.Nt[1] + q1] = true
-    #             end
-    #         end
-    #     end
-    # elseif params.Nosc == 3
-    #     for q3 in 1:params.Nt[3]
-    #         for q2 in 1:params.Nt[2]
-    #             for q1 in 1:params.Nt[1]
-    #                 if q1 > params.Ne[1] || q2 > params.Ne[2] || q3 > params.Ne[3]
-    #                     guardlev[(q3-1)*params.Nt[1]*params.Nt[2] + (q2-1)*params.Nt[1] + q1] = true
-    #                 end
-    #             end
-    #         end
-    #     end
-    # end
     return convert(Vector{Bool},guard_lev)
 end #identify_guard_levels
 
