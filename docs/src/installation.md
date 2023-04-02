@@ -11,3 +11,18 @@ Start julia and type `]` to enter the package manager. Then do:
 - ... all tests should pass (case=flux gives a Warning message) ...
 
 To exit the package manager you type `<DEL>`, and to exit julia you type `exit()`.
+
+To access the examples, clone the Juqbox.jl git repository:
+- shell> git clone https://github.com/LLNL/Juqbox.jl.git
+
+Then go to the examples directory in the juqbox.jl folder:
+- shell> de juqbox.jl/examples
+
+Start julia and try the `cnot1-setup.jl' test case:
+- shell> julia
+- julia> include("cnot1-setup.jl")
+- julia> pcof = run_optimizer(prob,pcof0);
+- julia> pl = plot_results(params,pcof);
+- julia> pl[1]
+
+See the workflow section for further instructions.
