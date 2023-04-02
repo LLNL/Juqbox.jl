@@ -51,8 +51,8 @@ The Juqbox.jl documentation can be found [here](https://software.llnl.gov/Juqbox
 To access the examples, clone the Juqbox.jl git repository:
 - shell> git clone https://github.com/LLNL/Juqbox.jl.git
 
-Then go to the examples directory in the juqbox.jl folder:
-- shell> de juqbox.jl/examples
+Then go to the examples directory in the Juqbox.jl folder (on some systems the folder is named juqbox.jl):
+- shell> cd Juqbox.jl/examples
 
 Start julia and try the `cnot1-setup.jl' test case:
 - shell> julia
