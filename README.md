@@ -11,31 +11,55 @@ The main features of Juqbox include
 - Exact computation of the gradient of the objective function by solving the discrete adjoint equation.
 
 The numerical methods in Juqbox.jl are documented in these papers:
-1. N. A. Petersson and F. M. Garcia, "Optimal Control of Closed Quantum Systems via B-Splines with Carrier Waves", LLNL-JRNL-823853, [arXiv:2106.14310](https://arxiv.org/abs/2106.14310).
+1. N. A. Petersson and F. M. Garcia, "Optimal Control of Closed Quantum Systems via B-Splines with Carrier Waves", SIAM J. Sci. Comput. (2022) 44(6): A3592-A3616, LLNL-JRNL-823853, [arXiv:2106.14310](https://arxiv.org/abs/2106.14310).
 2. N. A. Petersson, F. M. Garcia, A. E. Copeland, Y. L. Rydin and J. L. DuBois, “Discrete Adjoints for Accurate Numerical Optimization with Application to Quantum Control”, LLNL-JRNL-800457, [arXiv:2001.01013](https://arxiv.org/abs/2001.01013).
 
 ## Installation
 
-The following instructions assume that you have already installed Julia (currently version 1.6.3) on your system. Before proceeding, we recommend that you add the following lines to the file ~/.julia/config/startup.jl. You may have to first create the config folder under .julia in your home directory. Then add the following lines to the startup.jl file:
+The following instructions assume that you have already installed Julia (currently version 1.8.5) on your system. Before proceeding, we recommend that you add the following to the file ~/.julia/config/startup.jl. You may have to first create the config folder under .julia in your home directory. Then add this line to the startup.jl file:
 
-- **ENV["JULIA_PROJECT"]="@."**
-- **ENV["PLOTS_DEFAULT_BACKEND"]="PyPlot"**
+- **ENV["PLOTS_DEFAULT_BACKEND"]="GR"**
 
-These are environment variables. The first one tells Julia to look for `Project.toml` files in your current or parent directory. The second one specifies the backend for plotting. Most of the examples in this document uses the PyPlot backend, which assumes that you have installed that package. If you have trouble installing PyPlot, you can instead install the "GR" package and set the default backend to "GR".
+This is an environment variable. It specifies the backend for plotting. Most of the examples in this document uses the GR backend, which assumes that you have installed that package. If you have trouble with GR, you can instead install the "PyPlot" package and set the default backend to "PyPlot".
 
-Start julia and type `]` to enter the package manager. Then do:
-- (@v1.6) pkg> add  https://github.com/LLNL/Juqbox.jl.git
-- (@v1.6) pkg> precompile
-- (@v1.6) pkg> test Juqbox
-- ... all tests should pass ...
+Start julia and type `]` to enter the package manager. First install these packages (unless they are already installed):
+- (@v1.8) pkg> add Plots
+- (@v1.8) pkg> add GR
+- (@v1.8) pkg> add FFTW
+- (@v1.8) pkg> add Ipopt
+- (@v1.8) pkg> add JLD2
+- (@v1.8) pkg> add LaTeXStrings
+- (@v1.8) pkg> add Printf
+- (@v1.8) pkg> add Random
+- (@v1.8) pkg> add SparseArrays
+- (@v1.8) pkg> add Test
+
+Then install Juqbox.jl:
+- (@v1.8) pkg> add  https://github.com/LLNL/Juqbox.jl
+- (@v1.8) pkg> precompile
+- (@v1.8) pkg> test Juqbox
+- ... all tests should pass (case=flux gives a Warning message) ...
 
 To exit the package manager you type `<DEL>`, and to exit julia you type `exit()`.
- 
+
 ## Documentation
 
 The Juqbox.jl documentation can be found [here](https://software.llnl.gov/Juqbox.jl/).
 
 ## Examples
+
+To access the examples, clone the Juqbox.jl git repository:
+- shell> git clone https://github.com/LLNL/Juqbox.jl.git
+
+Then go to the examples directory in the juqbox.jl folder:
+- shell> de juqbox.jl/examples
+
+Start julia and try the `cnot1-setup.jl' test case:
+- shell> julia
+- julia> include("cnot1-setup.jl")
+- julia> pcof = run_optimizer(prob,pcof0);
+- julia> pl = plot_results(params,pcof);
+- julia> pl[1]
 
 Examples of the setup procedure can be found in the following scripts in the **Juqbox.jl/examples** directory (invoke by, e.g. **include("cnot1-setup.jl")**) 
 - **rabi-setup.jl** Pi-pulse (X-gate) for a qubit, i.e. a Rabi oscillator.
@@ -44,8 +68,7 @@ Examples of the setup procedure can be found in the following scripts in the **J
 - **cnot2-setup.jl** CNOT gate for a pair of coupled qubits with guard levels.
 - **cnot3-setup.jl** Cross-resonance CNOT gate for a pair of qubits that are coupled by a cavity resonator. **Note:** This case reads an optimized solution from file.
 - **Risk_Neutral/run_all.jl** SWAP 0-2 gate for a single qudit. This routine performs both a deterministic optimization, and a risk-neutral optimization
-where the system Hamiltonian is perturbed by additive noise which is assumed to be uniform. Full details of the example can be found in Section 6.2 of 
-the manuscript found [here](https://arxiv.org/abs/2106.14310).
+where the system Hamiltonian is perturbed by additive noise which is assumed to be uniform. Full details of the example can be found in Section 6.2 in one of our papers, which can be found [here](https://arxiv.org/abs/2106.14310).
 
 ## Contributing to Juqbox.jl
 Juqbox.jl is currently under development. The prefered method of contributing is through a pull request (PR). If you are interested in contributing, please contact Anders Petersson (petersson1@llnl.gov) or Fortino Garcia (fortino.garcia@colorado.edu).
