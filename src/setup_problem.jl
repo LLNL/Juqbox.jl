@@ -2,357 +2,6 @@
 
 using LinearAlgebra
 
-# function hamiltonians_one_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, freq01::Vector{Float64}, anharm::Vector{Float64}, rot_freq::Vector{Float64}, verbose::Bool = true)
-#     @assert(length(Ness)==1)
-#     @assert(length(Nguard)==1)
-#     @assert(minimum(Ness) >= 2)
-#     @assert(minimum(Nguard) >= 0)
-
-#     Ntot = Ness[1] + Nguard[1] # Total number of energy levels
-
-#     # NOTE: input frequencies are in GHz, will be multiplied by 2*pi to get angular frequencies 
-
-#     # setup drift Hamiltonian
-#     number = Diagonal(collect(0:Ntot-1))
-#     # Note: xa is negative
-#     H0  = 2*pi * ( (freq01[1] - rot_freq[1])*number + 0.5*anharm[1]* (number*number - number) ) 
-#     H0 = Array(H0)
-
-#     # Set up the control drive operators
-#     amat = Bidiagonal(zeros(Ntot),sqrt.(collect(1:Ntot-1)),:U) # standard lowering matrix
-#     adag = Array(transpose(amat));
-#     Hsym_ops=[Array(amat + adag)]  # operator for p(t)
-#     Hanti_ops=[Array(amat - adag)] # operator for q(t)
-
-#     if verbose
-#         println("*** Single quantum system setup ***")
-#         println("System Hamiltonian coefficients [GHz]: f01 = ", freq01, " anharmonicity = ", anharm, " rot_freq = ", rot_freq)
-#         println("Number of essential states = ", Ness, " Number of guard states = ", Nguard)
-#         println("Hamiltonians are of size ", Ntot, " by ", Ntot)
-#     end
-#     return H0, Hsym_ops, Hanti_ops
-# end
-
-
-# function hamiltonians_two_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, freq01::Vector{Float64}, anharm::Vector{Float64}, rot_freq::Vector{Float64}, couple_coeff::Vector{Float64}, couple_type::Int64, msb_order::Bool = true, verbose::Bool = true)
-#     @assert(length(Ness) == 2)
-#     @assert(length(Nguard) == 2)
-#     @assert(couple_type == 1 || couple_type == 2)
-
-#     Nt = Ness + Nguard
-#     N = prod(Ness); # Total number of nonpenalized energy levels
-#     Ntot = prod(Nt)
-#     #Nguard = Ntot - N # total number of guard states
-
-#     Nt1 = Ness[1] + Nguard[1]
-#     Nt2 = Ness[2] + Nguard[2]
-
-#     # frequencies (in GHz, will be multiplied by 2*pi to get angular frequencies 
-#     # in the Hamiltonian matrix)
-#     x1 = anharm[1]
-#     x2 = anharm[2]
-
-#     # detuning
-#     da = freq01[1] - rot_freq[1]
-#     db = freq01[2] - rot_freq[2]
-
-#     a1 = Array(Bidiagonal(zeros(Nt1),sqrt.(collect(1:Nt1-1)),:U))
-#     a2 = Array(Bidiagonal(zeros(Nt2),sqrt.(collect(1:Nt2-1)),:U))
-
-#     I1 = Array{Float64, 2}(I, Nt1, Nt1)
-#     I2 = Array{Float64, 2}(I, Nt2, Nt2)
-
-#     # number ops
-#     num1 = Diagonal(collect(0:Nt1-1))
-#     num2 = Diagonal(collect(0:Nt2-1))
-
-#     if msb_order
-#         # MSB ordering: Let the elements in the state vector 
-#         # psi = a_{ji} (e_j kron e_i), for j in [1,Nt2] and i in [1,Nt1]
-#         # We order the elements in the vector psi such that i varies the fastest 
-#         # The matrix (I kron a1) acts on alpha in psi = (beta kron alpha)
-#         # The matrix (a2 kron I) acts on beta in psi = (beta kron alpha)
-
-#         # create the a, a^\dag, b and b^\dag vectors
-#         amat = Array(kron(I2, a1))
-#         bmat = Array(kron(a2, I1))
-
-#         # number operators
-#         N1 = Diagonal(kron(I2, num1) )
-#         N2 = Diagonal(kron(num2, I1) )
-
-#     else
-#         # LSB ordering: qubit 1 varies the slowest and qubit 2 varies the fastest in the state vector
-#         amat = Array(kron(a1, I2))
-#         bmat = Array(kron(I1, a2))
-
-#         # number operators
-#         N1 = Diagonal(kron(num1, I2) )
-#         N2 = Diagonal(kron(I1, num2) )
-#     end
-
-#     adag = Array(transpose(amat))
-#     bdag = Array(transpose(bmat))
-
-#     # Coupling Hamiltonian: couple_type = 2 # 1: cross-Kerr, 2: Jaynes-Cummings
-#     if couple_type == 1
-#         Hcouple = couple_coeff[1]*(N1*N2)
-#     elseif couple_type == 2
-#         Hcouple = couple_coeff[1]*(bdag * amat + bmat * adag)
-#     end
-#             # System Hamiltonian
-#     H0 = 2*pi*(  da*N1 + 0.5*x1*(N1*N1-N1) + db*N2 + 0.5*x2*(N2*N2-N2) + Hcouple )
-#     H0 = Array(H0)
-
-#     # set up control hamiltonians
-#     Hsym_ops =[ amat+adag, bmat+bdag ]
-#     Hanti_ops=[ amat-adag, bmat-bdag ]
-
-#     if verbose
-#         println("*** Two coupled quantum systems setup ***")
-#         println("System Hamiltonian frequencies [GHz]: f01 = ", freq01, " rot. freq = ", rot_freq)
-#         println("Anharmonicity = ", anharm, " coupling coeff = ", couple_coeff, " coupling type = ", (couple_type==1) ? "X-Kerr" : "J-C" )
-#         println("Number of essential states = ", Ness, " Number of guard states = ", Nguard)
-#         println("Hamiltonians are of size ", Ntot, " by ", Ntot)
-#     end
-#     return H0, Hsym_ops, Hanti_ops, rot_freq
-# end
-
-# function hamiltonians_three_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, freq01::Vector{Float64}, anharm::Vector{Float64}, rot_freq::Vector{Float64}, couple_coeff::Vector{Float64}, couple_type::Int64, msb_order::Bool = true, verbose::Bool = true)
-#     @assert(length(Ness) == 3)
-#     @assert(length(Nguard) == 3)
-#     @assert(couple_type == 1 || couple_type == 2)
-
-#     Nt = Ness + Nguard
-#     N = prod(Ness); # Total number of nonpenalized energy levels
-#     Ntot = prod(Nt)
-#     #Nguard = Ntot - N # total number of guard states
-
-#     Nt1 = Nt[1]
-#     Nt2 = Nt[2]
-#     Nt3 = Nt[3]
-
-#     # frequencies (in GHz, will be multiplied by 2*pi to get angular frequencies 
-#     # in the Hamiltonian matrix)
-#     xa = anharm[1]
-#     xb = anharm[2]
-#     xc = anharm[3]
-
-#     xab = couple_coeff[1]
-#     xac = couple_coeff[2]
-#     xbc = couple_coeff[3]
-
-#     # detuning frequencies
-#     da = freq01[1] - rot_freq[1]
-#     db = freq01[2] - rot_freq[2]
-#     dc = freq01[3] - rot_freq[3]
-
-#     # single system lowering ops
-#     a1 = Array(Bidiagonal(zeros(Nt[1]),sqrt.(collect(1:Nt[1]-1)),:U))
-#     a2 = Array(Bidiagonal(zeros(Nt[2]),sqrt.(collect(1:Nt[2]-1)),:U))
-#     a3 = Array(Bidiagonal(zeros(Nt[3]),sqrt.(collect(1:Nt[3]-1)),:U))
-
-#     I1 = Array{Float64, 2}(I, Nt[1], Nt[1])
-#     I2 = Array{Float64, 2}(I, Nt[2], Nt[2])
-#     I3 = Array{Float64, 2}(I, Nt[3], Nt[3])
-
-#     # single system number ops
-#     num1 = Diagonal(collect(0:Nt[1]-1))
-#     num2 = Diagonal(collect(0:Nt[2]-1))
-#     num3 = Diagonal(collect(0:Nt[3]-1))
-
-#     if msb_order
-#         # MSB ordering: Let the elements in the state vector be
-#         # |psi> = sum a_{kji} (|k> kron |j> kron |i>, 
-#         # for i in [1,Nt1], j in [1,Nt2], , k in [1,Nt3]
-#         # We order the elements in the vector psi such that i varies the fastest 
-#         # The matrix amat = I kron I kron a1 acts on alpha in psi = gamma kron beta kron alpha
-#         # The matrix bmat = I kron a2 kron I acts on beta in psi = gamma kron beta kron alpha
-#         # The matrix cmat = a3 kron I2 kron I1 acts on gamma in psi = gamma kron beta kron alpha
-
-#         # create the combined lowering and raising ops
-#         amat = kron(I3, kron(I2, a1))
-#         bmat = kron(I3, kron(a2, I1))
-#         cmat = kron(a3, kron(I2, I1))
-
-#         # number operators
-#         Na = Diagonal(kron(I3, kron(I2, num1)) )
-#         Nb = Diagonal(kron(I3, kron(num2, I1)) )
-#         Nc = Diagonal(kron(num3, kron(I2, I1)) )
-#     else
-#         # LSB ordering: Let the elements in the state vector be
-#         # |psi> = sum a_{ijk} (|i> kron |j> kron |k>, 
-#         # for i in [1,Nt1], j in [1,Nt2], , k in [1,Nt3]
-#         # In the vector representation of the state, qubit 1 varies the slowest and qubit 3 varies the fastest in the state vector
-#         # create the combined lowering and raising ops
-#         amat = kron(a1, kron(I2, I3))
-#         bmat = kron(I1, kron(a2, I3))
-#         cmat = kron(I1, kron(I2, a3))
-
-#         # number operators
-#         Na = Diagonal(kron(num1, kron(I2, I3)) )
-#         Nb = Diagonal(kron(I1, kron(num2, I3)) )
-#         Nc = Diagonal(kron(I1, kron(I2, num3)) )
-#     end
-
-#     adag = Array(transpose(amat))
-#     bdag = Array(transpose(bmat))
-#     cdag = Array(transpose(cmat))
-
-#     # Coupling Hamiltonian: couple_type = 2 # 1: cross-Kerr, 2: Jaynes-Cummings
-#     if couple_type == 1
-#         Hcouple = xab*(Na*Nb) + xac*(Na*Nc) + xbc*(Nb*Nc)
-#     elseif couple_type == 2
-#         Hcouple = xab*(amat * bdag + adag * bmat) + xac*(amat * cdag + adag * cmat) + xbc*(bmat * cdag + bdag * cmat)
-#     end
-
-#     # System Hamiltonian
-#     H0 = 2*pi*(da*Na + 0.5*xa*(Na*Na-Na) + db*Nb + 0.5*xb*(Nb*Nb-Nb) + dc*Nc + 0.5*xc*(Nc*Nc-Nc) + Hcouple )
-
-#     H0 = Array(H0)
-
-#     # set up control hamiltonians
-#     Hsym_ops =[ amat+adag, bmat+bdag, cmat+cdag ]
-#     Hanti_ops=[ amat-adag, bmat-bdag, cmat-cdag ]
-
-#     if verbose
-#         println("*** Three coupled quantum systems setup ***")
-#         println("System Hamiltonian frequencies [GHz]: f01 = ", freq01, " rot. freq = ", rot_freq)
-#         println("Anharmonicity = ", anharm)
-#         println("Coupling type = ", (couple_type==1) ? "X-Kerr" : "J-C", ". Coupling coeff = ", couple_coeff )
-#         println("Number of essential states = ", Ness, " Number of guard states = ", Nguard)
-#         println("Hamiltonians are of size ", Ntot, " by ", Ntot)
-#     end
-#     return H0, Hsym_ops, Hanti_ops
-# end
-
-# function hamiltonians_four_sys(;Ness::Vector{Int64}, Nguard::Vector{Int64}, freq01::Vector{Float64}, anharm::Vector{Float64}, rot_freq::Vector{Float64}, couple_coeff::Vector{Float64}, couple_type::Int64, msb_order::Bool = true, verbose::Bool = true)
-#     @assert(length(Ness) == 4)
-#     @assert(length(Nguard) == 4)
-#     @assert(length(anharm) == 4)
-#     @assert(length(freq01) == 4)
-#     @assert(length(rot_freq) == 4)
-#     @assert(length(couple_coeff) == 6)
-#     @assert(couple_type == 1 || couple_type == 2)
-
-#     Nt = Ness + Nguard
-#     N = prod(Ness); # Total number of nonpenalized energy levels
-#     Ntot = prod(Nt)
-#     #Nguard = Ntot - N # total number of guard states
-
-
-#     # frequencies (in GHz, will be multiplied by 2*pi to get angular frequencies 
-#     # in the Hamiltonian matrix)
-#     xa = anharm[1]
-#     xb = anharm[2]
-#     xc = anharm[3]
-#     xd = anharm[4]
-
-#     xab = couple_coeff[1]
-#     xac = couple_coeff[2]
-#     xad = couple_coeff[3]
-#     xbc = couple_coeff[4]
-#     xbd = couple_coeff[5]
-#     xcd = couple_coeff[6]
-
-#     # detuning frequencies
-#     da = freq01[1] - rot_freq[1]
-#     db = freq01[2] - rot_freq[2]
-#     dc = freq01[3] - rot_freq[3]
-#     dd = freq01[4] - rot_freq[4]
-
-#     # single system lowering ops
-#     a1 = Array(Bidiagonal(zeros(Nt[1]),sqrt.(collect(1:Nt[1]-1)),:U))
-#     a2 = Array(Bidiagonal(zeros(Nt[2]),sqrt.(collect(1:Nt[2]-1)),:U))
-#     a3 = Array(Bidiagonal(zeros(Nt[3]),sqrt.(collect(1:Nt[3]-1)),:U))
-#     a4 = Array(Bidiagonal(zeros(Nt[4]),sqrt.(collect(1:Nt[4]-1)),:U))
-
-#     I1 = Array{Float64, 2}(I, Nt[1], Nt[1])
-#     I2 = Array{Float64, 2}(I, Nt[2], Nt[2])
-#     I3 = Array{Float64, 2}(I, Nt[3], Nt[3])
-#     I4 = Array{Float64, 2}(I, Nt[4], Nt[4])
-
-#     # single system number ops
-#     num1 = Diagonal(collect(0:Nt[1]-1))
-#     num2 = Diagonal(collect(0:Nt[2]-1))
-#     num3 = Diagonal(collect(0:Nt[3]-1))
-#     num4 = Diagonal(collect(0:Nt[4]-1))
-
-#     if msb_order
-#         # MSB ordering: Let the elements in the state vector be
-#         # |psi> = sum a_{kji} (|k> kron |j> kron |i>, 
-#         # for i in [1,Nt1], j in [1,Nt2], , k in [1,Nt3]
-#         # We order the elements in the vector psi such that i varies the fastest 
-#         # The matrix amat = I kron I kron a1 acts on alpha in psi = gamma kron beta kron alpha
-#         # The matrix bmat = I kron a2 kron I acts on beta in psi = gamma kron beta kron alpha
-#         # The matrix cmat = a3 kron I2 kron I1 acts on gamma in psi = gamma kron beta kron alpha
-
-#         # create the combined lowering and raising ops
-#         amat = kron(I4, kron(I3, kron(I2, a1)))
-#         bmat = kron(I4, kron(I3, kron(a2, I1)))
-#         cmat = kron(I4, kron(a3, kron(I2, I1)))
-#         dmat = kron(a4, kron(I3, kron(I2, I1)))
-
-#         adag = Array(transpose(amat))
-#         bdag = Array(transpose(bmat))
-#         cdag = Array(transpose(cmat))
-#         ddag = Array(transpose(dmat))
-
-#         # number operators
-#         Na = Diagonal(kron(I4, kron(I3, kron(I2, num1))) )
-#         Nb = Diagonal(kron(I4, kron(I3, kron(num2, I1))) )
-#         Nc = Diagonal(kron(I4, kron(num3, kron(I2, I1))) )
-#         Nd = Diagonal(kron(num4, kron(I3, kron(I2, I1))) )
-#     else
-#         # LSB ordering: Let the elements in the state vector be
-#         # |psi> = sum a_{ijk} (|i> kron |j> kron |k>, 
-#         # for i in [1,Nt1], j in [1,Nt2], , k in [1,Nt3]
-#         # In the vector representation of the state, qubit 1 varies the slowest and qubit 3 varies the fastest in the state vector
-#         # create the combined lowering and raising ops
-#         amat = kron(a1, kron(I2, kron(I3, I4)))
-#         bmat = kron(I1, kron(a2, kron(I3, I4)))
-#         cmat = kron(I1, kron(I2, kron(a3, I4)))
-#         dmat = kron(I1, kron(I2, kron(I3, a4)))
-        
-#         adag = Array(transpose(amat))
-#         bdag = Array(transpose(bmat))
-#         cdag = Array(transpose(cmat))
-#         ddag = Array(transpose(dmat))
-
-#         # number operators
-#         Na = Diagonal(kron(num1, kron(I2, kron(I3, I4))) )
-#         Nb = Diagonal(kron(I1, kron(num2, kron(I3, I4))) )
-#         Nc = Diagonal(kron(I1, kron(I2, kron(num3, I4))) )
-#         Nd = Diagonal(kron(I1, kron(I2, kron(I3, num4))) )
-#     end
-
-#     # Coupling Hamiltonian: couple_type = 2 # 1: cross-Kerr, 2: Jaynes-Cummings
-#     if couple_type == 1
-#         Hcouple = xab*(Na*Nb) + xac*(Na*Nc) + xad*(Na*Nd) + xbc*(Nb*Nc) + xbd*(Nb*Nd) + xcd*(Nc*Nd)
-#     elseif couple_type == 2
-#         Hcouple = xab*(amat * bdag + adag * bmat) + xac*(amat * cdag + adag * cmat) + xad*(amat * ddag + adag * dmat) + xbc*(bmat * cdag + bdag * cmat) + xbd*(bmat * ddag + bdag * dmat) + xcd*(cmat * ddag + cdag * dmat)
-#     end
-
-#     # System Hamiltonian
-#     H0 = 2*pi*(da*Na + 0.5*xa*(Na*Na-Na) + db*Nb + 0.5*xb*(Nb*Nb-Nb) + dc*Nc + 0.5*xc*(Nc*Nc-Nc) + dd*Nd + 0.5*xd*(Nd*Nd-Nd) + Hcouple )
-
-#     H0 = Array(H0)
-
-#     # set up control hamiltonians
-#     Hsym_ops =[ amat+adag, bmat+bdag, cmat+cdag, dmat+ddag ]
-#     Hanti_ops=[ amat-adag, bmat-bdag, cmat-cdag, dmat-ddag ]
-
-#     if verbose
-#         println("*** Four coupled quantum systems setup ***")
-#         println("System Hamiltonian frequencies [GHz]: f01 = ", freq01, " rot. freq = ", rot_freq)
-#         println("Anharmonicity = ", anharm)
-#         println("Coupling type = ", (couple_type==1) ? "X-Kerr" : "J-C", ". Coupling coeff = ", couple_coeff )
-#         println("Number of essential states = ", Ness, " Number of guard states = ", Nguard)
-#         println("Hamiltonians are of size ", Ntot, " by ", Ntot)
-#     end
-#     return H0, Hsym_ops, Hanti_ops
-# end
-
 function hamiltonians(;Nsys::Int64, Ness::Vector{Int64}, Nguard::Vector{Int64}, freq01::Vector{Float64}, anharm::Vector{Float64}, rot_freq::Vector{Float64}, couple_coeff::Vector{Float64}, couple_type::Int64, msb_order::Bool = false, verbose::Bool = true)
     @assert(Nsys>=1)
     @assert(length(Ness) == Nsys)
@@ -441,34 +90,61 @@ function hamiltonians(;Nsys::Int64, Ness::Vector{Int64}, Nguard::Vector{Int64}, 
     return H0, Hsym_ops, Hanti_ops
 end
 
-# initial parameter guess
-function init_control(;rand_frac::Float64, maxAmp::Vector{Float64}, D1::Int64, Nfreq::Vector{Int64}, startFile::String = "", seed::Int64 = -1)
+# initial control guess
+function init_control(;amp_frac::Float64, maxAmp::Vector{Float64}, D1::Int64, Nfreq::Vector{Int64}, startFile::String = "", seed::Int64 = -1, randomize::Bool = true, growth_rate::Vector{Vector{Float64}} = Vector{Vector{Float64}}(undef,0))
     Nosc = length(Nfreq)
     nCoeff = 2*D1*sum(Nfreq)
 
-    if seed >= 0
-        Random.seed!(seed)
-    end
-
-    # initial parameter guess: from file or random guess?
+    # initial parameter guess: from file?
     if length(startFile) > 0
         # use if you want to read the initial coefficients from file
         pcof0 = vec(readdlm(startFile)) # change to jld2?
         println("*** Starting from B-spline coefficients in file: ", startFile)
         @assert(nCoeff == length(pcof0))
     else
-        pcof0 = zeros(nCoeff)
-        offset = 0
-        for q=1:Nosc
-            if Nfreq[q] > 0
-                maxrand = rand_frac*maxAmp[q]/sqrt(2)/Nfreq[q]
-                Nq = 2*D1*Nfreq[q]
-                pcof0[offset+1:offset+Nq] = maxrand * 2 * (rand(Nq) .- 0.5)
-                offset += Nq
-            end
+        if seed >= 0
+            Random.seed!(seed)
         end
+
+        pcof0 = zeros(nCoeff)
+        offc = 0
+
+        # randomize?
+        if length(growth_rate) == 0
+            randomize = true
+        end
+
+        if randomize
+            for q=1:Nosc
+                if Nfreq[q] > 0
+                    maxrand = amp_frac*maxAmp[q]/sqrt(2)/Nfreq[q]
+                    Nq = 2*D1*Nfreq[q]
+                    pcof0[offc+1:offc+Nq] = maxrand * 2 * (rand(Nq) .- 0.5)
+                    offc += Nq
+                end
+            end
+            println("*** Starting from RANDOM control vector with amp_frac = ", amp_frac)
+        else # picewise constant with amplitude depending on scaled growth rate
+            max_rate = 0.0
+            for q = 1:Nosc
+                max_rate = max( max_rate, maximum(growth_rate[q]) )
+            end
+            println("max_rate = ", max_rate)
+            for q = 1:Nosc
+                for k = 1:Nfreq[q]
+                    const_amp = amp_frac * maxAmp[q]/sqrt(2)/Nfreq[q] * max_rate/(growth_rate[q][k])
+                    pcof0[offc+1:offc+2*D1] .= const_amp
+        
+                    # randomizing p/q knocks out any Rabi-style oscillation
+                    # pcof0[offc+1:offc+D1] = fact*(rand(D1) .- 0.5)
+                    # pcof0[offc+D1+1:offc+2*D1] = fact*(rand(D1) .- 0.5)
+                    offc += 2*D1
+                end
+            end
+            println("*** Starting from PIECEWISE CONSTANT control vector with amp_frac = ", amp_frac)
+        end
+
         #pcof0 = maxrand * 2 .* (rand(nCoeff) .- 0.5)
-        println("*** Starting from RANDOM control vector with rand_frac = ", rand_frac)
     end
 
     return pcof0
@@ -830,14 +506,14 @@ function get_resonances(is_ess::Vector{Bool}, it2in::Matrix{Int64};Ness::Vector{
     
     # Allocate Vector of pointers to the carrier frequencies
     om = Vector{Vector{Float64}}(undef, Nosc)
-    rate = Vector{Vector{Float64}}(undef, Nosc)
+    growth_rate = Vector{Vector{Float64}}(undef, Nosc)
     # copy over resonances[]
     for q in 1:Nosc
         Nfreq[q] = length(resonances[q])
         om[q] = zeros(Nfreq[q])
         om[q] .= resonances[q]
-        rate[q] = zeros(Nfreq[q])
-        rate[q] .= speed[q]
+        growth_rate[q] = zeros(Nfreq[q])
+        growth_rate[q] .= speed[q]
     end
 
     # Convert carrier frequencies to radians
@@ -853,7 +529,7 @@ function get_resonances(is_ess::Vector{Bool}, it2in::Matrix{Int64};Ness::Vector{
     # end
     # println("typeof(Utrans): ", typeof(Utrans))
     println()
-    return om, rate, Utrans
+    return om, growth_rate, Utrans
 end
 
 function transformHamiltonians!(H0::Matrix{Float64}, Hsym_ops::Vector{Matrix{Float64}}, Hanti_ops::Vector{Matrix{Float64}}, Utrans::Matrix{Float64})
@@ -877,301 +553,17 @@ function transformHamiltonians!(H0::Matrix{Float64}, Hsym_ops::Vector{Matrix{Flo
 end
 
 """
-    wmat = wmatsetup_old(Ne, Ng[, msb_order])
+    wmat = wmatsetup(is_ess, it2in, Ne, Ng)
 
 Build the default positive semi-definite weighting matrix W to calculate the 
 leakage into higher energy forbidden states
  
 # Arguments
-- `Ne::Array{Int64,1}`: Number of essential energy levels for each subsystem
-- `Ng::Array{Int64,1}`: Number of guard energy levels for each subsystem
-- `msb_order::Bool`: Ordering of the subsystems within the state vector (default is true)
+- `is_ess::Vector{Bool}`: Vector of the size Ntot=prod(Ne+Ng); true if element is essential, otherwise false
+- `it2in::Matrix{Int64}`: Matrix of size (Ntot, Ndim) holding the conversion between 1-d and sub-system numbering of the state vector
+- `Ne::Vector{Int64}`: Vector of size Ndim holding the number of essential energy levels for each subsystem
+- `Ng::Vector{Int64}`: Vector of size Ndim holding the number of guard energy levels for each subsystem
 """
-# function wmatsetup_old(Ne::Array{Int64,1}, Ng::Array{Int64,1}, msb_order::Bool = true)
-
-# Nt = Ne + Ng
-# Ndim = length(Ne)
-# @assert(Ndim == 1 || Ndim == 2 || Ndim ==3 || Ndim ==4)
-
-# Ntot = prod(Nt)
-# w = zeros(Ntot)
-# coeff = 1.0
-
-# # reset temp variables
-# temp = zeros(length(Ne))
-
-# if sum(Ng) > 0
-#     nForb = 0 # number of states with the highest index in at least one dimension
-    
-#     if msb_order # Classical Juqbox ordering
-#         if Ndim == 1
-#             fact = 0.1
-#             for q in 0:Ng[1]-1
-#                 w[Ntot-q] = fact^q
-#             end
-#             nForb = 1
-#             coeff = 1.0
-#         elseif Ndim == 2
-#             fact = 1e-3 # for more emphasis on the "forbidden" states. Old value: 0.1
-#             q = 0 # element in the array 'w'
-
-#             for i2 = 1:Nt[2]
-#                 for i1 = 1:Nt[1]
-#                     q += 1
-#                     # initialize temp variables
-#                     temp[1] = 0.0
-#                     temp[2] = 0.0
-#                     if i1 <= Ne[1] && i2 <= Ne[2]
-#                         w[q] = 0.0
-#                     else
-#                         # determine and assign the largest penalty
-#                         if i1 > Ne[1]   #only included if at a guard level
-#                             temp[1] = fact^(Nt[1]-i1)
-#                         end
-#                         if i2 > Ne[2]   #only included if at a guard level
-#                             temp[2] = fact^(Nt[2]-i2)
-#                         end
-#                         if i1 == Nt[1] || i2 == Nt[2]
-#                             nForb += 1 
-#                         end
-
-#                         forbFact=1.0
-#                         w[q] = forbFact*maximum(temp)
-        
-#                     end # if guard level
-#                 end # for i1
-#             end # for i2
-
-#             # normalize by the number of entries with w=1
-#             coeff = 1.0/nForb # was 1/nForb
-#         elseif Ndim == 3
-#             fact = 1e-3 #  0.1 # for more emphasis on the "forbidden" states. Old value: 0.1
-#             nForb = 0 # number of states with the highest index in at least one dimension
-#             q = 0
-#             for i3 = 1:Nt[3]
-#                 for i2 = 1:Nt[2]
-#                     for i1 = 1:Nt[1]
-#                         q += 1
-#                         # initialize temp variables
-#                         temp1 = 0.0
-#                         temp2 = 0.0
-#                         temp3 = 0.0
-#                         if i1 <= Ne[1] && i2 <= Ne[2] && i3 <= Ne[3]
-#                             w[q] = 0.0
-#                         else
-#                             # determine and assign the largest penalty
-#                             if i1 > Ne[1]   #only included if at a guard level
-#                                 temp1 = fact^(Nt[1]-i1)
-#                             end
-#                             if i2 > Ne[2]   #only included if at a guard level
-#                                 temp2 = fact^(Nt[2]-i2)
-#                             end
-#                             if i3 > Ne[3]   #only included if at a guard level
-#                                 temp3 = fact^(Nt[3]-i3)
-#                             end
-
-#                             forbFact=1.0
-#                             w[q] = forbFact*max(temp1, temp2, temp3)
-
-#                             if i1 == Nt[1] || i2 == Nt[2] || i3 == Nt[3]
-#                                 nForb += 1
-#                             end
-
-#                         end # if
-#                     end # for
-#                 end # for
-#             end # for
-
-#             # normalize by the number of entries with w=1
-#             coeff = 10.0/nForb # was 1/nForb
-#             # end Ndim == 3
-#         elseif Ndim == 4
-#             fact = 1e-3 #  0.1 # for more emphasis on the "forbidden" states. Old value: 0.1
-#             nForb = 0 # number of states with the highest index in at least one dimension
-#             q = 0
-#             for i4 = 1:Nt[4]
-#                 for i3 = 1:Nt[3]
-#                     for i2 = 1:Nt[2]
-#                         for i1 = 1:Nt[1]
-#                             q += 1
-#                             # initialize temp variables
-#                             temp1 = 0.0
-#                             temp2 = 0.0
-#                             temp3 = 0.0
-#                             temp4 = 0.0
-#                             if i1 <= Ne[1] && i2 <= Ne[2] && i3 <= Ne[3] && i4 <= Ne[4]
-#                                 w[q] = 0.0
-#                             else
-#                                 # determine and assign the largest penalty
-#                                 if i1 > Ne[1]   #only included if at a guard level
-#                                     temp1 = fact^(Nt[1]-i1)
-#                                 end
-#                                 if i2 > Ne[2]   #only included if at a guard level
-#                                     temp2 = fact^(Nt[2]-i2)
-#                                 end
-#                                 if i3 > Ne[3]   #only included if at a guard level
-#                                     temp3 = fact^(Nt[3]-i3)
-#                                 end
-#                                 if i4 > Ne[4]   #only included if at a guard level
-#                                     temp4 = fact^(Nt[4]-i4)
-#                                 end
-
-#                                 forbFact=1.0
-#                                 w[q] = forbFact*max(temp1, temp2, temp3, temp4)
-
-#                                 if i1 == Nt[1] || i2 == Nt[2] || i3 == Nt[3] || i4 == Nt[4]
-#                                     nForb += 1
-#                                 end
-
-#                             end # if
-#                         end # for i1
-#                     end # for i2
-#                 end # for i3
-#             end # for i4
-
-#             # normalize by the number of entries with w=1
-#             coeff = 10.0/nForb # was 1/nForb
-#         end # if ndim == 4
-#     else # msb_order = false
-#         if Ndim == 1
-#             fact = 0.1
-#             for q in 0:Ng[1]-1
-#                 w[Ntot-q] = fact^q
-#             end
-#             nForb = 1
-#             coeff = 1.0
-#         elseif Ndim == 2
-#             fact = 1e-3 # for more emphasis on the "forbidden" states. Old value: 0.1
-#             q = 0 # element in the array 'w'
-
-#             for i1 = 1:Nt[1]
-#                 for i2 = 1:Nt[2]
-#                     q += 1
-#                     # initialize temp variables
-#                     temp[1] = 0.0
-#                     temp[2] = 0.0
-#                     if i1 <= Ne[1] && i2 <= Ne[2]
-#                         w[q] = 0.0
-#                     else
-#                         # determine and assign the largest penalty
-#                         if i1 > Ne[1]   #only included if at a guard level
-#                             temp[1] = fact^(Nt[1]-i1)
-#                         end
-#                         if i2 > Ne[2]   #only included if at a guard level
-#                             temp[2] = fact^(Nt[2]-i2)
-#                         end
-#                         if i1 == Nt[1] || i2 == Nt[2]
-#                             nForb += 1 
-#                         end
-
-#                         forbFact=1.0
-#                         w[q] = forbFact*maximum(temp)
-        
-#                     end # if guard level
-#                 end # for i1
-#             end # for i2
-
-#             # normalize by the number of entries with w=1
-#             coeff = 1.0/nForb # was 1/nForb
-#             # end Ndim == 2
-#         elseif Ndim == 3
-#             fact = 1e-3 #  0.1 # for more emphasis on the "forbidden" states. Old value: 0.1
-#             nForb = 0 # number of states with the highest index in at least one dimension
-#             q = 0
-
-#             for i1 = 1:Nt[1]
-#                 for i2 = 1:Nt[2]
-#                     for i3 = 1:Nt[3]
-#                         q += 1
-#                         # initialize temp variables
-#                         temp1 = 0.0
-#                         temp2 = 0.0
-#                         temp3 = 0.0
-#                         if i1 <= Ne[1] && i2 <= Ne[2] && i3 <= Ne[3]
-#                             w[q] = 0.0
-#                         else
-#                             # determine and assign the largest penalty
-#                             if i1 > Ne[1]   #only included if at a guard level
-#                                 temp1 = fact^(Nt[1]-i1)
-#                             end
-#                             if i2 > Ne[2]   #only included if at a guard level
-#                                 temp2 = fact^(Nt[2]-i2)
-#                             end
-#                             if i3 > Ne[3]   #only included if at a guard level
-#                                 temp3 = fact^(Nt[3]-i3)
-#                             end
-
-#                             forbFact=1.0
-#                             w[q] = forbFact*max(temp1, temp2, temp3)
-
-#                             if i1 == Nt[1] || i2 == Nt[2] || i3 == Nt[3]
-#                                 nForb += 1
-#                             end
-
-#                         end # if
-#                     end # for
-#                 end # for
-#             end # for
-
-#             # normalize by the number of entries with w=1
-#             coeff = 10.0/nForb # was 1/nForb
-#             # end Ndim == 3
-#         elseif Ndim == 4
-#             fact = 1e-3 #  0.1 # for more emphasis on the "forbidden" states. Old value: 0.1
-#             nForb = 0 # number of states with the highest index in at least one dimension
-#             q = 0
-#             for i1 = 1:Nt[1]
-#                 for i2 = 1:Nt[2]
-#                     for i3 = 1:Nt[3]
-#                         for i4 = 1:Nt[4]            
-#                             q += 1
-#                             # initialize temp variables
-#                             temp1 = 0.0
-#                             temp2 = 0.0
-#                             temp3 = 0.0
-#                             temp4 = 0.0
-#                             if i1 <= Ne[1] && i2 <= Ne[2] && i3 <= Ne[3] && i4 <= Ne[4]
-#                                 w[q] = 0.0
-#                             else
-#                                 # determine and assign the largest penalty
-#                                 if i1 > Ne[1]   #only included if at a guard level
-#                                     temp1 = fact^(Nt[1]-i1)
-#                                 end
-#                                 if i2 > Ne[2]   #only included if at a guard level
-#                                     temp2 = fact^(Nt[2]-i2)
-#                                 end
-#                                 if i3 > Ne[3]   #only included if at a guard level
-#                                     temp3 = fact^(Nt[3]-i3)
-#                                 end
-#                                 if i4 > Ne[4]   #only included if at a guard level
-#                                     temp4 = fact^(Nt[4]-i4)
-#                                 end
-
-#                                 forbFact=1.0
-#                                 w[q] = forbFact*max(temp1, temp2, temp3, temp4)
-
-#                                 if i1 == Nt[1] || i2 == Nt[2] || i3 == Nt[3] || i4 == Nt[4]
-#                                     nForb += 1
-#                                 end
-
-#                             end # if
-#                         end # for i1
-#                     end # for i2
-#                 end # for i3
-#             end # for i4
-
-#             # normalize by the number of entries with w=1
-#             coeff = 10.0/nForb # was 1/nForb
-#         end # if ndim == 4
-#     end # lsb ordering
-
-#     # println("wmatsetup: Number of forbidden states = ", nForb, " scaling coeff = ", coeff)
-# end # if sum(Ng) > 0
-
-# wmat = coeff * Diagonal(w) # turn vector into diagonal matrix
-# return wmat
-# end
-
 function wmatsetup(is_ess::Vector{Bool}, it2in::Matrix{Int64}, Ne::Vector{Int64}, Ng::Vector{Int64})
 
     @assert(length(Ne) == size(it2in,2))
@@ -1411,7 +803,7 @@ function get_swap12_kron_ident()
     return swap_gate
 end
 
-function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float64}, xi::Vector{Float64}, couple_coeff::Vector{Float64}, couple_type::Int64, rot_freq::Vector{Float64}, T::Float64, D1::Int64, gate_final::Matrix{ComplexF64}; maxctrl_MHz::Float64=10.0, msb_order::Bool = true, Pmin::Int64 = 40, rand_frac::Float64=0.0, rand_seed::Int64=2345, pcofFileName::String="", zeroCtrlBC::Bool = true, use_eigenbasis::Bool = false, cw_amp_thres::Float64=5e-2, cw_prox_thres::Float64=2e-3)
+function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float64}, xi::Vector{Float64}, couple_coeff::Vector{Float64}, couple_type::Int64, rot_freq::Vector{Float64}, T::Float64, D1::Int64, gate_final::Matrix{ComplexF64}; maxctrl_MHz::Float64=10.0, msb_order::Bool = false, Pmin::Int64 = 40, init_amp_frac::Float64=0.0, randomize_init_ctrl::Bool = true, rand_seed::Int64=2345, pcofFileName::String="", zeroCtrlBC::Bool = true, use_eigenbasis::Bool = false, cw_amp_thres::Float64=5e-2, cw_prox_thres::Float64=2e-3)
 
     # enforce inequality constraint on the leakage?
     useLeakIneq = false # true
@@ -1422,19 +814,7 @@ function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float
     maxctrl_radns = 2*pi * maxctrl_MHz * 1e-3 
   
     pdim = length(Ne)
-    # @assert pdim <= 4 "Hamiltonian setup only implemented for up to 4 sub-systems"
-    # if pdim==1
-    #   Hsys, Hsym_ops, Hanti_ops = hamiltonians_one_sys(Ness=Ne, Nguard=Ng, freq01=f01, anharm=xi, rot_freq=rot_freq)
-    #   #    Hsys, Hsym_ops, Hanti_ops, om, rot_freq = setup_free(Ne[1], Ng[1], f[1], xi[1], rfreq)
-    # elseif pdim == 2
-    #   Hsys, Hsym_ops, Hanti_ops = hamiltonians_two_sys(Ness=Ne, Nguard=Ng, freq01=f01, anharm=xi, rot_freq=rot_freq, couple_coeff=couple_coeff, couple_type=couple_type, msb_order=msb_order)
-    #   # Hsys, Hsym_ops, Hanti_ops, om, rot_freq = setup_twoqubit_free(Ne, Ng, f, xi, couple_coeff, couple_type)
-    # elseif pdim == 3
-    #   Hsys, Hsym_ops, Hanti_ops = hamiltonians_three_sys(Ness=Ne, Nguard=Ng, freq01=f01, anharm=xi, rot_freq=rot_freq, couple_coeff=couple_coeff, couple_type=couple_type, msb_order = msb_order)
-    # elseif pdim == 4
-    #     Hsys, Hsym_ops, Hanti_ops = hamiltonians_four_sys(Ness=Ne, Nguard=Ng, freq01=f01, anharm=xi, rot_freq=rot_freq, couple_coeff=couple_coeff, couple_type=couple_type, msb_order = msb_order)  
-    # end
-
+    
     # General case
     Hsys, Hsym_ops, Hanti_ops = hamiltonians(Nsys=pdim, Ness=Ne, Nguard=Ng, freq01=f01, anharm=xi, rot_freq=rot_freq, couple_coeff=couple_coeff, couple_type=couple_type, msb_order = msb_order)  
 
@@ -1445,8 +825,7 @@ function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float
     #     println("j: ", j, " it2in[j,:]: ", it2in[j,:], " is_ess[j]: ", is_ess[j])
     # end
 
-
-    om, rate, Utrans = get_resonances(is_ess, it2in, Ness=Ne, Nguard=Ng, Hsys=Hsys, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, msb_order=msb_order, cw_amp_thres=cw_amp_thres, cw_prox_thres=cw_prox_thres, rot_freq=rot_freq)
+    om, growth_rate, Utrans = get_resonances(is_ess, it2in, Ness=Ne, Nguard=Ng, Hsys=Hsys, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, msb_order=msb_order, cw_amp_thres=cw_amp_thres, cw_prox_thres=cw_prox_thres, rot_freq=rot_freq)
     
     Ness = prod(Ne)
     Nosc = length(om) 
@@ -1463,21 +842,21 @@ function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float
 
     # allocate and sort the vectors (ascending order)
     om_p = Vector{Vector{Float64}}(undef, Nosc)
-    rate_p = Vector{Vector{Float64}}(undef, Nosc)
+    growth_rate_p = Vector{Vector{Float64}}(undef, Nosc)
     use_p = Vector{Vector{Int64}}(undef, Nosc)
     for q = 1:Nosc
         om_p[q] = zeros(Nfreq[q])
-        rate_p[q] = zeros(Nfreq[q])
+        growth_rate_p[q] = zeros(Nfreq[q])
         use_p[q] = zeros(Int64,Nfreq[q]) # By default, don't use any freq's
-        p = sortperm(om[q]) # sortperm(rate[q],rev=true)
+        p = sortperm(om[q]) # sortperm(growth_rate[q],rev=true)
         om_p[q] .= om[q][p]
-        rate_p[q] .= rate[q][p]
+        growth_rate_p[q] .= growth_rate[q][p]
     end
 
     println("Sorted CW freq's:")
     for q = 1:Nosc
       println("Ctrl Hamiltonian # ", q, ", lab frame carrier frequencies: ", rot_freq[q] .+ om_p[q]./(2*pi), " [GHz]")
-      println("Ctrl Hamiltonian # ", q, ",                   growth rate: ", rate_p[q], " [1/ns]")
+      println("Ctrl Hamiltonian # ", q, ",                   growth rate: ", growth_rate_p[q], " [1/ns]")
     end
 
     # Try to identify groups of almost equal frequencies
@@ -1493,7 +872,7 @@ function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float
                 rge = k0:k-1
                 om_avg = sum(om_p[q][rge])/length(rge)
                 println("Osc # ", q, " segment # ", seg, " Freq-range: ", (maximum(om_p[q][rge]) - minimum(om_p[q][rge]))/(2*pi), " Freq-avg: ", om_avg/(2*pi) + rot_freq[q])
-                # kmax = argmax(rate_p[q][rge])
+                # kmax = argmax(growth_rate_p[q][rge])
                 use_p[q][k0] = 1
                 # average the cw frequency over the segment
                 om_p[q][k0] = om_avg 
@@ -1505,33 +884,32 @@ function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float
         rge = k0:Nfreq[q]
         om_avg = sum(om_p[q][rge])/length(rge)
         println("Osc # ", q, " segment # ", seg, " Freq-range: ", (maximum(om_p[q][rge]) - minimum(om_p[q][rge]))/(2*pi), " Freq-avg: ", om_avg/(2*pi) + rot_freq[q])
-        # kmax = argmax(rate_p[q][rge])
+        # kmax = argmax(growth_rate_p[q][rge])
         use_p[q][k0] = 1
         om_p[q][k0] = om_avg 
 
         # cull out unused frequencies
         om[q] = zeros(sum(use_p[q]))
+        growth_rate[q] = zeros(sum(use_p[q]))
         j = 0
         for k=1:Nfreq[q]
             if use_p[q][k] == 1
                 j += 1
                 om[q][j] = om_p[q][k]
+                growth_rate[q][j] = growth_rate_p[q][k]
             end
         end
-        Nfreq[q] = j
+        Nfreq[q] = j # correct the number of CW frequencies for oscillator 'q'
     end
 
     println("\nSorted and culled CW freq's:")
     for q = 1:Nosc
       println("Ctrl Hamiltonian # ", q, ", lab frame carrier frequencies: ", rot_freq[q] .+ om[q]./(2*pi), " [GHz]")
+      println("Ctrl Hamiltonian # ", q, ",                   growth rate: ", growth_rate[q], " [1/ns]")
     end
   
     # Set the initial condition: Basis with guard levels
-    # Ubasis2 = initial_cond_old(Ne, Ng, msb_order) # Ubasis holds the basis that will be used as initial cond.
     Ubasis = initial_cond_general(is_ess, Ne, Ng)
-
-    #println("Testing initial conditions, norm(U - Unew): ", norm(Ubasis-Ubasis2))
-    #throw("Intentionally stopping here")
 
     # NOTE:
     # To impose the target transformation in the eigenbasis, keep the Hamiltonians the same
@@ -1551,7 +929,7 @@ function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float
     nCoeff = 2*D1*sum(Nfreq) # factor '2' is for Re/Im parts of ctrl vector
   
     # Set up the initial control parameter  
-    pcof0 = init_control(rand_frac = rand_frac, maxAmp=maxAmp, D1=D1, Nfreq=Nfreq, startFile=pcofFileName, seed=rand_seed)
+    pcof0 = init_control(amp_frac = init_amp_frac, maxAmp=maxAmp, D1=D1, Nfreq=Nfreq, startFile=pcofFileName, seed=rand_seed, randomize=randomize_init_ctrl, growth_rate=growth_rate)
   
     # Estimate time step based on the number of time steps per shortest period
   

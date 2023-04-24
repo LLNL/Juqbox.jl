@@ -28,6 +28,7 @@ export hamiltonians_two_sys, transformHamiltonians!, hamiltonians_three_sys
 export hamiltonians_four_sys, hamiltonians
 export setup_std_model, get_CNOT, get_CpNOT, get_Hd_gate, get_swap_1d_gate
 export get_ident_kron_swap23, get_swap12_kron_ident
+export run_Quandary
 
 # Julia versions prior to v"1.3.1" can't use LinearAlgebra's 5 argument mul!, routines
 # included here for backwards compatability
@@ -59,5 +60,7 @@ include("plot-results.jl")
 include("save_pcof.jl")
 
 include("setup_problem.jl")
+
+include("quandary_interface.jl")
 
 end # module

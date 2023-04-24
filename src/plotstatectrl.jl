@@ -479,10 +479,15 @@ function plot_final_unitary(final_unitary::Array{ComplexF64,2}, params::objparam
 
     plotarray = Array{Plots.Plot}(undef, 2) #empty array for separate plots
     
-    tstr0 = "Amplitude" 
-    plotarray[1] = plot(heatmap(abs.(Ufinal), c= :coolwarm), yflip=true, title=tstr0, aspect_ratio=:equal, clim=(0.0, 1.0))
-    tstr0 = "Phase"
-    plotarray[2] = plot(heatmap(angle.(Ufinal), c= :hot), yflip=true, title=tstr0, aspect_ratio=:equal, clim=(-pi,pi))
+    # tstr0 = "Amplitude" 
+    # plotarray[1] = plot(heatmap(abs.(Ufinal), c= :coolwarm), yflip=true, title=tstr0, aspect_ratio=:equal, clim=(0.0, 1.0))
+    # tstr0 = "Phase"
+    # plotarray[2] = plot(heatmap(angle.(Ufinal), c= :hot), yflip=true, title=tstr0, aspect_ratio=:equal, clim=(-pi,pi))
+
+    tstr0 = "Real(U)" 
+    plotarray[1] = plot(heatmap(real.(Ufinal), c= :coolwarm), yflip=true, title=tstr0, aspect_ratio=:equal, clim=(-1.0, 1.0))
+    tstr0 = "Imag(U)"
+    plotarray[2] = plot(heatmap(imag.(Ufinal), c= :coolwarm), yflip=true, title=tstr0, aspect_ratio=:equal, clim=(-1.0, 1.0))
 
     pl_uf = plot(plotarray..., layout = (1,2))
     return pl_uf

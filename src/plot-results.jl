@@ -13,14 +13,18 @@ Create array of plot objects that can be visualized by, e.g., `display(pl[1])`.
 function plot_results(params::objparams, pcof::Array{Float64,1}; casename::String = "test", savefiles::Bool = false, samplerate:: Int64 = 32)
 
     # Set default font sizes
-    fnt = Plots.font("Helvetica", 12)
-    lfnt = Plots.font("Helvetica", 10)
+    # fnt = Plots.font("Helvetica", 12)
+    # lfnt = Plots.font("Helvetica", 10)
 
-    if haskey(Plots._arg_desc,:legend_font_family)
-        Plots.default(legend_title_font_family=fnt, guidefontfamily=fnt, tickfontfamily=fnt, legend_font_family=lfnt, linewidth=1, size=(650, 350))
-    else 
-        Plots.default(titlefont=fnt, guidefont=fnt, tickfont=fnt, legendfont=lfnt, linewidth=1, size=(650, 350))
-    end
+    # if haskey(Plots._arg_desc,:legend_font_family)
+    #     Plots.default(legend_title_font_family=fnt, guidefontfamily=fnt, tickfontfamily=fnt, legend_font_family=lfnt, linewidth=1, size=(650, 350))
+    # else 
+    #     Plots.default(titlefont=fnt, guidefont=fnt, tickfont=fnt, legendfont=lfnt, linewidth=1, size=(650, 350))
+    # end
+
+    plot_font = "Helvetica"
+    Plots.default(fontfamily=plot_font, linewidth=1, size=(650, 350))
+    
 
     custom = 0
 

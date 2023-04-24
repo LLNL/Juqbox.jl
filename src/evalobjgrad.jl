@@ -2177,23 +2177,23 @@ function calculate_timestep(T::Float64, H0::Matrix{Float64}; Hsym_ops::Vector{Ma
 
     K1 = copy(H0) # system Hamiltonian
 
-    # Test: Only compute egenvalues of the system Hamiltonian. Then increase the sample rate by a factor > 1 to compensate for the control Hamiltonian
+    # Test: Only compute egenvalues of the system Hamiltonian. Then increase the sample rate by a factor > 1 to compensate for the control Hamiltonian: Tends to underestimate the number of time steps
 
-    # # Coupled control Hamiltonians
-    # for i = 1:Ncoupled
-    #     K1 += maxCoupled[i].*Hsym_ops[i] + 1im*maxCoupled[i].*Hanti_ops[i]
-    # end
+    # Coupled control Hamiltonians
+    for i = 1:Ncoupled
+        K1 += maxCoupled[i].*Hsym_ops[i] + 1im*maxCoupled[i].*Hanti_ops[i]
+    end
 
-    # # Uncoupled control Hamiltonians
-    # for i = 1:Nunc
-    #     if(issymmetric(Hunc_ops[i]))
-    #         K1 += maxUnc[i]*Hunc_ops[i]
-    #     elseif(norm(Hunc_ops[i]+Hunc_ops[i]') < 1e-14)
-    #         K1 += 1im*maxUnc[i].*Hunc_ops[i]
-    #     else 
-    #         throw(ArgumentError("Uncoupled Hamiltonians must currently be either symmetric or anti-symmetric.\n"))
-    #     end
-    # end
+    # Uncoupled control Hamiltonians
+    for i = 1:Nunc
+        if(issymmetric(Hunc_ops[i]))
+            K1 += maxUnc[i]*Hunc_ops[i]
+        elseif(norm(Hunc_ops[i]+Hunc_ops[i]') < 1e-14)
+            K1 += 1im*maxUnc[i].*Hunc_ops[i]
+        else 
+            throw(ArgumentError("Uncoupled Hamiltonians must currently be either symmetric or anti-symmetric.\n"))
+        end
+    end
 
     # Estimate time step
     lamb = eigvals(Array(K1))
