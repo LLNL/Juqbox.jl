@@ -92,9 +92,13 @@ function hamiltonians(;Nsys::Int64, Ness::Vector{Int64}, Nguard::Vector{Int64}, 
 end
 
 # initial control guess
-function init_control(;amp_frac::Float64, maxAmp::Vector{Float64}, D1::Int64, Nfreq::Vector{Int64}, startFile::String = "", seed::Int64 = -1, randomize::Bool = true, growth_rate::Vector{Vector{Float64}} = Vector{Vector{Float64}}(undef,0))
+function init_control(;amp_frac::Float64, maxAmp::Vector{Float64}, D1::Int64, Nfreq::Vector{Int64}, startFile::String = "", seed::Int64 = -1, randomize::Bool = true, growth_rate::Vector{Vector{Float64}} = Vector{Vector{Float64}}(undef,0), splines_real_imag=splines_real_imag)
     Nosc = length(Nfreq)
-    nCoeff = 2*D1*sum(Nfreq)
+    if splines_real_imag
+        nCoeff = 2*D1*sum(Nfreq)
+    else
+        nCoeff = (D1+1)*sum(Nfreq)
+    end
 
     # initial parameter guess: from file?
     if length(startFile) > 0
@@ -116,12 +120,23 @@ function init_control(;amp_frac::Float64, maxAmp::Vector{Float64}, D1::Int64, Nf
         end
 
         if randomize
-            for q=1:Nosc
-                if Nfreq[q] > 0
-                    maxrand = amp_frac*maxAmp[q]/sqrt(2)/Nfreq[q]
-                    Nq = 2*D1*Nfreq[q]
-                    pcof0[offc+1:offc+Nq] = maxrand * 2 * (rand(Nq) .- 0.5)
-                    offc += Nq
+            if splines_real_imag
+                for q=1:Nosc
+                    if Nfreq[q] > 0
+                        maxrand = amp_frac*maxAmp[q]/sqrt(2)/Nfreq[q]
+                        Nq = 2*D1*Nfreq[q]
+                        pcof0[offc+1:offc+Nq] = maxrand * 2 * (rand(Nq) .- 0.5)
+                        offc += Nq
+                    end
+                end
+            else
+                for q=1:Nosc
+                    for k = 1:Nfreq[q]
+                        maxrand = amp_frac*maxAmp[q]/sqrt(2)/Nfreq[q]
+                        pcof0[offc+1:offc+D1] = maxrand * 2 * (rand(D1) .- 0.5) 
+                        pcof0[offc+1+D1] = 2*pi * (rand(1)[1] - 0.5) # [-pi, pi]
+                        offc += (D1+1)
+                    end
                 end
             end
             println("*** Starting from RANDOM control vector with amp_frac = ", amp_frac)
@@ -131,15 +146,26 @@ function init_control(;amp_frac::Float64, maxAmp::Vector{Float64}, D1::Int64, Nf
                 max_rate = max( max_rate, maximum(growth_rate[q]) )
             end
             println("max_rate = ", max_rate)
-            for q = 1:Nosc
-                for k = 1:Nfreq[q]
-                    const_amp = amp_frac * maxAmp[q]/sqrt(2)/Nfreq[q] * max_rate/(growth_rate[q][k])
-                    pcof0[offc+1:offc+2*D1] .= const_amp
-        
-                    # randomizing p/q knocks out any Rabi-style oscillation
-                    # pcof0[offc+1:offc+D1] = fact*(rand(D1) .- 0.5)
-                    # pcof0[offc+D1+1:offc+2*D1] = fact*(rand(D1) .- 0.5)
-                    offc += 2*D1
+            if splines_real_imag
+                for q = 1:Nosc
+                    for k = 1:Nfreq[q]
+                        const_amp = amp_frac * maxAmp[q]/sqrt(2)/Nfreq[q] * max_rate/(growth_rate[q][k])
+                        pcof0[offc+1:offc+2*D1] .= const_amp
+            
+                        # randomizing p/q knocks out any Rabi-style oscillation
+                        # pcof0[offc+1:offc+D1] = fact*(rand(D1) .- 0.5)
+                        # pcof0[offc+D1+1:offc+2*D1] = fact*(rand(D1) .- 0.5)
+                        offc += 2*D1
+                    end
+                end
+            else
+                for q = 1:Nosc
+                    for k = 1:Nfreq[q]
+                        const_amp = amp_frac * maxAmp[q]/sqrt(2)/Nfreq[q] * max_rate/(growth_rate[q][k])
+                        pcof0[offc+1:offc+D1] .= const_amp
+                        pcof0[offc+1+D1] = 0.0 # zero phase ok?
+                        offc += (D1+1)
+                    end
                 end
             end
             println("*** Starting from PIECEWISE CONSTANT control vector with amp_frac = ", amp_frac)
@@ -816,7 +842,8 @@ end
      zeroCtrlBC::Bool = true, 
      use_eigenbasis::Bool = false, 
      cw_amp_thres = 5e-2, 
-     cw_prox_thres = 2e-3)
+     cw_prox_thres = 2e-3, 
+     splines_real_imag = true)
 
 Setup a Hamiltonian model, parameters for numerical time stepping, a target unitary gate, carrier frequencies, boundary conditions for the control functions, amplitude bounds for the controls, and initialize the control vector for optimization.
 
@@ -844,13 +871,14 @@ Setup a Hamiltonian model, parameters for numerical time stepping, a target unit
 - `use_eigenbasis::Bool = false`: Experimental option. Avoid using. See source code for details.
 - `cw_amp_thres::Float64 = 5e-2`: Only consider elements in the transformed control Hamiltonian that are larger than this threshold
 - `cw_prox_thres::Float64 = 2e-3`: Only consider carrier frequencies that are separated by at least this threshold
+- `splines_real_imag::Bool=true`: B-spline parameterization: `true` (default) use both real and imaginary parts; `false` only control the amplitude and a fixed phase
 
 # Return arguments 
 - `params::objparams`: Object specifying the quantum system and the optimization problem.
 - `pcof0::Vector{Float64}`: Initial control vector.
 - `maxAmp::Vector{Float64}`: Max amplitudes for each segement of the control vector. Here a segment corresponds to a control Hamiltonian
 """
-function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float64}, xi::Vector{Float64}, couple_coeff::Vector{Float64}, couple_type::Int64, rot_freq::Vector{Float64}, T::Float64, D1::Int64, gate_final::Matrix{ComplexF64}; maxctrl_MHz::Float64=10.0, msb_order::Bool = false, Pmin::Int64 = 40, init_amp_frac::Float64=0.0, randomize_init_ctrl::Bool = true, rand_seed::Int64=2345, pcofFileName::String="", zeroCtrlBC::Bool = true, use_eigenbasis::Bool = false, cw_amp_thres::Float64=5e-2, cw_prox_thres::Float64=2e-3)
+function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float64}, xi::Vector{Float64}, couple_coeff::Vector{Float64}, couple_type::Int64, rot_freq::Vector{Float64}, T::Float64, D1::Int64, gate_final::Matrix{ComplexF64}; maxctrl_MHz::Float64=10.0, msb_order::Bool = false, Pmin::Int64 = 40, init_amp_frac::Float64=0.0, randomize_init_ctrl::Bool = true, rand_seed::Int64=2345, pcofFileName::String="", zeroCtrlBC::Bool = true, use_eigenbasis::Bool = false, cw_amp_thres::Float64=5e-2, cw_prox_thres::Float64=2e-3, splines_real_imag::Bool=true)
 
     # enforce inequality constraint on the leakage?
     useLeakIneq = false # true
@@ -973,10 +1001,14 @@ function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float
     #   transformHamiltonians!(Hsys, Hsym_ops, Hanti_ops, Utrans) 
     # end
   
-    nCoeff = 2*D1*sum(Nfreq) # factor '2' is for Re/Im parts of ctrl vector
+    if splines_real_imag
+        nCoeff = 2*D1*sum(Nfreq) # factor '2' is for Re/Im parts of ctrl vector
+    else
+        nCoeff = (D1+1)*sum(Nfreq) # Use a variable amplitude with a fixed phase
+    end
   
     # Set up the initial control parameter  
-    pcof0 = init_control(amp_frac = init_amp_frac, maxAmp=maxAmp, D1=D1, Nfreq=Nfreq, startFile=pcofFileName, seed=rand_seed, randomize=randomize_init_ctrl, growth_rate=growth_rate)
+    pcof0 = init_control(amp_frac = init_amp_frac, maxAmp=maxAmp, D1=D1, Nfreq=Nfreq, startFile=pcofFileName, seed=rand_seed, randomize=randomize_init_ctrl, growth_rate=growth_rate, splines_real_imag=splines_real_imag)
   
     # Estimate time step based on the number of time steps per shortest period
   

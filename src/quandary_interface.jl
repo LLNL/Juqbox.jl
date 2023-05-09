@@ -149,22 +149,27 @@ function write_Quandary_config_file(configfilename::String, Nt::Vector{Int64}, N
 """
     qres = run_Quandary(params, pcof0, maxAmp; 
                         runIdx = 3, maxIter = 100, ncores = 1, quandary_exec = "./main", 
-                        print_frequency_iter = 1, gamma_dpdm = 0.0, gamma_energy = 0.0, final_objective = 1)
+                        print_frequency_iter = 1, gamma_dpdm = 0.0, gamma_energy = 0.0, 
+                        final_objective = 1, splines_real_imag::Bool = true, phase_scaling_factor::Float64=1.0)
 
 Execute the Quandary solver in a sub-process to perform either a forward simulation, evaluate the gradient of the objective function, or optimize the control vector.
  
-# Arguments
--  `params::objparams`: Object holding the optimization problem description (Required arg)
-- `pcof0::Vector{Float64}:` Vector of length 2*D1*sum(Nfreq) holding initial control vector (Required arg)
-- `maxAmp::Vector{Float64}`: Approximate bounds on the control amplitude [MHz] for the p(t) and q(t) control function, for each control Hamiltonian (Required arg)
-- `runIdx::Int64 = 3` Task: 1=simulation, 2=gradient, 3=optimization (default) (kwarg)
-- `maxIter::Int64 = 100` Maximum number of optimization iterations (kwarg)
-- `ncores::Int64 = 1`  Number of MPI-tasks to use. Must be evenly divisible by the total number of essential states (kwarg)
-- `quandary_exec::String="./main"` Quandary executable (kwarg)
-- `print_frequency_iter::Int64 = 1` Output frequency for optimizer (kwarg)
-- `gamma_dpdm::Float64 = 0.0` Coefficient for the penalty term that penalizes oscillations of the population (kwarg)
-- `gamma_energy::Float64 = 0.0` Coefficient for the penalty term that penalizes the energy in the control functions (kwarg)
-- `final_objective::Int64 = 1` Type of final objective function: 1=trace fidelity (default), 2=Frobenius norm squared (kwarg)
+# Required arguments
+- `params::objparams`: Object holding the optimization problem description
+- `pcof0::Vector{Float64}:` Vector of length 2*D1*sum(Nfreq) holding initial control vector
+- `maxAmp::Vector{Float64}`: Approximate bounds on the control amplitude [MHz] for the p(t) and q(t) control function, for each control Hamiltonian
+
+# Optional key-word arguments
+- `runIdx::Int64 = 3`: Use `1` for simulation, `2` for the gradient, and `3` for optimization (default)
+- `maxIter::Int64 = 100`: Maximum number of optimization iterations
+- `ncores::Int64 = 1`:  Number of MPI-tasks to use. Must be evenly divisible by the total number of essential states
+- `quandary_exec::String="./main"`: Quandary executable
+- `print_frequency_iter::Int64 = 1`: Output frequency for the optimizer
+- `gamma_dpdm::Float64 = 0.0`: Coefficient for the penalty term that penalizes oscillations of the population
+- `gamma_energy::Float64 = 0.0`: Coefficient for the penalty term that penalizes the energy in the control functions
+- `final_objective::Int64 = 1`: Type of final objective function: 1=trace fidelity (default), 2=Frobenius norm squared
+- `splines_real_imag::Bool = true`: B-spline parameterization: `true` (default) use both real and imaginary parts; `false` only use the amplitude and a fixed phase
+- `phase_scaling_factor::Float64 = 1.0`: Scaling of the phase during the optimization
 
 # Return argument
 The return argument `qres` is a tuple with a content that depends on the input argument `runIdx`. 
