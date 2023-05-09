@@ -251,9 +251,6 @@ function run_Quandary(params::objparams, pcof0::Vector{Float64}, optim_bounds::V
     close(f)
     #writedlm(gatefilename, gate_1d)
   
-    splines_real_imag = true # Default: real & imag parts in control vector
-    phase_scaling_factor = 1.0 # Scaling factor of the phase when splines_real_imag=false
-
     # Write initial pcof to file"
     initialpcof_filename = "pcof_init.dat"
     f = open(initialpcof_filename, "w")
