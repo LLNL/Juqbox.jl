@@ -1,6 +1,7 @@
 ### Set up the Hamiltonians using the standard model 
 
 using LinearAlgebra
+using Documenter
 
 function hamiltonians(;Nsys::Int64, Ness::Vector{Int64}, Nguard::Vector{Int64}, freq01::Vector{Float64}, anharm::Vector{Float64}, rot_freq::Vector{Float64}, couple_coeff::Vector{Float64}, couple_type::Int64, msb_order::Bool = false, verbose::Bool = true)
     @assert(Nsys>=1)
@@ -803,6 +804,52 @@ function get_swap12_kron_ident()
     return swap_gate
 end
 
+"""
+    params, pcof0, maxAmp = setup_std_model(Ne, Ng, f01, xi, couple_coeff, couple_type, rot_freq, T, D1, gate_final;
+     maxctrl_MHz = 10.0, 
+     msb_order::Bool = false, 
+     Pmin::Int64 = 40, 
+     init_amp_frac::Float64 = 0.0, 
+     randomize_init_ctrl::Bool = true, 
+     rand_seed = 2345, 
+     pcofFileName="", 
+     zeroCtrlBC::Bool = true, 
+     use_eigenbasis::Bool = false, 
+     cw_amp_thres = 5e-2, 
+     cw_prox_thres = 2e-3)
+
+Setup a Hamiltonian model, parameters for numerical time stepping, a target unitary gate, carrier frequencies, boundary conditions for the control functions, amplitude bounds for the controls, and initialize the control vector for optimization.
+
+# Required arguments
+- `Ne::Vector{Int64}`: Number of essential energy levels in each subsystem.
+- `Ng::Vector{Int64}`: Number of guard levels in each subssystem.
+- `f01::Vector{Float64}`: Transistion frequencies in each subsystem (Ground to first excited state) [GHz].
+- `xi::Vector{Float64}`: Anharmonicities in each subsystem [GHz].
+- `couple_coeff::Vector{Float64}`: Coupling coefficients between subsystems [GHz], ordered as ``[x_{1,2}, ..., x_{1,n}, x_{2,3}, ..., x_{2,n}, ..., x_{n-1,n}]``.
+- `couple_type::Int64`: Type of coupling Hamiltonian. Use 1 for cross-Kerr (``\\hat{a}^\\dagger \\hat{a} \\hat{b}^\\dagger \\hat{b}``) and 2 for a dipole-dipole coupling (``\\hat{a}^\\dagger \\hat{b} + \\hat{a} \\hat{b}^\\dagger``).
+- `rot_freq::Vector{Float64}`: Frequency of rotation for each sub-system [GHz].
+- `T::Float64`: Duration of the simulation/optimization.
+- `D1::Int64`: Number of B-spline coefficients per segment of the control function. Here each segment corresponds to one control Hamiltonian, one carrier frequency, and either the real or the imaginary part of the control function.
+- `gate_final::Matrix{ComplexF64}`: Target unitary gate of size N x N, where N=prod(Ne).
+
+# Optional key-word arguments
+- `maxctrl_MHz::Float64 = 10.0`: Approximate max control amplitude [MHz].
+- `msb_order::Bool = false`: Ordering of subsystems in the state vector. Should be 'false' when using the Quandary backend.
+- `Pmin::Int64 = 40`
+- `init_amp_frac::Float64 = 0.0`
+- `randomize_init_ctrl::Bool = true`
+- `rand_seed::Int64 = 2345`
+- `pcofFileName = ""`: Read initial control vector from a `jld2` formatted file.
+- `zeroCtrlBC::Bool = true`
+- `use_eigenbasis::Bool = false`: Experimental option. Avoid using. See source code for details.
+- `cw_amp_thres::Float64 = 5e-2`: Only consider elements in the transformed control Hamiltonian that are larger than this threshold
+- `cw_prox_thres::Float64 = 2e-3`: Only consider carrier frequencies that are separated by at least this threshold
+
+# Return arguments 
+- `params::objparams`: Object specifying the quantum system and the optimization problem.
+- `pcof0::Vector{Float64}`: Initial control vector.
+- `maxAmp::Vector{Float64}`: Max amplitudes for each segement of the control vector. Here a segment corresponds to a control Hamiltonian
+"""
 function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float64}, xi::Vector{Float64}, couple_coeff::Vector{Float64}, couple_type::Int64, rot_freq::Vector{Float64}, T::Float64, D1::Int64, gate_final::Matrix{ComplexF64}; maxctrl_MHz::Float64=10.0, msb_order::Bool = false, Pmin::Int64 = 40, init_amp_frac::Float64=0.0, randomize_init_ctrl::Bool = true, rand_seed::Int64=2345, pcofFileName::String="", zeroCtrlBC::Bool = true, use_eigenbasis::Bool = false, cw_amp_thres::Float64=5e-2, cw_prox_thres::Float64=2e-3)
 
     # enforce inequality constraint on the leakage?

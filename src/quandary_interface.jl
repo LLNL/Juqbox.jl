@@ -1,7 +1,7 @@
 using DelimitedFiles
 using Printf
 
-function write_Quandary_config_file(configfilename::String, Nt::Vector{Int64}, Ne::Vector{Int64}, T::Float64, nsteps::Int64, freq01::Vector{Float64}, rotfreq::Vector{Float64}, selfkerr::Vector{Float64}, couple_coeff::Vector{Float64}, couple_type::Int64, D1::Int64, carrierfreq::Vector{Vector{Float64}}, gatefilename::String, initialpcof_filename::String, optim_bounds::Vector{Float64}, inftol::Float64, maxiter::Int64, tik0::Float64, leakage_weights::Vector{Float64}, print_frequency_iter::Int64; runtype::String="optimization", gamma_dpdm::Float64=0.1, final_objective::Int64=1, gamma_energy::Float64=0.0)
+function write_Quandary_config_file(configfilename::String, Nt::Vector{Int64}, Ne::Vector{Int64}, T::Float64, nsteps::Int64, freq01::Vector{Float64}, rotfreq::Vector{Float64}, selfkerr::Vector{Float64}, couple_coeff::Vector{Float64}, couple_type::Int64, D1::Int64, carrierfreq::Vector{Vector{Float64}}, gatefilename::String, initialpcof_filename::String, optim_bounds::Vector{Float64}, inftol::Float64, maxiter::Int64, tik0::Float64, leakage_weights::Vector{Float64}, print_frequency_iter::Int64; runtype::String="optimization", gamma_dpdm::Float64=0.0, final_objective::Int64=1, gamma_energy::Float64=0.0, splines_real_imag::Bool = true, phase_scaling_factor::Float64=1.0)
 
     # final_objective = 1 uses the trace infidelity; 
     # final_objective = 2 uses the Frobenius norm squared
@@ -25,17 +25,34 @@ function write_Quandary_config_file(configfilename::String, Nt::Vector{Int64}, N
     end
     mystring *= "collapse_type=none\n"
     mystring *= "initialcondition=basis\n"
-    for iosc in 1:length(Ne)
-      mystring*= "control_segments"*string(iosc-1)*" = spline, "*string(D1)*"\n"
-      mystring*= "control_initialization"*string(iosc-1)*" = file, ./"*string(initialpcof_filename)*"\n"
-      mystring*= "control_bounds"*string(iosc-1)*" = "*string(optim_bounds[iosc])*"\n"
-      mystring *= "carrier_frequency"*string(iosc-1)*" = "
-      omi = carrierfreq[iosc]
-      for j in 1:length(omi)
-          mystring *= string(omi[j]/(2*pi)) *", "
+    
+    # choose between having splines for both the real & imaginary parts, or only for the amplitude with a fixed phase
+    if splines_real_imag
+      for iosc in 1:length(Ne)
+        mystring*= "control_segments" * string(iosc-1) * " = spline, "*string(D1) * "\n"
+        mystring*= "control_initialization" * string(iosc-1) * " = file, ./" * string(initialpcof_filename) * "\n"
+        mystring*= "control_bounds" * string(iosc-1) * " = " * string(optim_bounds[iosc]) * "\n"
+        mystring *= "carrier_frequency" * string(iosc-1) * " = "
+        omi = carrierfreq[iosc]
+        for j in 1:length(omi)
+            mystring *= string(omi[j]/(2*pi)) * ", "
+        end
+        mystring *= "\n"
       end
-      mystring *= "\n"
+    else
+      for iosc in 1:length(Ne)
+        mystring*= "control_segments" * string(iosc-1) * " = spline_amplitude, " * string(D1) * ", " * string(phase_scaling) * "\n"
+        mystring*= "control_initialization" * string(iosc-1) * " = file, ./" * string(initialpcof_filename) * "\n"
+        mystring*= "control_bounds" * string(iosc-1) * " = " * string(optim_bounds[iosc]) * "\n"
+        mystring *= "carrier_frequency" * string(iosc-1) * " = "
+        omi = carrierfreq[iosc]
+        for j in 1:length(omi)
+            mystring *= string(omi[j]/(2*pi)) * ", "
+        end
+        mystring *= "\n"
+      end
     end
+
     mystring *= "optim_target = gate, fromfile, " * string(gatefilename) * "\n"
     if final_objective == 1
       mystring *= "optim_objective = Jtrace\n" 
@@ -130,14 +147,16 @@ function write_Quandary_config_file(configfilename::String, Nt::Vector{Int64}, N
 # Run Quandary
 # runIdx can be 1=simulation, 2=gradient, or 3=optimization
 """
-    qres = run_Quandary(params, pcof0::, optim_bounds; runIdx = 3, maxIter = 100, ncores = 1, quandary_exec = "./main", print_frequency_iter = 1, gamma_dpdm = 0.0, gamma_energy = 0.0, final_objective = 1)
+    qres = run_Quandary(params, pcof0, maxAmp; 
+                        runIdx = 3, maxIter = 100, ncores = 1, quandary_exec = "./main", 
+                        print_frequency_iter = 1, gamma_dpdm = 0.0, gamma_energy = 0.0, final_objective = 1)
 
-Open a shell and execute the Quandary solver to perform either a forward simulation, evaluate the gradient of the objective function, or optimize the control vector.
+Execute the Quandary solver in a sub-process to perform either a forward simulation, evaluate the gradient of the objective function, or optimize the control vector.
  
 # Arguments
 -  `params::objparams`: Object holding the optimization problem description (Required arg)
 - `pcof0::Vector{Float64}:` Vector of length 2*D1*sum(Nfreq) holding initial control vector (Required arg)
-- `optim_bounds::Vector{Float64}`: Approximate max control amplitude [MHz] for the p(t) and q(t) control function, for each control Hamiltonian (Required arg)
+- `maxAmp::Vector{Float64}`: Approximate bounds on the control amplitude [MHz] for the p(t) and q(t) control function, for each control Hamiltonian (Required arg)
 - `runIdx::Int64 = 3` Task: 1=simulation, 2=gradient, 3=optimization (default) (kwarg)
 - `maxIter::Int64 = 100` Maximum number of optimization iterations (kwarg)
 - `ncores::Int64 = 1`  Number of MPI-tasks to use. Must be evenly divisible by the total number of essential states (kwarg)
@@ -150,10 +169,10 @@ Open a shell and execute the Quandary solver to perform either a forward simulat
 # Return argument
 The return argument `qres` is a tuple with a content that depends on the input argument `runIdx`. 
 - `runIdx=1`: qres[1] = objective, qres[2] = infidelity, qres[3] = penalty, qres[4] = unitary transformation at final time. 
-- `run_Idx=2`: qres[1] = objective, qres[2] = gradient, qres[3] = infidelity, qres[4] = penalty, qres[5] = fidelity. 
-- `run_Idx=3`: qres[1] = optimized control vector, qres[2] = infidelity, qres[3] = penalty, qres[4] = Tikhonov, qres[5] = optimization history, qres[6] = number of optimization iterations.
+- `runIdx=2`: qres[1] = objective, qres[2] = gradient, qres[3] = infidelity, qres[4] = penalty, qres[5] = fidelity. 
+- `runIdx=3`: qres[1] = optimized control vector, qres[2] = infidelity, qres[3] = penalty, qres[4] = Tikhonov, qres[5] = optimization history, qres[6] = number of optimization iterations.
 """
-function run_Quandary(params::objparams, pcof0::Vector{Float64}, optim_bounds::Vector{Float64}; runIdx::Int64 = 3, maxIter::Int64 = 100, ncores::Int64 = 1, quandary_exec::String="./main", print_frequency_iter::Int64 = 1, gamma_dpdm::Float64 = 0.0, gamma_energy::Float64 = 0.0, final_objective::Int64 = 1)
+function run_Quandary(params::objparams, pcof0::Vector{Float64}, optim_bounds::Vector{Float64}; runIdx::Int64 = 3, maxIter::Int64 = 100, ncores::Int64 = 1, quandary_exec::String="./main", print_frequency_iter::Int64 = 1, gamma_dpdm::Float64 = 0.0, gamma_energy::Float64 = 0.0, final_objective::Int64 = 1, splines_real_imag::Bool = true, phase_scaling_factor::Float64=1.0)
     # gamma_dpdm > 0.0 to penalize the 2nd time derivative of the population
     # final_objective = 1 corresponds to the trace infidelity
     
@@ -180,8 +199,14 @@ function run_Quandary(params::objparams, pcof0::Vector{Float64}, optim_bounds::V
   
     leakage_weights = diag(params.wmat) # Scaling of leakage contribution
   
-    D1 = div(params.nCoeff, 2*params.NfreqTot)
-    @assert(2*D1*params.NfreqTot == params.nCoeff) # no reminder is allowed
+    if splines_real_imag # specify both the real and imaginary coefficients in the ctrl vector
+      D1 = div(params.nCoeff, 2*params.NfreqTot)
+      @assert(2*D1*params.NfreqTot == params.nCoeff) # no remainder is allowed
+    else # only specify the amplitude vector and a constant phase
+      D1p1 = div(params.nCoeff, params.NfreqTot)
+      @assert(D1p1*params.NfreqTot == params.nCoeff) # no remainder is allowed
+      D1 = D1p1 - 1
+    end
   
     # transition frequencies
     freq01 = params.freq01 
@@ -221,6 +246,9 @@ function run_Quandary(params::objparams, pcof0::Vector{Float64}, optim_bounds::V
     close(f)
     #writedlm(gatefilename, gate_1d)
   
+    splines_real_imag = true # Default: real & imag parts in control vector
+    phase_scaling_factor = 1.0 # Scaling factor of the phase when splines_real_imag=false
+
     # Write initial pcof to file"
     initialpcof_filename = "pcof_init.dat"
     f = open(initialpcof_filename, "w")
@@ -233,7 +261,7 @@ function run_Quandary(params::objparams, pcof0::Vector{Float64}, optim_bounds::V
   
     # Write Quandaries configuration file
     config_filename = "config.cfg"
-    write_Quandary_config_file(config_filename, Nt, Ne, T, nsteps, freq01, rotfreq, selfkerr, couple_coeff, couple_type, D1, carrierfreq, gatefilename, initialpcof_filename, optim_bounds, inftol, maxIter, tikQ, leakage_weights, print_frequency_iter, runtype = runtype, gamma_dpdm = gamma_dpdm, final_objective = final_objective, gamma_energy = gamma_energy)
+    write_Quandary_config_file(config_filename, Nt, Ne, T, nsteps, freq01, rotfreq, selfkerr, couple_coeff, couple_type, D1, carrierfreq, gatefilename, initialpcof_filename, optim_bounds, inftol, maxIter, tikQ, leakage_weights, print_frequency_iter, runtype = runtype, gamma_dpdm = gamma_dpdm, final_objective = final_objective, gamma_energy = gamma_energy, splines_real_imag = splines_real_imag, phase_scaling_factor = phase_scaling_factor)
   
     # Set up the run command
     if ncores > 1
