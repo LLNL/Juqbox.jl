@@ -92,7 +92,7 @@ function hamiltonians(;Nsys::Int64, Ness::Vector{Int64}, Nguard::Vector{Int64}, 
 end
 
 # initial control guess
-function init_control(;amp_frac::Float64, maxAmp::Vector{Float64}, D1::Int64, Nfreq::Vector{Int64}, startFile::String = "", seed::Int64 = -1, randomize::Bool = true, growth_rate::Vector{Vector{Float64}} = Vector{Vector{Float64}}(undef,0), splines_real_imag=splines_real_imag)
+function init_control(;amp_frac::Float64, maxAmp::Vector{Float64}, D1::Int64, Nfreq::Vector{Int64}, startFile::String = "", seed::Int64 = -1, randomize::Bool = true, growth_rate::Vector{Vector{Float64}} = Vector{Vector{Float64}}(undef,0), splines_real_imag::Bool=true)
     Nosc = length(Nfreq)
     if splines_real_imag
         nCoeff = 2*D1*sum(Nfreq)

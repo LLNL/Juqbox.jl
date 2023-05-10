@@ -27,30 +27,20 @@ function write_Quandary_config_file(configfilename::String, Nt::Vector{Int64}, N
     mystring *= "initialcondition=basis\n"
     
     # choose between having splines for both the real & imaginary parts, or only for the amplitude with a fixed phase
-    if splines_real_imag
-      for iosc in 1:length(Ne)
+    for iosc in 1:length(Ne)
+      if splines_real_imag
         mystring*= "control_segments" * string(iosc-1) * " = spline, "*string(D1) * "\n"
-        mystring*= "control_initialization" * string(iosc-1) * " = file, ./" * string(initialpcof_filename) * "\n"
-        mystring*= "control_bounds" * string(iosc-1) * " = " * string(optim_bounds[iosc]) * "\n"
-        mystring *= "carrier_frequency" * string(iosc-1) * " = "
-        omi = carrierfreq[iosc]
-        for j in 1:length(omi)
-            mystring *= string(omi[j]/(2*pi)) * ", "
-        end
-        mystring *= "\n"
-      end
-    else
-      for iosc in 1:length(Ne)
+      else
         mystring*= "control_segments" * string(iosc-1) * " = spline_amplitude, " * string(D1) * ", " * string(phase_scaling_factor) * "\n"
-        mystring*= "control_initialization" * string(iosc-1) * " = file, ./" * string(initialpcof_filename) * "\n"
-        mystring*= "control_bounds" * string(iosc-1) * " = " * string(optim_bounds[iosc]) * "\n"
-        mystring *= "carrier_frequency" * string(iosc-1) * " = "
-        omi = carrierfreq[iosc]
-        for j in 1:length(omi)
-            mystring *= string(omi[j]/(2*pi)) * ", "
-        end
-        mystring *= "\n"
       end
+      mystring*= "control_initialization" * string(iosc-1) * " = file, ./" * string(initialpcof_filename) * "\n"
+      mystring*= "control_bounds" * string(iosc-1) * " = " * string(optim_bounds[iosc]) * "\n"
+      mystring *= "carrier_frequency" * string(iosc-1) * " = "  
+      omi = carrierfreq[iosc]
+      for j in 1:length(omi)
+          mystring *= string(omi[j]/(2*pi)) * ", "
+      end
+      mystring *= "\n"
     end
 
     mystring *= "optim_target = gate, fromfile, " * string(gatefilename) * "\n"
