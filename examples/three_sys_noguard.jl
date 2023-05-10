@@ -30,7 +30,7 @@ tikCoeff = 1e-2 # 1.0 # 0.1
 
 # bounds on the ctrl vector elements (rot frame)
 # This number is divided by Nfreq
-maxctrl_MHz = 5 * 30.0 # 30.0 # 100.0 # ?
+maxctrl_MHz = 40.0 # 30.0 # 100.0 # ?
 
 # Internal ordering of the basis for the state vector
 # msb_order = true # | i3, i2, i1> = |i3> \kron |i2> \kron |i1> 
@@ -42,7 +42,7 @@ ncores = 4 # prod(Ne)
 
 #Initialize first ctrl vector with random numbers, with amplitude rand_amp
 # Note: to get Hessian at ctrl = 0, set rand_amp = 0.0
-init_amp_frac = 0.9/5 # 0.9 
+init_amp_frac = 0.1 # 0.9/5 # 0.9 
 rand_seed = 5432
 
 cw_amp_thres = 6e-2

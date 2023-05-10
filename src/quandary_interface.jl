@@ -41,7 +41,7 @@ function write_Quandary_config_file(configfilename::String, Nt::Vector{Int64}, N
       end
     else
       for iosc in 1:length(Ne)
-        mystring*= "control_segments" * string(iosc-1) * " = spline_amplitude, " * string(D1) * ", " * string(phase_scaling) * "\n"
+        mystring*= "control_segments" * string(iosc-1) * " = spline_amplitude, " * string(D1) * ", " * string(phase_scaling_factor) * "\n"
         mystring*= "control_initialization" * string(iosc-1) * " = file, ./" * string(initialpcof_filename) * "\n"
         mystring*= "control_bounds" * string(iosc-1) * " = " * string(optim_bounds[iosc]) * "\n"
         mystring *= "carrier_frequency" * string(iosc-1) * " = "
