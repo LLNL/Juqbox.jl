@@ -1,7 +1,10 @@
 ### Set up a test problem using one of the standard Hamiltonian models
 using Juqbox
+using Printf
+using Plots
 
-include("two_sys_noguard.jl")
+#include("two_sys_noguard.jl")
+include("two_sys_ibm.jl")
 
 # assign the target gate
 target_gate = get_swap_1d_gate(2)
@@ -13,6 +16,4 @@ params = retval[1]
 pcof0 = retval[2]
 maxAmp = retval[3];
 
-# try calling the timestep routine
-# nsteps = calculate_timestep(params, maxCoupled=maxAmp)
-# println("nsteps = ", nsteps)
+params.traceInfidelityThreshold = 1e-3 # better than 99.9% fidelity
