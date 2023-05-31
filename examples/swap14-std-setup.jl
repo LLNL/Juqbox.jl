@@ -1,9 +1,11 @@
 ### Set up a test problem using one of the standard Hamiltonian models
 using Juqbox
 using Printf
+using Plots
 
-# Four qubits, each with 2 essential + 0 guard levels
-include("four_sys_noguard.jl") # Jaynes-Cummings
+# Four qubit parameter setup
+# include("four_sys_noguard.jl") # Jaynes-Cummings
+include("four_sys_ibm.jl") # IBM Guadelope system
 
 # assign the target gate
 target_gate = get_swap_1d_gate(4)
