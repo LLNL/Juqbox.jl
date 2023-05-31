@@ -92,16 +92,17 @@ function write_Quandary_config_file(configfilename::String, Nt::Vector{Int64}, N
     nOptimIter = size(optim_hist)[1] - 1
     
     objective_last = optim_hist[end,2]
+    grad_last = optim_hist[end,3]
     infid_last = optim_hist[end,6]
-    tikhonov_last = optim_hist[end,7]
-    penalty_last = optim_hist[end,9] # dpdm penalty
+    tikhonov_last = optim_hist[end,7] # tikhonov
+    penalty_last = optim_hist[end,10] # energy penalty
   
     # copy history arrays to the params structure for post processing
     params.saveConvHist = true
-    params.objHist = copy(optim_hist[2:end,2])
-    params.dualInfidelityHist = copy(optim_hist[2:end,3])
-    params.primaryHist = copy(optim_hist[2:end,6])
-    params.secondaryHist = copy(optim_hist[2:end,8]) # penalty = leakage
+    params.objHist = copy(optim_hist[2:end,2]) # total objective
+    params.dualInfidelityHist = copy(optim_hist[2:end,3]) # grad
+    params.primaryHist = copy(optim_hist[2:end,6]) # infidelity
+    params.secondaryHist = copy(optim_hist[2:end,10]) # control energy
   
     #println("Quandary result: Infidelity=", infid_last)
   
@@ -130,7 +131,7 @@ function write_Quandary_config_file(configfilename::String, Nt::Vector{Int64}, N
       return infid_last+tikhonov_last+penalty_last, grad, infid_last, penalty_last, 1.0 - infid_last
     else # "optimization"
       # similar to run_optimizer()
-      return pcof, infid_last, penalty_last, tikhonov_last, params.objHist, nOptimIter
+      return pcof, [objective_last, grad_last, infid_last], params.objHist, params.dualInfidelityHist, params.primaryHist, nOptimIter
     end
   end
 
@@ -165,8 +166,8 @@ Execute the Quandary solver in a sub-process to perform either a forward simulat
 The return argument `qres` is a tuple with a content that depends on the input argument `runIdx`. 
 - `runIdx=1`: qres[1] = objective, qres[2] = infidelity, qres[3] = penalty, qres[4] = unitary transformation at final time. 
 - `runIdx=2`: qres[1] = objective, qres[2] = gradient, qres[3] = infidelity, qres[4] = penalty, qres[5] = fidelity. 
-- `runIdx=3`: qres[1] = optimized control vector, qres[2] = infidelity, qres[3] = penalty, qres[4] = Tikhonov, qres[5] = optimization history, qres[6] = number of optimization iterations.
-"""
+- `runIdx=3`: qres[1] = optimized control vector, qres[2] = [obj-last, grad-last, infid-last], qres[3] = obj-history, qres[4] = grad-history, qres[5] = infid-history, qres[6] = number of optimization iterations.
+"""    
 function run_Quandary(params::objparams, pcof0::Vector{Float64}, optim_bounds::Vector{Float64}; runIdx::Int64 = 3, maxIter::Int64 = 100, ncores::Int64 = 1, quandary_exec::String="./main", print_frequency_iter::Int64 = 1, gamma_dpdm::Float64 = 0.0, gamma_energy::Float64 = 0.0, final_objective::Int64 = 1, splines_real_imag::Bool = true, phase_scaling_factor::Float64=1.0)
     # gamma_dpdm > 0.0 to penalize the 2nd time derivative of the population
     # final_objective = 1 corresponds to the trace infidelity

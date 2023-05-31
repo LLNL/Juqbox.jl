@@ -17,6 +17,7 @@ export bcparams, bcarrier2, gradbcarrier2!
 
 export objparams, traceobjgrad, identify_guard_levels, identify_forbidden_levels, initial_cond
 export plotunitary, plotspecified, evalctrl, plot_results, plot_energy, plot_final_unitary
+export plot_control
 export setup_ipopt_problem, Working_Arrays, estimate_Neumann!, setup_rotmatrices
 export run_optimizer, plot_conv_hist, wmatsetup
 export zero_start_end!, assign_thresholds, assign_thresholds_freq, assign_thresholds_ctrl_freq 
@@ -54,6 +55,8 @@ include("evalobjgrad.jl")
 include("ipopt_interface.jl")
 
 include("plotstatectrl.jl")
+
+include("plot_control.jl")
 
 include("plot-results.jl")
 
