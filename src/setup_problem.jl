@@ -580,7 +580,7 @@ function transformHamiltonians!(H0::Matrix{Float64}, Hsym_ops::Vector{Matrix{Flo
 end
 
 """
-    wmat = wmatsetup(is_ess, it2in, Ne, Ng)
+    wmat = wmatsetup(is_ess, it2in, Ne, Ng, wmatScale)
 
 Build the default positive semi-definite weighting matrix W to calculate the 
 leakage into higher energy forbidden states
@@ -590,8 +590,9 @@ leakage into higher energy forbidden states
 - `it2in::Matrix{Int64}`: Matrix of size (Ntot, Ndim) holding the conversion between 1-d and sub-system numbering of the state vector
 - `Ne::Vector{Int64}`: Vector of size Ndim holding the number of essential energy levels for each subsystem
 - `Ng::Vector{Int64}`: Vector of size Ndim holding the number of guard energy levels for each subsystem
+- `wmatScale::Float64`: Scaling coefficient for the W-matrix
 """
-function wmatsetup(is_ess::Vector{Bool}, it2in::Matrix{Int64}, Ne::Vector{Int64}, Ng::Vector{Int64})
+function wmatsetup(is_ess::Vector{Bool}, it2in::Matrix{Int64}, Ne::Vector{Int64}, Ng::Vector{Int64}, wmatScale::Float64 = 1.0)
 
     @assert(length(Ne) == size(it2in,2))
     Ndim = length(Ne)
@@ -641,7 +642,7 @@ function wmatsetup(is_ess::Vector{Bool}, it2in::Matrix{Int64}, Ne::Vector{Int64}
         # println("wmatsetup: Number of forbidden states = ", nForb, " scaling coeff = ", coeff)
     end # if sum(Ng) > 0
 
-    wmat = coeff * Diagonal(w) # turn vector into diagonal matrix
+    wmat = wmatScale*coeff * Diagonal(w) # turn vector into diagonal matrix
     return wmat
 end
 
@@ -843,7 +844,8 @@ end
      use_eigenbasis::Bool = false, 
      cw_amp_thres = 5e-2, 
      cw_prox_thres = 2e-3, 
-     splines_real_imag = true)
+     splines_real_imag = true, 
+     wmatScale::Float64 = 1.0)
 
 Setup a Hamiltonian model, parameters for numerical time stepping, a target unitary gate, carrier frequencies, boundary conditions for the control functions, amplitude bounds for the controls, and initialize the control vector for optimization.
 
@@ -869,16 +871,17 @@ Setup a Hamiltonian model, parameters for numerical time stepping, a target unit
 - `pcofFileName = ""`: Read initial control vector from a `jld2` formatted file.
 - `zeroCtrlBC::Bool = true`
 - `use_eigenbasis::Bool = false`: Experimental option. Avoid using. See source code for details.
-- `cw_amp_thres::Float64 = 5e-2`: Only consider elements in the transformed control Hamiltonian that are larger than this threshold
-- `cw_prox_thres::Float64 = 2e-3`: Only consider carrier frequencies that are separated by at least this threshold
-- `splines_real_imag::Bool=true`: B-spline parameterization: `true` (default) use both real and imaginary parts; `false` only control the amplitude and a fixed phase
+- `cw_amp_thres::Float64 = 5e-2`: Only consider elements in the transformed control Hamiltonian that are larger than this threshold.
+- `cw_prox_thres::Float64 = 2e-3`: Only consider carrier frequencies that are separated by at least this threshold.
+- `splines_real_imag::Bool=true`: B-spline parameterization: `true` (default) use both real and imaginary parts; `false` only control the amplitude and a fixed phase.
+- `wmatScale::Float64=1.0`: Scale factor for the leakage term in the objective function.
 
 # Return arguments 
 - `params::objparams`: Object specifying the quantum system and the optimization problem.
 - `pcof0::Vector{Float64}`: Initial control vector.
 - `maxAmp::Vector{Float64}`: Max amplitudes for each segement of the control vector. Here a segment corresponds to a control Hamiltonian
 """
-function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float64}, xi::Vector{Float64}, couple_coeff::Vector{Float64}, couple_type::Int64, rot_freq::Vector{Float64}, T::Float64, D1::Int64, gate_final::Matrix{ComplexF64}; maxctrl_MHz::Float64=10.0, msb_order::Bool = false, Pmin::Int64 = 40, init_amp_frac::Float64=0.0, randomize_init_ctrl::Bool = true, rand_seed::Int64=2345, pcofFileName::String="", zeroCtrlBC::Bool = true, use_eigenbasis::Bool = false, cw_amp_thres::Float64=5e-2, cw_prox_thres::Float64=2e-3, splines_real_imag::Bool=true)
+function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float64}, xi::Vector{Float64}, couple_coeff::Vector{Float64}, couple_type::Int64, rot_freq::Vector{Float64}, T::Float64, D1::Int64, gate_final::Matrix{ComplexF64}; maxctrl_MHz::Float64=10.0, msb_order::Bool = false, Pmin::Int64 = 40, init_amp_frac::Float64=0.0, randomize_init_ctrl::Bool = true, rand_seed::Int64=2345, pcofFileName::String="", zeroCtrlBC::Bool = true, use_eigenbasis::Bool = false, cw_amp_thres::Float64=5e-2, cw_prox_thres::Float64=2e-3, splines_real_imag::Bool=true, wmatScale::Float64 =1.0)
 
     # enforce inequality constraint on the leakage?
     useLeakIneq = false # true
@@ -1020,9 +1023,7 @@ function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float
     linear_solver = Juqbox.lsolver_object(solver=Juqbox.JACOBI_SOLVER, max_iter=100, tol=1e-12, nrhs=prod(Ne))
   
     # create diagonal W-matrix with weights for suppressing leakage
-    wmatScale = 1.0
-    #w_diag_mat = wmatScale * wmatsetup_old(Ne, Ng, msb_order)
-    w_diag_mat = wmatsetup(is_ess, it2in, Ne, Ng)
+    w_diag_mat = wmatsetup(is_ess, it2in, Ne, Ng, wmatScale)
 
     # println("norm(wmat1 - wmat2): ", norm(w_diag_mat-w_diag_2))
     # println("w_diag_1: ", diag(w_diag_mat))
