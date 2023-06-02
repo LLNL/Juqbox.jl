@@ -456,11 +456,12 @@ end #plot_conv_hist
 Plot the essential levels of the solution operator at a fixed time and return a plot handle
  
 # Arguments
-- `final_unitary:: Array{ComplexF64,2}`: Ntot by Ness array holding the final state for each initial condition
+- `final_unitary:: Matrix{ComplexF64}`: Ntot by Ness matrix where each column holds the evolved state corresponding to that initial condition
 - `params:: objparams`: Struct with problem definition
-- `fid:: Float64`: Gate fidelity (for plot title)
+# Return argument
+- `pl::Plots.plot`: Plots of the real and imaginary parts of the unitary 
 """
-function plot_final_unitary(final_unitary::Array{ComplexF64,2}, params::objparams, fid::Float64)
+function plot_final_unitary(final_unitary::Array{ComplexF64,2}, params::objparams)
     Ness = params.N
     Ntot = Ness + params.Nguard
     println("plot_final_unitary: Ntot = ", Ntot, " Ness = ", Ness)

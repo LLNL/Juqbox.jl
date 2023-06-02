@@ -1,6 +1,6 @@
 using Juqbox
 
-## Four qubits, each with 2 essential + 2 guard levels
+## Four qubits, each with 2 essential + 0 guard levels
 
 Ne = [2, 2, 2, 2] # Number of essential energy levels
 Ng = [0, 0, 0, 0] # Number of extra guard levels

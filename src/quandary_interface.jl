@@ -92,7 +92,7 @@ function write_Quandary_config_file(configfilename::String, Nt::Vector{Int64}, N
     nOptimIter = size(optim_hist)[1] - 1
     
     objective_last = optim_hist[end,2]
-    grad_last = optim_hist[end,3]
+    gradNrm_last = optim_hist[end,3]
     infid_last = optim_hist[end,6]
     tikhonov_last = optim_hist[end,7] # tikhonov
     penalty_last = optim_hist[end,10] # energy penalty
@@ -126,12 +126,12 @@ function write_Quandary_config_file(configfilename::String, Nt::Vector{Int64}, N
   
     # make the return args similar to traceobjgrad()
     if runtype=="simulation"
-      return infid_last+tikhonov_last+penalty_last, infid_last, penalty_last, uT
+      return objective_last, infid_last, penalty_last, uT
     elseif runtype == "gradient"
-      return infid_last+tikhonov_last+penalty_last, grad, infid_last, penalty_last, 1.0 - infid_last
+      return objective_last, grad, infid_last, penalty_last, 1.0 - infid_last
     else # "optimization"
       # similar to run_optimizer()
-      return pcof, [objective_last, grad_last, infid_last], params.objHist, params.dualInfidelityHist, params.primaryHist, nOptimIter
+      return pcof, [objective_last, gradNrm_last, infid_last], params.objHist, params.dualInfidelityHist, params.primaryHist, nOptimIter
     end
   end
 

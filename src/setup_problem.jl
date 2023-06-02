@@ -781,8 +781,19 @@ function get_swap_1d_gate(d::Int64 = 2)
         swap_gate[14,14] = 1.0
         swap_gate[15,8] = 1.0
         swap_gate[16,16] = 1.0
+    elseif d == 5
+        swap_gate =  Matrix{ComplexF64}(I, 32, 32)
+        delta = 15
+        for j=2:2:16
+            swap_gate[j,j] = 0.0
+            swap_gate[j,j+delta] = 1.0
+        end
+        for j=17:2:31
+            swap_gate[j,j] = 0.0
+            swap_gate[j,j-delta] = 1.0
+        end
     else
-        @assert false "Only implemented swap1d gates for d={2,3,4}"
+        @assert false "Only implemented swap1d gates for d={2,3,4,5}"
     end
     return swap_gate
 end
