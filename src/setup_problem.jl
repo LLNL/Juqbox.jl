@@ -559,6 +559,78 @@ function get_resonances(is_ess::Vector{Bool}, it2in::Matrix{Int64};Ness::Vector{
     return om, growth_rate, Utrans
 end
 
+function sort_and_cull_carrier_freqs(Nosc::Int64, Nfreq::Vector{Int64}, om::Vector{Vector{Float64}}, growth_rate::Vector{Vector{Float64}}, rot_freq::Vector{Float64})
+    # allocate and sort the vectors (ascending order)
+    om_p = Vector{Vector{Float64}}(undef, Nosc)
+    growth_rate_p = Vector{Vector{Float64}}(undef, Nosc)
+    use_p = Vector{Vector{Int64}}(undef, Nosc)
+    for q = 1:Nosc
+        om_p[q] = zeros(Nfreq[q])
+        growth_rate_p[q] = zeros(Nfreq[q])
+        use_p[q] = zeros(Int64,Nfreq[q]) # By default, don't use any freq's
+        p = sortperm(om[q]) # sortperm(growth_rate[q],rev=true)
+        om_p[q] .= om[q][p]
+        growth_rate_p[q] .= growth_rate[q][p]
+    end
+
+    println("Sorted CW freq's:")
+    for q = 1:Nosc
+      println("Ctrl Hamiltonian # ", q, ", lab frame carrier frequencies: ", rot_freq[q] .+ om_p[q]./(2*pi), " [GHz]")
+      println("Ctrl Hamiltonian # ", q, ",                   growth rate: ", growth_rate_p[q], " [1/ns]")
+    end
+
+    # Try to identify groups of almost equal frequencies
+    for q = 1:Nosc
+        seg = 0
+        rge_q = maximum(om_p[q]) - minimum(om_p[q]) # this is the range of frequencies
+        k0 = 1
+        for k = 2:Nfreq[q]
+            delta_k = om_p[q][k] - om_p[q][k0]
+            if delta_k > 0.1*rge_q
+                seg += 1
+                # find the highest rate within the range [k0,k-1]
+                rge = k0:k-1
+                om_avg = sum(om_p[q][rge])/length(rge)
+                println("Osc # ", q, " segment # ", seg, " Freq-range: ", (maximum(om_p[q][rge]) - minimum(om_p[q][rge]))/(2*pi), " Freq-avg: ", om_avg/(2*pi) + rot_freq[q])
+                # kmax = argmax(growth_rate_p[q][rge])
+                use_p[q][k0] = 1
+                # average the cw frequency over the segment
+                om_p[q][k0] = om_avg 
+                k0 = k # start a new group
+            end
+        end
+        # find the highest rate within the last range [k0,Nfreq[q]]
+        seg += 1
+        rge = k0:Nfreq[q]
+        om_avg = sum(om_p[q][rge])/length(rge)
+        println("Osc # ", q, " segment # ", seg, " Freq-range: ", (maximum(om_p[q][rge]) - minimum(om_p[q][rge]))/(2*pi), " Freq-avg: ", om_avg/(2*pi) + rot_freq[q])
+        # kmax = argmax(growth_rate_p[q][rge])
+        use_p[q][k0] = 1
+        om_p[q][k0] = om_avg 
+
+        # cull out unused frequencies
+        om[q] = zeros(sum(use_p[q]))
+        growth_rate[q] = zeros(sum(use_p[q]))
+        j = 0
+        for k=1:Nfreq[q]
+            if use_p[q][k] == 1
+                j += 1
+                om[q][j] = om_p[q][k]
+                growth_rate[q][j] = growth_rate_p[q][k]
+            end
+        end
+        Nfreq[q] = j # correct the number of CW frequencies for oscillator 'q'
+    end
+
+    println("\nSorted and culled CW freq's:")
+    for q = 1:Nosc
+      println("Ctrl Hamiltonian # ", q, ", lab frame carrier frequencies: ", rot_freq[q] .+ om[q]./(2*pi), " [GHz]")
+      println("Ctrl Hamiltonian # ", q, ",                   growth rate: ", growth_rate[q], " [1/ns]")
+    end
+
+    return Nfreq, om, growth_rate
+end
+
 function transformHamiltonians!(H0::Matrix{Float64}, Hsym_ops::Vector{Matrix{Float64}}, Hanti_ops::Vector{Matrix{Float64}}, Utrans::Matrix{Float64})
     # transform (diagonalize) the system Hamiltonian
     H0 .= Utrans'*H0*Utrans # the . is essential, otherwise H0 is not changed in the calling fcn
@@ -929,73 +1001,7 @@ function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float
     # Amplitude bounds to be imposed during optimization
     maxAmp = maxctrl_radns * ones(Nosc) # internally scaled by 1/(sqrt(2)*Nfreq[q]) in setup_ipopt() and Quandary
 
-    # allocate and sort the vectors (ascending order)
-    om_p = Vector{Vector{Float64}}(undef, Nosc)
-    growth_rate_p = Vector{Vector{Float64}}(undef, Nosc)
-    use_p = Vector{Vector{Int64}}(undef, Nosc)
-    for q = 1:Nosc
-        om_p[q] = zeros(Nfreq[q])
-        growth_rate_p[q] = zeros(Nfreq[q])
-        use_p[q] = zeros(Int64,Nfreq[q]) # By default, don't use any freq's
-        p = sortperm(om[q]) # sortperm(growth_rate[q],rev=true)
-        om_p[q] .= om[q][p]
-        growth_rate_p[q] .= growth_rate[q][p]
-    end
-
-    println("Sorted CW freq's:")
-    for q = 1:Nosc
-      println("Ctrl Hamiltonian # ", q, ", lab frame carrier frequencies: ", rot_freq[q] .+ om_p[q]./(2*pi), " [GHz]")
-      println("Ctrl Hamiltonian # ", q, ",                   growth rate: ", growth_rate_p[q], " [1/ns]")
-    end
-
-    # Try to identify groups of almost equal frequencies
-    for q = 1:Nosc
-        seg = 0
-        rge_q = maximum(om_p[q]) - minimum(om_p[q]) # this is the range of frequencies
-        k0 = 1
-        for k = 2:Nfreq[q]
-            delta_k = om_p[q][k] - om_p[q][k0]
-            if delta_k > 0.1*rge_q
-                seg += 1
-                # find the highest rate within the range [k0,k-1]
-                rge = k0:k-1
-                om_avg = sum(om_p[q][rge])/length(rge)
-                println("Osc # ", q, " segment # ", seg, " Freq-range: ", (maximum(om_p[q][rge]) - minimum(om_p[q][rge]))/(2*pi), " Freq-avg: ", om_avg/(2*pi) + rot_freq[q])
-                # kmax = argmax(growth_rate_p[q][rge])
-                use_p[q][k0] = 1
-                # average the cw frequency over the segment
-                om_p[q][k0] = om_avg 
-                k0 = k # start a new group
-            end
-        end
-        # find the highest rate within the last range [k0,Nfreq[q]]
-        seg += 1
-        rge = k0:Nfreq[q]
-        om_avg = sum(om_p[q][rge])/length(rge)
-        println("Osc # ", q, " segment # ", seg, " Freq-range: ", (maximum(om_p[q][rge]) - minimum(om_p[q][rge]))/(2*pi), " Freq-avg: ", om_avg/(2*pi) + rot_freq[q])
-        # kmax = argmax(growth_rate_p[q][rge])
-        use_p[q][k0] = 1
-        om_p[q][k0] = om_avg 
-
-        # cull out unused frequencies
-        om[q] = zeros(sum(use_p[q]))
-        growth_rate[q] = zeros(sum(use_p[q]))
-        j = 0
-        for k=1:Nfreq[q]
-            if use_p[q][k] == 1
-                j += 1
-                om[q][j] = om_p[q][k]
-                growth_rate[q][j] = growth_rate_p[q][k]
-            end
-        end
-        Nfreq[q] = j # correct the number of CW frequencies for oscillator 'q'
-    end
-
-    println("\nSorted and culled CW freq's:")
-    for q = 1:Nosc
-      println("Ctrl Hamiltonian # ", q, ", lab frame carrier frequencies: ", rot_freq[q] .+ om[q]./(2*pi), " [GHz]")
-      println("Ctrl Hamiltonian # ", q, ",                   growth rate: ", growth_rate[q], " [1/ns]")
-    end
+    Nfreq, om, growth_rate = sort_and_cull_carrier_freqs(Nosc, Nfreq, om, growth_rate, rot_freq)
   
     # Set the initial condition: Basis with guard levels
     Ubasis = initial_cond_general(is_ess, Ne, Ng)
