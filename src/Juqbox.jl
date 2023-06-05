@@ -16,7 +16,7 @@ export splineparams, bspline2, gradbspline2
 export bcparams, bcarrier2, gradbcarrier2!
 
 export objparams, traceobjgrad, identify_guard_levels, identify_forbidden_levels, initial_cond
-export plotunitary, plotspecified, evalctrl, plot_results, plot_energy, plot_final_unitary
+export plotunitary, plotspecified, evalctrl, plot_results, plot_energy, plot_unitary
 export plot_control
 export setup_ipopt_problem, Working_Arrays, estimate_Neumann!, setup_rotmatrices
 export run_optimizer, plot_conv_hist, wmatsetup

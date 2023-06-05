@@ -451,20 +451,20 @@ function plot_conv_hist(params:: Juqbox.objparams, convname:: String="")
 end #plot_conv_hist
 
 """
-    plt =  plot_final_unitary(final_unitary, params)
+    plt =  plot_unitary(params, unitary)
 
 Plot the essential levels of the solution operator at a fixed time and return a plot handle
  
 # Arguments
-- `final_unitary:: Matrix{ComplexF64}`: Ntot by Ness matrix where each column holds the evolved state corresponding to that initial condition
 - `params:: objparams`: Struct with problem definition
+- `unitary:: Matrix{ComplexF64}`: Ntot by Ness matrix where each column holds the evolved state corresponding to that initial condition
 # Return argument
-- `pl::Plots.plot`: Plots of the real and imaginary parts of the unitary 
+- `pl::Plots.plot`: Plot object holding the real and imaginary parts of the unitary 
 """
-function plot_final_unitary(final_unitary::Array{ComplexF64,2}, params::objparams)
+function plot_unitary(params::objparams, final_unitary::Matrix{ComplexF64})
     Ness = params.N
     Ntot = Ness + params.Nguard
-    println("plot_final_unitary: Ntot = ", Ntot, " Ness = ", Ness)
+    println("plot_unitary: Ntot = ", Ntot, " Ness = ", Ness)
     
     Ufinal = zeros(ComplexF64, Ness, Ness)
 

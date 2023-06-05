@@ -928,7 +928,8 @@ end
      cw_amp_thres = 5e-2, 
      cw_prox_thres = 2e-3, 
      splines_real_imag = true, 
-     wmatScale::Float64 = 1.0)
+     wmatScale::Float64 = 1.0, 
+     use_carrier_waves::Bool = true)
 
 Setup a Hamiltonian model, parameters for numerical time stepping, a target unitary gate, carrier frequencies, boundary conditions for the control functions, amplitude bounds for the controls, and initialize the control vector for optimization.
 
@@ -958,13 +959,14 @@ Setup a Hamiltonian model, parameters for numerical time stepping, a target unit
 - `cw_prox_thres::Float64 = 2e-3`: Only consider carrier frequencies that are separated by at least this threshold.
 - `splines_real_imag::Bool=true`: B-spline parameterization: `true` (default) use both real and imaginary parts; `false` only control the amplitude and a fixed phase.
 - `wmatScale::Float64=1.0`: Scale factor for the leakage term in the objective function.
+- `use_carrier_waves::Bool=true`: Set to true (default) to use carrier waves, otherwise only use B-splines to parameterize the control pulses.
 
 # Return arguments 
 - `params::objparams`: Object specifying the quantum system and the optimization problem.
 - `pcof0::Vector{Float64}`: Initial control vector.
 - `maxAmp::Vector{Float64}`: Max amplitudes for each segement of the control vector. Here a segment corresponds to a control Hamiltonian
 """
-function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float64}, xi::Vector{Float64}, couple_coeff::Vector{Float64}, couple_type::Int64, rot_freq::Vector{Float64}, T::Float64, D1::Int64, gate_final::Matrix{ComplexF64}; maxctrl_MHz::Float64=10.0, msb_order::Bool = false, Pmin::Int64 = 40, init_amp_frac::Float64=0.0, randomize_init_ctrl::Bool = true, rand_seed::Int64=2345, pcofFileName::String="", zeroCtrlBC::Bool = true, use_eigenbasis::Bool = false, cw_amp_thres::Float64=5e-2, cw_prox_thres::Float64=2e-3, splines_real_imag::Bool=true, wmatScale::Float64 =1.0)
+function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float64}, xi::Vector{Float64}, couple_coeff::Vector{Float64}, couple_type::Int64, rot_freq::Vector{Float64}, T::Float64, D1::Int64, gate_final::Matrix{ComplexF64}; maxctrl_MHz::Float64=10.0, msb_order::Bool = false, Pmin::Int64 = 40, init_amp_frac::Float64=0.0, randomize_init_ctrl::Bool = true, rand_seed::Int64=2345, pcofFileName::String="", zeroCtrlBC::Bool = true, use_eigenbasis::Bool = false, cw_amp_thres::Float64=5e-2, cw_prox_thres::Float64=2e-3, splines_real_imag::Bool=true, wmatScale::Float64=1.0, use_carrier_waves::Bool=true)
 
     # enforce inequality constraint on the leakage?
     useLeakIneq = false # true
@@ -986,11 +988,24 @@ function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float
     #     println("j: ", j, " it2in[j,:]: ", it2in[j,:], " is_ess[j]: ", is_ess[j])
     # end
 
-    om, growth_rate, Utrans = get_resonances(is_ess, it2in, Ness=Ne, Nguard=Ng, Hsys=Hsys, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, msb_order=msb_order, cw_amp_thres=cw_amp_thres, cw_prox_thres=cw_prox_thres, rot_freq=rot_freq)
-    
-    Ness = prod(Ne)
-    Nosc = length(om) 
+    Nosc = length(Hsym_ops)
     @assert(Nosc == pdim) # Nosc must equal pdim
+    Ness = prod(Ne)
+    Ntot = prod(Ne + Ng)
+
+    if use_carrier_waves
+        om, growth_rate, Utrans = get_resonances(is_ess, it2in, Ness=Ne, Nguard=Ng, Hsys=Hsys, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, msb_order=msb_order, cw_amp_thres=cw_amp_thres, cw_prox_thres=cw_prox_thres, rot_freq=rot_freq)
+    else
+        Utrans = Matrix{Float64}(I, Ntot, Ntot)
+
+        om = Vector{Vector{Float64}}(undef, Nosc)
+        growth_rate = Vector{Vector{Float64}}(undef, Nosc)
+        for q=1:Nosc
+            om[q] = [0.0]
+            growth_rate[q] = [1.0]
+        end
+    end
+
     Nfreq = zeros(Int64,Nosc) # Number of frequencies per control Hamiltonian
     for q=1:Nosc
         Nfreq[q] = length(om[q])

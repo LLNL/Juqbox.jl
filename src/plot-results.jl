@@ -111,7 +111,7 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
     end # end if Nosc <=3
 
     # final unitary plotted in matrix form
-    pluf = plot_final_unitary(unitaryhistory[:,:,end], params, fidelity)
+    pluf = plot_unitary(params, unitaryhistory[:,:,end])
 
     # Evaluate the ctrl functions on this grid in time
     nplot = round(Int64, params.T*samplerate)

@@ -95,7 +95,7 @@ function write_Quandary_config_file(configfilename::String, Nt::Vector{Int64}, N
     gradNrm_last = optim_hist[end,3]
     infid_last = optim_hist[end,6]
     tikhonov_last = optim_hist[end,7] # tikhonov
-    penalty_last = optim_hist[end,10] # energy penalty
+    energy_last = optim_hist[end,10] # energy penalty
   
     # copy history arrays to the params structure for post processing
     params.saveConvHist = true
@@ -126,12 +126,12 @@ function write_Quandary_config_file(configfilename::String, Nt::Vector{Int64}, N
   
     # make the return args similar to traceobjgrad()
     if runtype=="simulation"
-      return objective_last, infid_last, penalty_last, uT
+      return objective_last, infid_last, energy_last, uT
     elseif runtype == "gradient"
-      return objective_last, grad, infid_last, penalty_last, 1.0 - infid_last
+      return objective_last, grad, infid_last, energy_last, 1.0 - infid_last
     else # "optimization"
       # similar to run_optimizer()
-      return pcof, [objective_last, gradNrm_last, infid_last], params.objHist, params.dualInfidelityHist, params.primaryHist, nOptimIter
+      return pcof, [objective_last, gradNrm_last, infid_last, energy_last], params.objHist, params.dualInfidelityHist, params.primaryHist, params.secondaryHist
     end
   end
 
@@ -166,7 +166,7 @@ Execute the Quandary solver in a sub-process to perform either a forward simulat
 The return argument `qres` is a tuple with a content that depends on the input argument `runIdx`. 
 - `runIdx=1`: qres[1] = objective, qres[2] = infidelity, qres[3] = penalty, qres[4] = unitary transformation at final time. 
 - `runIdx=2`: qres[1] = objective, qres[2] = gradient, qres[3] = infidelity, qres[4] = penalty, qres[5] = fidelity. 
-- `runIdx=3`: qres[1] = optimized control vector, qres[2] = [obj-last, grad-last, infid-last], qres[3] = obj-history, qres[4] = grad-history, qres[5] = infid-history, qres[6] = number of optimization iterations.
+- `runIdx=3`: qres[1] = optimized control vector, qres[2] = [obj-last, grad-last, infid-last, energy-last], qres[3] = obj-history, qres[4] = grad-history, qres[5] = infid-history, qres[6] = energy-history.
 """    
 function run_Quandary(params::objparams, pcof0::Vector{Float64}, optim_bounds::Vector{Float64}; runIdx::Int64 = 3, maxIter::Int64 = 100, ncores::Int64 = 1, quandary_exec::String="./main", print_frequency_iter::Int64 = 1, gamma_dpdm::Float64 = 0.0, gamma_energy::Float64 = 0.0, final_objective::Int64 = 1, splines_real_imag::Bool = true, phase_scaling_factor::Float64=1.0)
     # gamma_dpdm > 0.0 to penalize the 2nd time derivative of the population
