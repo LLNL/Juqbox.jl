@@ -18,9 +18,12 @@ favg = sum(f01)/nSys
 rot_freq = favg * ones(nSys)
 
 # Set the initial duration
-T = 600.0
+T = 500.0
 # Number of coefficients per spline
-D1 = 26
+#D1 = 26
+dtau = 3.33
+D1 = ceil(Int64,T/dtau) + 2
+D1 = max(D1,5)
 
 # Points per shortest period
 Pmin = 40 # 60 # 40 # 80
@@ -50,3 +53,5 @@ cw_amp_thres = 5e-2
 cw_prox_thres = 1e-3
 
 wmatScale = 1.0
+
+use_carrier_waves = true

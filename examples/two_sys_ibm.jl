@@ -49,3 +49,5 @@ cw_amp_thres = 1e-7 # Include cross-resonance
 cw_prox_thres = 1e-2 # 1e-3
 
 wmatScale = 1.0
+
+use_carrier_waves = true

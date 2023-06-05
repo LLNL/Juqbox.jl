@@ -21,7 +21,12 @@ rot_freq = favg * ones(nSys)
 # Set the initial duration
 T = 200.0
 # Number of coefficients per spline
-D1 = 26
+# D1 = 26
+dtau = 3.33
+D1 = ceil(Int64,T/dtau) + 2
+D1 = max(D1,5)
+
+
 
 # Points per shortest period
 Pmin = 40 # 60 # 40 # 80
@@ -48,3 +53,5 @@ rand_seed = 2345
 
 cw_amp_thres = 1e-7 # Include cross-resonance
 cw_prox_thres = 1e-2 # 1e-3
+
+use_carrier_waves = false
