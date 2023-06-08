@@ -3,9 +3,8 @@ using Juqbox
 using Printf
 using Plots
 
-# Four qubit parameter setup
-# include("four_sys_noguard.jl") # Jaynes-Cummings
-include("five_sys_ibm.jl") # IBM Guadelope system
+# Five qubit parameter setup
+include("five_sys_noguard.jl") # Dispersive nearest neighbor coupling
 
 # assign the target gate
 target_gate = get_swap_1d_gate(5)

@@ -3,8 +3,7 @@ using Juqbox
 using Printf
 using Plots
 
-#include("two_sys_noguard.jl")
-include("two_sys_ibm.jl")
+include("two_sys_noguard.jl")
 
 # assign the target gate
 target_gate = get_swap_1d_gate(2)

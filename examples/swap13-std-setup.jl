@@ -6,7 +6,6 @@ using Plots
 # Three qubits parameters settings
 include("three_sys_noguard.jl") # Jaynes-Cummings coupling
 #include("three_sys_1guard.jl") # 1 guard level per system
-#include("three_sys_ibm.jl") # No guard levels, IBM Guadelope frequencies
 
 # assign the target gate
 target_gate = get_swap_1d_gate(3)

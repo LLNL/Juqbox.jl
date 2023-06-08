@@ -4,8 +4,7 @@ using Printf
 using Plots
 
 # Four qubit parameter setup
-# include("four_sys_noguard.jl") # Jaynes-Cummings
-include("four_sys_ibm.jl") # IBM Guadelope system
+include("four_sys_noguard.jl") # Jaynes-Cummings
 
 # assign the target gate
 target_gate = get_swap_1d_gate(4)
