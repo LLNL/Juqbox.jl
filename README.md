@@ -1,4 +1,4 @@
-![Control functions](examples/cnot2-pop.png)
+![Control functions](examples/JuQbox_favicon1.png)
 
 # Juqbox.jl
 
