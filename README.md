@@ -1,4 +1,4 @@
-![Control functions](examples/JuQbox_favicon1.png)
+![Logo](docs/src/JuQbox_favicon1.png)
 
 # Juqbox.jl
 
