@@ -186,10 +186,11 @@ struct bcparams
         dtknot = T/(D1 -2)
         tcenter = dtknot.*(collect(1:D1) .- 1.5)
 
+
         nCoeff = 2*D1*NfreqTot
-        if nCoeff != length(pcof)
-            println("nCoeff = ", nCoeff, " Nfreq = ", Nfreq, " D1 = ", D1, " Ncoupled = ", Ncoupled, " Nunc = ", Nunc, " len(pcof) = ", length(pcof))
-            throw(DimensionMismatch("Inconsistent number of coefficients and size of parameter vector (nCoeff ≠ length(pcof)."))
+        if length(pcof) < 2*D1*NfreqTot
+            println("nCoeff = ", nCoeff, " NfreqTot = ", NfreqTot, " D1 = ", D1, " Ncoupled = ", Ncoupled, " Nunc = ", Nunc, " len(pcof) = ", length(pcof))
+            throw(DimensionMismatch("Inconsistent number of coefficients and size of parameter vector (length(pcof) < 2*D1*sum(Nfreq))"))
         end
 
         Nctrl = Ncoupled+Nunc # NOTE: the uncoupled controls are currently treated the same as the coupled ones
@@ -233,10 +234,6 @@ function bcparams(T::Float64, D1::Int64, omega::Vector{Vector{Float64}}, pcof::V
     NfreqTot = sum(Nfreq)
     #println("bcparams: NfreqTot = ", NfreqTot)
 
-    nCoeff = 2*D1*NfreqTot
-    if nCoeff != length(pcof)
-      throw(DimensionMismatch("Inconsistent number of coefficients and size of parameter vector (nCoeff ≠ length(pcof)."))
-    end
     # (T::Float64, D1::Int64, Ncoupled::Int64, Nunc::Int64, Nfreq::Vector{Int64}, omega::Vector{Vector{Float64}}, pcof::Array{Float64,1})
     bcparams(T, D1, Nctrl, Nunc, Nfreq, omega, pcof)
   end

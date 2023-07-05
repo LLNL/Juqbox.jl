@@ -243,12 +243,9 @@ only `pj` is returned, corresponding to control number `func`.
 - `td:: Array{Float64,1})`: Time values control is to be evaluated
 - `jFunc:: Int64`: Index of the control signal desired
 """
-function evalctrl(params::objparams, pcof0:: Array{Float64, 1}, td:: Array{Float64, 1}, jFunc:: Int64) 
-    if params.pFidType == 3
-        nCoeff = length(pcof0)-1
-    else
-        nCoeff = length(pcof0)
-    end
+function evalctrl(params::objparams, pcof0:: Array{Float64, 1}, td:: Array{Float64, 1}, jFunc:: Int64)
+    nCoeff = length(pcof0)
+
     pcof = pcof0[1:nCoeff]
     #D1 = div(nCoeff, 2*(params.Ncoupled + params.Nunc)*params.Nfreq)  # number of B-spline coeff per control function
     D1 = div(nCoeff, 2*params.NfreqTot)  # number of B-spline coeff per control function

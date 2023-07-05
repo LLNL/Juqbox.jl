@@ -55,7 +55,7 @@ mutable struct working_arrays
     gradobjfadj ::Array{Float64,1}
     tr_adj      ::Array{Float64,1}
 
-    function working_arrays(N:: Int64, Ntot:: Int64, Hconst::MyRealMatrix, Hsym_ops::Vector{MyRealMatrix}, Hanti_ops::Vector{MyRealMatrix}, Hunc_ops::Vector{MyRealMatrix}, isSymm::BitArray{1}, pFidType::Int64, objFuncType::Int64, nCoeff::Int64)
+    function working_arrays(N:: Int64, Ntot:: Int64, Hconst::MyRealMatrix, Hsym_ops::Vector{MyRealMatrix}, Hanti_ops::Vector{MyRealMatrix}, Hunc_ops::Vector{MyRealMatrix}, isSymm::BitArray{1}, objFuncType::Int64, nCoeff::Int64)
         #N = params.N
         #Ntot = N + params.Nguard
 
@@ -64,11 +64,9 @@ mutable struct working_arrays
         K0, S0, K05, S05, K1, S1 = ks_alloc(Ntot, Hconst, Hsym_ops, Hanti_ops, Hunc_ops, isSymm)
 
         lambdar,lambdar0,lambdai,lambdai0,lambdar05,κ₁,κ₂,ℓ₁,ℓ₂,rhs,gr0,gi0,gr1,gi1,hr0,hi0,hi1,hr1,vr,vi,vi05,vr0,vfinalr,vfinali = time_step_alloc(Ntot,N)
-        if pFidType == 3
-            gr, gi, gradobjfadj, tr_adj = grad_alloc(nCoeff-1)
-        else
-            gr, gi, gradobjfadj, tr_adj = grad_alloc(nCoeff)
-        end
+
+        gr, gi, gradobjfadj, tr_adj = grad_alloc(nCoeff)
+
         if objFuncType != 1
             lambdar_nfrc  = zeros(Float64,size(lambdar))
             lambdar0_nfrc = zeros(Float64,size(lambdar0))
@@ -102,16 +100,22 @@ end
                         Utarget=Utarget,
                         Cfreq=Cfreq, 
                         Rfreq=Rfreq, 
-                        Hconst=Hconst [, 
+                        Hconst=Hconst,
+                        w_diag_mat=w_diag_mat,
+                        nCoeff=nCoeff,
                         Hsym_ops=Hsym_ops,
                         Hanti_ops=Hanti_ops, 
                         Hunc_ops=Hunc_ops,
-                        wmatScale=wmatScale,
                         objFuncType=objFuncType,
                         leak_ubound=leak_ubound,
                         linear_solver = lsolver_object(),
-                        use_sparse = use_sparse],
-                        dVds = dVds)
+                        use_sparse = use_sparse,
+                        dVds = dVds,
+                        freq01::Vector{Float64} = Vector{Float64}[],
+                        self_kerr::Vector{Float64} = Vector{Float64}[],
+                        couple_coeff::Vector{Float64} = Vector{Float64}[],
+                        couple_type::Int64 = 0,
+                        zeroCtrlBC::Bool = true)
 
 Constructor for the mutable struct objparams. The sizes of the arrays in the argument list are based on
 `Ntot = prod(Ne + Ng)`, `Ness = prod(Ne)`, `Nosc = length(Ne) = length(Ng)`.
@@ -136,6 +140,7 @@ and either be symmetric or skew-symmetric.
 - `Hanti_ops:: Array{Array{Float64,2},1}`: (keyword) Array of anti-symmetric control Hamiltonians, each of size Ntot × Ntot
 - `Hunc_ops:: Array{Array{Float64,2},1}`: (keyword) Array of uncoupled control Hamiltonians, each of size Ntot × Ntot
 - `w_diag_mat::Diagonal{Float64,Array{Float64,1}}`: (keyword) Diagonal matrix with weights for suppressing guarded energy levels
+- `nCoeff::Int`: (keyword) length of the control vector (pcof)
 - `objFuncType::Int64 = 1`  # 1 = objective function include infidelity and leakage
                             # 2 = objective function only includes infidelity... no leakage in obj function or constraint
                             # 3 = objective function only includes infidelity; leakage treated as inequality constraint
@@ -143,6 +148,11 @@ and either be symmetric or skew-symmetric.
 - `linear_solver::lsolver_object = lsolver_object()` : The linear solver object used to solve the implicit & adjoint system
 - `use_sparse::Bool = false`: (keyword) Set to true to sparsify all Hamiltonian matrices
 - `dVds::Array{Complex{Float64},2}`: (keyword) Matrix holding the complex-valued matrix dV/ds of size Ntot x Ne (for continuation)
+- `freq01::Vector{Float64} = Vector{Float64}[]`: Transition frequencies
+- `self_kerr::Vector{Float64} = Vector{Float64}[]`: Self-Kerr coefficients
+- `couple_coeff::Vector{Float64} = Vector{Float64}[]`: Coupling coefficients
+- `couple_type::Int64 = 0`: Coupling type (1 = cross-Kerr, 2 = dispersive)
+- `zeroCtrlBC::Bool = true`: Boundary condition for the B-splines
 """
 mutable struct objparams
     Nosc   ::Int64          # number of oscillators in the coupled quantum systems
@@ -190,7 +200,7 @@ mutable struct objparams
     wmat_imag    ::WeightMatrix
 
     # Type of fidelity
-    pFidType    ::Int64
+    pFidType    ::Int64 # default is 2 = std. trace infidelity
     globalPhase ::Float64
 
     # Optimization problem formulation
@@ -236,10 +246,10 @@ mutable struct objparams
 
     sv_type:: Int64
 
-    # temporary storage for time stepping, to be allocated later (by setup_ipopt_problem)
+    # temporary storage for time stepping
     wa:: working_arrays
 
-    nCoeff :: Int64 # Length of the control vector
+    nCoeff :: Int64 # Length of the control vector (pcof)
     
     freq01::   Vector{Float64} 
     self_kerr:: Vector{Float64}
@@ -248,11 +258,18 @@ mutable struct objparams
 
     msb_order:: Bool # false: Least significant bit ordering of state vector:| i1 i2 i3 i4 >
     zeroCtrlBC:: Bool
-# Regular arrays
+
+    # variables for the direct method
+    nTimeIntervals:: Int64 # number of time intervals in [0, T]
+    Tend:: Vector{Float64} # Vector of size nTimeIntervals holding the final time for each interval
+    Wsol_r:: Vector{Matrix{Float64}} # Vector of size nTimeIntervals holding intermediate solution matrices
+    Wsol_i:: Vector{Matrix{Float64}} # Vector of size nTimeIntervals holding intermediate solution matrices
+
+# constructor for regular arrays (full matrices)
     function objparams(Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64;
                        Uinit::Array{Float64,2}, Utarget::Array{Complex{Float64},2}, # keyword args w/o default values (must be assigned)
                        Cfreq::Vector{Vector{Float64}}, Rfreq::Array{Float64,1}, Hconst::Array{Float64,2},
-                       w_diag_mat::Diagonal{Float64,Array{Float64,1}},
+                       w_diag_mat::Diagonal{Float64,Array{Float64,1}}, nCoeff::Int,
                        # keyword args with default values
                        Hsym_ops:: Array{Array{Float64,2},1} = Array{Float64,2}[], Hanti_ops:: Array{Array{Float64,2},1} = Array{Float64,2}[],
                        Hunc_ops:: Array{Array{Float64,2},1} = Array{Float64,2}[],
@@ -261,8 +278,8 @@ mutable struct objparams
                        objFuncType:: Int64 = 1, leak_ubound:: Float64=1.0e-3,
                        use_sparse::Bool = false, use_custom_forbidden::Bool = false,
                        linear_solver::lsolver_object = lsolver_object(nrhs=prod(Ne)), msb_order::Bool = true,
-                       dVds::Array{ComplexF64,2}= Array{ComplexF64}(undef,0,0), nCoeff::Int, freq01::Vector{Float64} = Vector{Float64}[], self_kerr::Vector{Float64} = Vector{Float64}[], couple_coeff::Vector{Float64} = Vector{Float64}[], couple_type::Int64 = 0,zeroCtrlBC::Bool = true)
-        pFidType = 2
+                       dVds::Array{ComplexF64,2}= Array{ComplexF64}(undef,0,0), freq01::Vector{Float64} = Vector{Float64}[], self_kerr::Vector{Float64} = Vector{Float64}[], couple_coeff::Vector{Float64} = Vector{Float64}[], couple_type::Int64 = 0,zeroCtrlBC::Bool = true, nTimeIntervals::Int64=1, Tend::Vector{Float64} = [T], Wsol::Vector{Matrix{ComplexF64}} = [Utarget] )
+        pFidType = 2 # Std gate infidelity
         Nosc   = length(Ne) # number of subsystems
         N      = prod(Ne)
         Ntot   = prod(Ne+Ng)
@@ -427,7 +444,7 @@ mutable struct objparams
             my_sv_type = 2
         end
 
-        wa = working_arrays(N, Ntot, convert(MyRealMatrix, Hconst), convert(Vector{MyRealMatrix}, Hsym_ops1), convert(Vector{MyRealMatrix}, Hanti_ops1), convert(Vector{MyRealMatrix}, Hunc_ops1), isSymm, pFidType, objFuncType, nCoeff)
+        wa = working_arrays(N, Ntot, convert(MyRealMatrix, Hconst), convert(Vector{MyRealMatrix}, Hsym_ops1), convert(Vector{MyRealMatrix}, Hanti_ops1), convert(Vector{MyRealMatrix}, Hunc_ops1), isSymm, objFuncType, nCoeff)
 
 
         # sv_type is used for continuation. Only change this if you know what you are doing
@@ -443,7 +460,7 @@ mutable struct objparams
              usingPriorCoeffs, priorCoeffs, quiet, Rfreq, false, [],
              real(my_dVds), imag(my_dVds), my_sv_type, wa, nCoeff,
              freq01, self_kerr, couple_coeff, couple_type, # Add some checks for these ones!
-             msb_order, zeroCtrlBC
+             msb_order, zeroCtrlBC, nTimeIntervals, Tend, real.(Wsol), imag.(Wsol)
             )
 
     end
@@ -546,14 +563,7 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, verbose::Bool
     # primary fidelity type
     pFidType = params.pFidType  
 
-    if pFidType == 3
-        nCoeff = size(pcof0,1)
-        pcof = zeros(nCoeff-1)
-        pcof[:] = pcof0[1:nCoeff-1] # these are for the B-spline coefficients
-        params.globalPhase = pcof0[nCoeff]
-    else
-        pcof = pcof0
-    end
+    pcof = pcof0
 
     Psize = size(pcof,1) #must provide separate coefficients for real,imaginary, and uncoupled parts of the control fcn
     #
@@ -719,7 +729,7 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, verbose::Bool
         primaryobjf = 1+tracefidabs2(vr, -vi, vtargetr, vtargeti) - 2*real(scomplex1*exp(-1im*params.globalPhase)) # global phase angle 
     elseif pFidType == 2
         primaryobjf = (1.0-tracefidabs2(vr, -vi, vtargetr, vtargeti)) # insensitive to global phase angle
-    elseif pFidType == 3 || pFidType == 4
+    elseif pFidType == 4
         rotTarg = exp(1im*params.globalPhase)*(vtargetr + im*vtargeti)
         primaryobjf = (1.0 - tracefidreal(vr, -vi, real(rotTarg), imag(rotTarg)) )
     end
@@ -739,7 +749,7 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, verbose::Bool
             primaryobjgrad = 2*real(conj( scomplex1 - exp(1im*params.globalPhase) )*salpha1)
         elseif pFidType == 2
             primaryobjgrad = - 2*real(conj(scomplex1)*salpha1)
-        elseif pFidType == 3 || pFidType == 4
+        elseif pFidType == 4
             rotTarg = exp(1im*params.globalPhase)*(vtargetr + im*vtargeti)
             # grad wrt the control function 
             primaryobjgrad = - tracefidreal(wr, -wi, real(rotTarg), imag(rotTarg))
@@ -883,28 +893,13 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, verbose::Bool
         end # for step (backward time stepping loop)
 
         primObjGradPhase=0.0
-        if pFidType == 3
-            # gradient wrt the global phase
-            rotTarg = exp(1im*params.globalPhase)*(vtargetr + im*vtargeti)
-            # grad wrt the global phase
-            primObjGradPhase = - tracefidreal(vfinalr, vfinali, real(im.*rotTarg), imag(im.*rotTarg))
-            # all components of the gradient
-            totalgrad = zeros(Psize+1) # allocate array to return the gradient
-            totalgrad[1:Psize] = gradobjfadj[:]
-            totalgrad[Psize+1] = primObjGradPhase
-            # totalgrad = zeros(Psize) # allocate array to return the gradient
-            # totalgrad[:] = gradobjfadj[:]
-        else
-            # totalgrad = zeros(Psize) # allocate array to return the gradient
-            # totalgrad[:] = gradobjfadj[:] # deep copy        
-            totalgrad = gradobjfadj # use a shallow copy for improved efficiency
-        end
+
+        # totalgrad = zeros(Psize) # allocate array to return the gradient
+        # totalgrad[:] = gradobjfadj[:] # deep copy        
+        totalgrad = gradobjfadj # use a shallow copy for improved efficiency
 
         if params.objFuncType != 1
             leakgrad = zeros(size(totalgrad));
-            if pFidType == 3 
-                push!(infidelgrad,primObjGradPhase) # push!() is slow
-            end
             leakgrad .= totalgrad - infidelgrad # deep copy
         else
             # add in Tikhonov gradient
@@ -932,7 +927,7 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, verbose::Bool
             else
                 println("The gradient with respect to the phase angle is computed analytically and not by solving the adjoint equation")
             end
-            if pFidType == 3 || pFidType == 4
+            if pFidType == 4
                 println("\tPrimary grad wrt phase = ", primObjGradPhase)
             end
         end
@@ -951,9 +946,6 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, verbose::Bool
         fidelityrot = tracefidcomplex(vfinalr, vfinali, vtargetr, vtargeti) # vfinali = -vi
         mfidelityrot = abs(fidelityrot)^2
         println("Final trace infidelity = ", 1.0 - mfidelityrot, " trace fidelity = ", mfidelityrot)
-        if params.pFidType == 3
-            println(" global phase = ",  params.globalPhase)
-        end
         
         if params.usingPriorCoeffs
         println("Relative difference from prior: || pcof-prior || / || pcof || = ", norm(pcof - params.priorCoeffs) / norm(pcof) )
@@ -1145,8 +1137,8 @@ function zero_start_end!(params::objparams, D1:: Int64, minCoeff:: Array{Float64
     Ncoupled = params.Ncoupled
     Nunc = params.Nunc
     # nCoeff = 2*Ncoupled*Nfreq*D1
-    NfreqTot = sum(Nfreq) 
-    nCoeff = 2*D1*NfreqTot
+    NfreqTot = sum(Nfreq) # not used
+    nCoeff = 2*D1*NfreqTot # not used
 
 #    @printf("Ncoupled = %d, Nfreq = %d, D1 = %d, nCoeff = %d\n", Ncoupled, Nfreq, D1, nCoeff)
     baseOffset = 0
@@ -1254,37 +1246,6 @@ function assign_thresholds_ctrl_freq(params::objparams, D1:: Int64, maxAmp:: Vec
     return minCoeff, maxCoeff
 end
 
-# """
-#     minCoeff, maxCoeff = assign_thresholds_freq(maxAmp, Ncoupled, Nfreq, D1)
-
-# Build vector of frequency dependent min/max parameter constraints, with `minCoeff = -maxCoeff`, when
-# there are no uncoupled control functions.
- 
-# # Arguments
-# - `maxAmp::Array{Float64,1}`: Maximum parameter value for each frequency
-# - `Ncoupled::Int64`: Number of coupled controls in the simulation
-# - `Nfreq::Vector{Int64}`: Number of carrier wave frequencies used in the controls
-# - `D1:: Int64`: Number of basis functions in each control function
-# """
-# function assign_thresholds_freq(maxAmp::Array{Float64,1}, Ncoupled::Int64, Nfreq::Vector{Int64}, D1::Int64)
-#     NfreqTot = sum(Nfreq) 
-#     # nCoeff = 2*Ncoupled*Nfreq*D1
-#     nCoeff = 2*D1*NfreqTot
-#     minCoeff = zeros(nCoeff) # Initialize storage
-#     maxCoeff = zeros(nCoeff)
-#     baseOffset = 0
-# #    @printf("Ncoupled = %d, Nfreq = %d, D1 = %d, nCoeff = %d\n", Ncoupled, Nfreq, D1, nCoeff)
-#     for c in 1:Ncoupled
-#         for f in 1:Nfreq[c]
-#             #offset1 = 2*(c-1)*Nfreq*D1 + (f-1)*2*D1
-#             offset1 = baseOffset + (f-1)*2*D1
-#             minCoeff[offset1 + 1:offset1+2*D1] .= -maxAmp[f] # same for p(t) and q(t)
-#             maxCoeff[offset1 + 1:offset1+2*D1] .= maxAmp[f]
-#         end
-#         baseOffset += 2*D1*Nfreq[c]
-#     end
-#     return minCoeff, maxCoeff
-# end
 
 """
     minCoeff, maxCoeff = assign_thresholds(params, D1, maxAmp)
@@ -1341,7 +1302,7 @@ end
                 lambdai0[i,j] = itmp
             end
         end
-    elseif pFidType == 3 || pFidType == 4
+    elseif pFidType == 4
         rotTarg = exp(1im*globalPhase)*(vtargetr + im*vtargeti)
         rtargetr = real(rotTarg)
         rtargeti = imag(rotTarg)
