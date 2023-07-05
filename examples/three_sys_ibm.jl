@@ -1,4 +1,7 @@
 # Three qubit test case
+using Juqbox
+using Printf
+using Plots
 
 Ne = [2,2,2] # Number of essential energy levels
 Ng = [0,0,0] # Number of extra guard levels
@@ -18,7 +21,7 @@ favg = sum(f01)/nSys
 rot_freq = favg * ones(nSys)
 
 # Set the initial duration
-T = 500.0
+T = 600.0
 # Number of coefficients per spline
 #D1 = 26
 dtau = 3.33
@@ -65,6 +68,6 @@ params = retval[1]
 pcof0 = retval[2]
 maxAmp = retval[3];
 
-params.traceInfidelityThreshold = 1e-4 # better than 99.99% fidelity
+params.traceInfidelityThreshold = 1e-3 # >= 99.9%, 1e-4 # better than 99.99% fidelity
 
 println("Setup complete")
