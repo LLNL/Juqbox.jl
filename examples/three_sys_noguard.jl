@@ -16,7 +16,7 @@ favg = sum(f01)/nSys
 rot_freq = favg * ones(nSys)
 
 # Set the initial duration
-T = 200.0 # was 500.0. 
+T = 500.0 # 500.0
 # Number of coefficients per spline
 # D1 = 26
 dtau = 3.33
@@ -42,7 +42,7 @@ quandary_exec= "./main"   # set to "" for Juqbox, or "./main" for Quandary
 ncores = 4 # prod(Ne)
 
 # Note: to get Hessian at ctrl = 0, set rand_amp_frac = 0.0
-init_amp_frac = 0.3
+init_amp_frac = 0.3 # 0.5
 rand_seed = 5432
 
 cw_amp_thres = 6e-2
