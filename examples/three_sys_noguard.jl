@@ -42,7 +42,7 @@ quandary_exec= "./main"   # set to "" for Juqbox, or "./main" for Quandary
 ncores = 4 # prod(Ne)
 
 # Note: to get Hessian at ctrl = 0, set rand_amp_frac = 0.0
-init_amp_frac = 0.5 # 0.3
+init_amp_frac = 0.7 # 0.1 # 0.5 # 0.3
 rand_seed = 5432
 
 cw_amp_thres = 6e-2
