@@ -19,8 +19,6 @@ mutable struct working_arrays
     S1  ::MyRealMatrix
 
     # Forward/Adjoint variables+stages
-    #vtargetr    ::Array{Float64,2} # moved to params
-    #vtargeti    ::Array{Float64,2}
     lambdar     ::Array{Float64,2}
     lambdar0    ::Array{Float64,2}
     lambdai     ::Array{Float64,2}
@@ -157,7 +155,8 @@ and either be symmetric or skew-symmetric.
 mutable struct objparams
     Nosc   ::Int64          # number of oscillators in the coupled quantum systems
     N      ::Int64          # total number of essential levels
-    Nguard ::Int64          # total number of extra levels
+    Nguard ::Int64          # total number of guard levels
+    Ntot   ::Int64          # total number of levels (essential + guard)
     Ne     ::Array{Int64,1} # essential levels for each oscillator
     Ng     ::Array{Int64,1} # guard levels for each oscillator
     Nt     ::Array{Int64,1} # total # levels for each oscillator
@@ -489,7 +488,7 @@ mutable struct objparams
     
         # sv_type is used for continuation. Only change this if you know what you are doing
         new(
-             Nosc, N, Nguard, Ne, Ng, Ne+Ng, T, nsteps, real(Uinit), imag(Uinit), real(Utarget), imag(Utarget), 
+             Nosc, N, Nguard, N+Nguard, Ne, Ng, Ne+Ng, T, nsteps, real(Uinit), imag(Uinit), real(Utarget), imag(Utarget), 
              use_bcarrier, NfreqTot, Nfreq, Cfreq, kpar, tik0, Hconst, Hsym_ops1, 
              Hanti_ops1, Hunc_ops1, Ncoupled, Nunc, isSymm, Ident, wmat, 
              forb_states, forb_weights, wmat_real, wmat_imag, pFidType, 0.0,
@@ -528,183 +527,56 @@ The return argument `tpl` is a tuple with a content that depends on the input ar
 - `verbose=true`, `evaladjoint=true`: tpl[1] = objective, tpl[2] = gradient, tpl[3] = final-unitary, tpl[4] = trace-fidelity, tpl[5] = dfdp, tpl[6] = wr1 - im*wi. 
 
 """
-function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, verbose::Bool = false, evaladjoint::Bool = true)
-    wa = params.wa
+function traceobjgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool = false, evaladjoint::Bool = true)
     order  = 2
-    N      = params.N    
-    Nguard = params.Nguard  
-    T      = params.T
-
-    # Utarget = params.Utarget # Never used
-
-    nsteps = params.nsteps
-    tik0   = params.tik0
-
-    H0 = params.Hconst
-    Ng = params.Ng
-    Ne = params.Ne
-    
-    Nt   = params.Nt # vector
-    Ntot = N + Nguard # scalar
-
-    Ncoupled  = params.Ncoupled # Number of symmetric control Hamiltonians. We currently assume that the number of anti-symmetric Hamiltonians is the same
-    Nunc  = params.Nunc # Number of uncoupled control functions.
-    Nosc  = params.Nosc
-    Nfreq = params.Nfreq
-    Nsig  = 2*(Ncoupled + Nunc) # Only uses for regular B-splines
-
-    linear_solver = params.linear_solver    
-
-    # Reference pre-allocated working arrays
-    K0 = wa.K0
-    S0 = wa.S0
-    K05 = wa.K05
-    S05 = wa.S05
-    K1 = wa.K1
-    S1 = wa.S1
-    vtargetr = params.Utarget_r
-    vtargeti = params.Utarget_i
-    # vtargetr = wa.vtargetr
-    # vtargeti = wa.vtargeti
-
-    # New variables to accomodate continuation. By default dVds = Utarget
-    dVds_r = params.dVds_r
-    dVds_i = params.dVds_i
-    # tmp
-    # println("dVds")
-
-    lambdar = wa.lambdar
-    lambdar0 = wa.lambdar0
-    lambdai = wa.lambdai
-    lambdai0 = wa.lambdai0
-    lambdar05 = wa.lambdar05
-    lambdar_nfrc  = wa.lambdar_nfrc
-    lambdar0_nfrc = wa.lambdar0_nfrc
-    lambdai_nfrc  = wa.lambdai_nfrc
-    lambdai0_nfrc = wa.lambdai0_nfrc
-    lambdar05_nfrc= wa.lambdar05_nfrc
-    κ₁ = wa.κ₁
-    κ₂ = wa.κ₂
-    ℓ₁ = wa.ℓ₁
-    ℓ₂ = wa.ℓ₂
-    rhs = wa.rhs
-    gr0 = wa.gr0
-    gi0 = wa.gi0
-    gr1 = wa.gr1
-    gi1 = wa.gi1
-    hr0 = wa.hr0
-    hi0 = wa.hi0
-    hi1 = wa.hi1
-    hr1 = wa.hr1
-    vr = wa.vr
-    vi = wa.vi
-    vi05 = wa.vi05
-    vr0 = wa.vr0
-    vfinalr = wa.vfinalr # temporary storage for final time-stepped solution
-    vfinali = wa.vfinali
-    gr = wa.gr
-    gi = wa.gi
-    gradobjfadj = wa.gradobjfadj 
-    tr_adj = wa.tr_adj
-
-
-    # primary fidelity type
-    pFidType = params.pFidType  
-
-    alpha = pcof0[1:params.nAlpha] # extract the B-spline-coefficients
-
-    Psize = size(alpha,1) #must provide separate coefficients for real,imaginary, and uncoupled parts of the control fcn
-    #
-    #
-    if Psize%2 != 0
-        error("alpha must have an even number of elements, not ", Psize)
-    end
-    if params.use_bcarrier
-        # NOTE: Nsig  = 2*(Ncoupled + Nunc)
-        # D1 = div(Psize, Nsig*Nfreq)  # 
-        # Psize = D1*Nsig*Nfreq # active part of the parameter array
-        D1 = div(Psize, 2*params.NfreqTot)  # 
-        Psize = 2*D1*params.NfreqTot # active part of the parameter array
-    else
-        # NOTE: Nsig  = 2*(Ncoupled + Nunc)
-        D1 = div(Psize, Nsig)
-        Psize = D1*Nsig # active part of the parameter array
-    end
-    
-    tinv ::Float64 = 1.0/T
-    
-    # Parameters used for the gradient
-    kpar = params.kpar
-
-    if verbose
-        println("Vector dim Ntot =", Ntot , ", Guard levels Nguard = ", Nguard , ", Param dim, Psize = ", Psize, ", Spline coeffs per func, D1= ", D1, ", Nsteps = ", nsteps, " Tikhonov coeff: ", tik0)
-    end
-    
-    Ident = params.Ident
-
-    # coefficients for penalty style #2 (wmat is a Diagonal matrix)
-    # wmat = params.wmat
-    
-    wmat_real = params.wmat_real
-    wmat_imag = params.wmat_imag
-
-    # Here we can choose what kind of control function expansion we want to use
-    if (params.use_bcarrier)
-        # FMG FIX
-        splinepar = bcparams(T, D1, params.Cfreq, alpha) # Assumes Nunc = 0
-    else
-    # the old bsplines is the same as the bcarrier with Cfreq = 0
-        splinepar = splineparams(T, D1, Nsig, alpha)   # parameters for B-splines
-    end
-
-    # it is up to the user to estimate the number of time steps
-    dt ::Float64 = T/nsteps
-
     gamma, stages = getgamma(order)
 
+    # shortcut to working_arrays object in p::objparams
+    w = p.wa
+
     if verbose
-        println("Final time: ", T, ", number of time steps: " , nsteps , ", time step: " , dt )
+        println("traceobjgrad: Vector dim Ntot =", p.Ntot , ", Guard levels Nguard = ", p.Nguard , ", Param dim, Psize = ", p.nAlpha, ", Spline coeffs per func, D1= ", p.D1, ", Nsteps = ", p.nsteps, " Tikhonov coeff: ", p.tik0)
+    end
+
+    # initializations start here
+    alpha = pcof0[1:p.nAlpha] # extract the B-spline-coefficients
+
+    # setup splinepar
+    if p.use_bcarrier
+        splinepar = bcparams(p.T, p.D1, p.Cfreq, alpha) # Assumes Nunc = 0
+    else
+        Nsig  = 2*(p.Ncoupled + p.Nunc) # Only uses for regular B-splines
+        splinepar = splineparams(p.T, p.D1, Nsig, alpha)
+    end
+    
+    tinv ::Float64 = 1.0/p.T
+
+    # it is up to the user to estimate the number of time steps
+    dt ::Float64 = p.T/p.nsteps
+
+    if verbose
+        println("Final time: ", p.T, ", number of time steps: " , p.nsteps , ", time step: " , dt )
     end
     
     #real and imaginary part of initial condition
-    copy!(vr,params.Uinit_r)
-    copy!(vi,-params.Uinit_i) # note the sign
-    #vi   .= 0.0
-
-    # initialize temporaries
-    vi05 .= 0.0
-    vr0  .= 0.0
+    copy!(w.vr, p.Uinit_r)
+    copy!(w.vi, -p.Uinit_i) # note the sign
 
     # Zero out working arrays
-    κ₁   .= 0.0
-    κ₂   .= 0.0
-    ℓ₁   .= 0.0
-    ℓ₂   .= 0.0
-    rhs  .= 0.0
-
-    gr0  .= 0.0
-    gi0  .= 0.0
-    gr1  .= 0.0
-    gi1  .= 0.0
-    hr0  .= 0.0
-    hi0  .= 0.0
-    hi1  .= 0.0
-    hr1  .= 0.0
-    gr   .= 0.0
-    gi   .= 0.0
+    initialize_working_arrays(w)
     
     if verbose
-        usaver = zeros(Float64,Ntot,N,nsteps+1)
-        usavei = zeros(Float64,Ntot,N,nsteps+1)
-        usaver[:,:,1] = vr # the rotation to the lab frame is the identity at t=0
-        usavei[:,:,1] = -vi
+        usaver = zeros(Float64,p.Ntot,p.N,p.nsteps+1)
+        usavei = zeros(Float64,p.Ntot,p.N,p.nsteps+1)
+        usaver[:,:,1] = w.vr # the rotation to the lab frame is the identity at t=0
+        usavei[:,:,1] = -w.vi
 
         #to compute gradient with forward method
         if evaladjoint
-            wr   = zeros(Float64,Ntot,N) 
-            wi   = zeros(Float64,Ntot,N) 
-            wr1  = zeros(Float64,Ntot,N) 
-            wi05 = zeros(Float64,Ntot,N) 
+            wr   = zeros(Float64,p.Ntot,p.N) 
+            wi   = zeros(Float64,p.Ntot,p.N) 
+            wr1  = zeros(Float64,p.Ntot,p.N) 
+            wi05 = zeros(Float64,p.Ntot,p.N) 
             objf_alpha1 = 0.0
         end
     end
@@ -716,26 +588,26 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, verbose::Bool
 
 
     # Forward time stepping loop
-    for step in 1:nsteps
+    for step in 1:p.nsteps
 
-        forbidden0 = tinv*penalf2aTrap(vr, wmat_real)
+        forbidden0 = tinv*penalf2aTrap(w.vr, p.wmat_real)
         # Störmer-Verlet
         for q in 1:stages
-            copy!(vr0,vr)
+            copy!(w.vr0,w.vr)
             t0  = t
             
             # Update K and S matrices
             # general case
-            KS!(K0, S0, t, params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq) 
-            KS!(K05, S05, t + 0.5*dt*gamma[q], params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq) 
-            KS!(K1, S1, t + dt*gamma[q], params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq) 
+            KS!(w.K0, w.S0, t, p.Hsym_ops, p.Hanti_ops, p.Hunc_ops, p.Nunc, p.isSymm, splinepar, p.Hconst, p.Rfreq) 
+            KS!(w.K05, w.S05, t + 0.5*dt*gamma[q], p.Hsym_ops, p.Hanti_ops, p.Hunc_ops, p.Nunc, p.isSymm, splinepar, p.Hconst, p.Rfreq) 
+            KS!(w.K1, w.S1, t + dt*gamma[q], p.Hsym_ops, p.Hanti_ops, p.Hunc_ops, p.Nunc, p.isSymm, splinepar, p.Hconst, p.Rfreq) 
             
             # Take a step forward and accumulate weight matrix integral. Note the √2 multiplier is to account
             # for the midpoint rule in the numerical integration of the imaginary part of the signal.
-            @inbounds t = step!(t, vr, vi, vi05, dt*gamma[q], K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs,linear_solver)
+            @inbounds t = step!(t, w.vr, w.vi, w.vi05, dt*gamma[q], w.K0, w.S0, w.K05, w.S05, w.K1, w.S1, p.Ident, w.κ₁, w.κ₂, w.ℓ₁, w.ℓ₂, w.rhs, p.linear_solver)
 
-            forbidden = tinv*penalf2a(vr, vi05, wmat_real)  
-            forbidden_imag1 = tinv*penalf2imag(vr0, vi05, wmat_imag)
+            forbidden = tinv*penalf2a(w.vr, w.vi05, p.wmat_real)  
+            forbidden_imag1 = tinv*penalf2imag(w.vr0, w.vi05, p.wmat_imag)
             objfv = objfv + gamma[q]*dt*0.5*(forbidden0 + forbidden - 2.0*forbidden_imag1)
 
             # Keep prior value for next step (FG: will this work for multiple stages?)
@@ -744,20 +616,20 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, verbose::Bool
             # compute component of the gradient for verification of adjoint method
             if evaladjoint && verbose
                 # compute the forcing for (wr, wi)
-                fgradforce!(params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc,
-                            params.isSymm, vr0, vi05, vr, t-dt, dt, splinepar, kpar, gr0, gr1, gi0, gi1, gr, gi)
+                fgradforce!(p.Hsym_ops, p.Hanti_ops, p.Hunc_ops, p.Nunc,
+                            p.isSymm, w.vr0, w.vi05, w.vr, t-dt, dt, splinepar, p.kpar, w.gr0, w.gr1, w.gi0, w.gi1, w.gr, w.gi)
 
                 copy!(wr1,wr)
 
                 @inbounds step_fwdGrad!(t0, wr1, wi, wi05, dt*gamma[q],
-                                        gr0, gi0, gr1, gi1, K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs,linear_solver) 
+                                        w.gr0, w.gi0, w.gr1, w.gi1, w.K0, w.S0, w.K05, w.S05, w.K1, w.S1, p.Ident, w.κ₁, w.κ₂, w.ℓ₁, w.ℓ₂, w.rhs, p.linear_solver) 
                 
                 # Real part of forbidden state weighting
-                forbalpha0 = tinv*penalf2grad(vr0, vi05, wr, wi05, wmat_real)
-                forbalpha1 = tinv*penalf2grad(vr, vi05, wr1, wi05, wmat_real)
+                forbalpha0 = tinv*penalf2grad(w.vr0, w.vi05, wr, wi05, p.wmat_real)
+                forbalpha1 = tinv*penalf2grad(w.vr, w.vi05, wr1, wi05, p.wmat_real)
 
                 # Imaginary part of forbidden state weighting
-                forbalpha2 = tinv*penalf2grad(wi05, vi05, vr0, wr, wmat_imag)                
+                forbalpha2 = tinv*penalf2grad(wi05, w.vi05, w.vr0, wr, p.wmat_imag)                
 
                 copy!(wr,wr1)
                 # accumulate contribution from the leak term
@@ -768,50 +640,49 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, verbose::Bool
         
         if verbose
             # rotated frame
-            usaver[:,:, step + 1] = vr
-            usavei[:,:, step + 1] = -vi
+            usaver[:,:, step + 1] = w.vr
+            usavei[:,:, step + 1] = -w.vi
         end
     end #forward time stepping loop
 
-    if pFidType == 1
-        scomplex1 = tracefidcomplex(vr, -vi, vtargetr, vtargeti)
-        primaryobjf = 1+tracefidabs2(vr, -vi, vtargetr, vtargeti) - 2*real(scomplex1*exp(-1im*params.globalPhase)) # global phase angle 
-    elseif pFidType == 2
-        primaryobjf = (1.0-tracefidabs2(vr, -vi, vtargetr, vtargeti)) # insensitive to global phase angle
-    elseif pFidType == 4
-        rotTarg = exp(1im*params.globalPhase)*(vtargetr + im*vtargeti)
-        primaryobjf = (1.0 - tracefidreal(vr, -vi, real(rotTarg), imag(rotTarg)) )
+    if p.pFidType == 1
+        scomplex1 = tracefidcomplex(w.vr, -w.vi, p.Utarget_r, p.Utarget_i)
+        primaryobjf = 1+tracefidabs2(w.vr, -w.vi, p.Utarget_r, p.Utarget_i) - 2*real(scomplex1*exp(-1im*p.globalPhase)) # global phase angle 
+    elseif p.pFidType == 2
+        primaryobjf = (1.0-tracefidabs2(w.vr, -w.vi, p.Utarget_r, p.Utarget_i)) # insensitive to global phase angle
+    elseif p.pFidType == 4
+        rotTarg = exp(1im*p.globalPhase)*(p.Utarget_r + im*p.Utarget_i)
+        primaryobjf = (1.0 - tracefidreal(w.vr, -w.vi, real(rotTarg), imag(rotTarg)) )
     end
 
     secondaryobjf = objfv
     objfv = primaryobjf + secondaryobjf
 
-    if params.objFuncType == 1
-        objfv += tikhonov_pen(alpha, params)
+    if p.objFuncType == 1
+        objfv += tikhonov_pen(alpha, p)
     end
 
     if evaladjoint && verbose
-        # salpha1 = tracefidcomplex(wr, -wi, vtargetr, vtargeti)
-        salpha1 = tracefidcomplex(wr, -wi, dVds_r, dVds_i)
-        scomplex1 = tracefidcomplex(vr, -vi, vtargetr, vtargeti)
-        if pFidType==1
-            primaryobjgrad = 2*real(conj( scomplex1 - exp(1im*params.globalPhase) )*salpha1)
-        elseif pFidType == 2
+        salpha1 = tracefidcomplex(wr, -wi, p.dVds_r, p.dVds_i)
+        scomplex1 = tracefidcomplex(w.vr, -w.vi, p.Utarget_r, p.Utarget_i)
+        if p.pFidType==1
+            primaryobjgrad = 2*real(conj( scomplex1 - exp(1im*p.globalPhase) )*salpha1)
+        elseif p.pFidType == 2
             primaryobjgrad = - 2*real(conj(scomplex1)*salpha1)
-        elseif pFidType == 4
-            rotTarg = exp(1im*params.globalPhase)*(vtargetr + im*vtargeti)
+        elseif p.pFidType == 4
+            rotTarg = exp(1im*p.globalPhase)*(p.Utarget_r + im*p.Utarget_i)
             # grad wrt the control function 
             primaryobjgrad = - tracefidreal(wr, -wi, real(rotTarg), imag(rotTarg))
             # grad wrt the global phase
-            primObjGradPhase = - tracefidreal(vr, -vi, real(im.*rotTarg), imag(im.*rotTarg))
+            primObjGradPhase = - tracefidreal(w.vr, -w.vi, real(im.*rotTarg), imag(im.*rotTarg))
         end
         objf_alpha1 = objf_alpha1 + primaryobjgrad
     end  
 
-    vfinalr = copy(vr)
-    vfinali = copy(-vi)
+    w.vfinalr = copy(w.vr)
+    w.vfinali = copy(-w.vi)
 
-    traceFidelity = tracefidabs2(vfinalr, vfinali, vtargetr, vtargeti)
+    traceFidelity = tracefidabs2(w.vfinalr, w.vfinali, p.Utarget_r, p.Utarget_i)
 
     if evaladjoint
 
@@ -819,123 +690,123 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, verbose::Bool
             dfdp = objf_alpha1
         end  
 
-        if (params.use_bcarrier)
-            # gradSize = (2*Ncoupled+Nunc)*Nfreq*D1
-            gradSize = params.NfreqTot*2*D1
+        if (p.use_bcarrier)
+            # gradSize = (2*p.Ncoupled+p.Nunc)*Nfreq*D1
+            gradSize = p.NfreqTot*2*p.D1
         else
-            gradSize = Nsig*D1
+            gradSize = Nsig*p.D1
         end
 
 
         # initialize array for storing the adjoint gradient so it can be returned to the calling function/program
         leakgrad = zeros(0);
         infidelgrad = zeros(0);
-        gradobjfadj[:] .= 0.0    
-        t = T
+        w.gradobjfadj[:] .= 0.0    
+        t = p.T
         dt = -dt
 
         
-        # println("traceobjgrad(): eval_adjoint: sv_type = ", params.sv_type) # tmp
-        if params.sv_type == 1 || params.sv_type == 2 # regular case
+        # println("traceobjgrad(): eval_adjoint: sv_type = ", p.sv_type) # tmp
+        if p.sv_type == 1 || p.sv_type == 2 # regular case
             # println("scomplex #1 (vtarget)")
-            scomplex0 = tracefidcomplex(vr, -vi, vtargetr, vtargeti)
-        elseif params.sv_type == 3 # term2 for d/ds(grad(G))
+            scomplex0 = tracefidcomplex(w.vr, -w.vi, p.Utarget_r, p.Utarget_i)
+        elseif p.sv_type == 3 # term2 for d/ds(grad(G))
             # println("scomplex #3 (dVds)")
-            scomplex0 = tracefidcomplex(vr, -vi, dVds_r, dVds_i)
-        #     println("Unknown sv_type = ", params.sv_type)
+            scomplex0 = tracefidcomplex(w.vr, -w.vi, p.dVds_r, p.dVds_i)
+        #     println("Unknown sv_type = ", p.sv_type)
         end
 
-        if pFidType == 1
-            scomplex0 = exp(1im*params.globalPhase) - scomplex0
+        if p.pFidType == 1
+            scomplex0 = exp(1im*p.globalPhase) - scomplex0
         end
 
 
         # Set initial condition for adjoint variables
-        # Note (vtargetr, vtargeti) needs to be changed to dV/ds for continuation applications
+        # Note (p.Utarget_r, p.Utarget_i) needs to be changed to dV/ds for continuation applications
         # By default, dVds = vtarget
-        if params.sv_type == 1 # regular case
+        if p.sv_type == 1 # regular case
             # println("init_adjoint #1 (dVds)")
-            init_adjoint!(pFidType, params.globalPhase, N, scomplex0, lambdar, lambdar0, lambdar05, lambdai, lambdai0,
-                        vtargetr, vtargeti)
-        elseif params.sv_type == 2 # term1 for d/ds(grad(G))
+            init_adjoint!(p.pFidType, p.globalPhase, p.N, scomplex0, w.lambdar, w.lambdar0, w.lambdar05, w.lambdai, w.lambdai0,
+                        p.Utarget_r, p.Utarget_i)
+        elseif p.sv_type == 2 # term1 for d/ds(grad(G))
             # println("init_adjoint #2 (dVds)")
-            init_adjoint!(pFidType, params.globalPhase, N, scomplex0, lambdar, lambdar0, lambdar05, lambdai, lambdai0,
-                        dVds_r, dVds_i)               
-        elseif params.sv_type == 3 # term2 for d/ds(grad(G))
-            init_adjoint!(pFidType, params.globalPhase, N, scomplex0, lambdar, lambdar0, lambdar05, lambdai, lambdai0,
-                        vtargetr, vtargeti)
+            init_adjoint!(p.pFidType, p.globalPhase, p.N, scomplex0, w.lambdar, w.lambdar0, w.lambdar05, w.lambdai, w.lambdai0,
+                        p.dVds_r, p.dVds_i)               
+        elseif p.sv_type == 3 # term2 for d/ds(grad(G))
+            init_adjoint!(p.pFidType, p.globalPhase, p.N, scomplex0, w.lambdar, w.lambdar0, w.lambdar05, w.lambdai, w.lambdai0,
+                        p.Utarget_r, p.Utarget_i)
         end
 
         #Initialize adjoint variables without forcing
-        if params.objFuncType != 1
-            lambdar_nfrc  .= lambdar
-            lambdar0_nfrc .= lambdar0
-            lambdai_nfrc  .= lambdai
-            lambdai0_nfrc .= lambdai0
-            lambdar05_nfrc.= lambdar05
+        if p.objFuncType != 1
+            w.lambdar_nfrc  .= w.lambdar
+            w.lambdar0_nfrc .= w.lambdar0
+            w.lambdai_nfrc  .= w.lambdai
+            w.lambdai0_nfrc .= w.lambdai0
+            w.lambdar05_nfrc.= w.lambdar05
             infidelgrad = zeros(gradSize);
         end
 
         #Backward time stepping loop
-        for step in nsteps-1:-1:0
+        for step in p.nsteps-1:-1:0
 
             # Forcing for the real part of the adjoint variables in first PRK "stage"
-            mul!(hr0, wmat_real, vr, tinv, 0.0)
+            mul!(w.hr0, p.wmat_real, w.vr, tinv, 0.0)
 
             #loop over stages
             for q in 1:stages
                 t0 = t
-                copy!(vr0,vr)
+                copy!(w.vr0,w.vr)
                 
                 # update K and S
-                # Since t is negative we have that K0 is K^{n+1}, K05 = K^{n-1/2}, 
-                # K1 = K^{n} and similarly for S.
+                # Since t is negative we have that w.K0 is K^{n+1}, w.K05 = K^{n-1/2}, 
+                # w.K1 = K^{n} and similarly for S.
                 # general case
-                KS!(K0, S0, t, params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq) 
-                KS!(K05, S05, t + 0.5*dt*gamma[q], params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq) 
-                KS!(K1, S1, t + dt*gamma[q], params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq) 
+                KS!(w.K0, w.S0, t, p.Hsym_ops, p.Hanti_ops, p.Hunc_ops, p.Nunc, p.isSymm, splinepar, p.Hconst, p.Rfreq) 
+                KS!(w.K05, w.S05, t + 0.5*dt*gamma[q], p.Hsym_ops, p.Hanti_ops, p.Hunc_ops, p.Nunc, p.isSymm, splinepar, p.Hconst, p.Rfreq) 
+                KS!(w.K1, w.S1, t + dt*gamma[q], p.Hsym_ops, p.Hanti_ops, p.Hunc_ops, p.Nunc, p.isSymm, splinepar, p.Hconst, p.Rfreq) 
 
 
                 # Integrate state variables backwards in time one step
-                @inbounds t = step!(t, vr, vi, vi05, dt*gamma[q], K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs,linear_solver)
+                @inbounds t = step!(t, w.vr, w.vi, w.vi05, dt*gamma[q], w.K0, w.S0, w.K05, w.S05, w.K1, w.S1, p.Ident, w.κ₁, w.κ₂, w.ℓ₁, w.ℓ₂, w.rhs, p.linear_solver)
 
                 # Forcing for adjoint equations (real part of forbidden state penalty)
-                mul!(hi0,wmat_real,vi05,tinv,0.0)
-                mul!(hr1,wmat_real,vr,tinv,0.0)
+                mul!(w.hi0,p.wmat_real,w.vi05,tinv,0.0)
+                mul!(w.hr1,p.wmat_real,w.vr,tinv,0.0)
 
                 # Forcing for adjoint equations (imaginary part of forbidden state penalty)
-                mul!(hr1,wmat_imag,vi05,tinv,1.0)
-                copy!(hi1,hi0)
-                mul!(hi1,wmat_imag,vr,-tinv,1.0)
+                mul!(w.hr1,p.wmat_imag,w.vi05,tinv,1.0)
+                copy!(w.hi1,w.hi0)
+                mul!(w.hi1,p.wmat_imag,w.vr,-tinv,1.0)
 
-                # evolve lambdar, lambdai
+                # evolve w.lambdar, w.lambdai
                 temp = t0
-                @inbounds temp = step!(temp, lambdar, lambdai, lambdar05, dt*gamma[q], hr0, hi0, hr1, hi1, 
-                                        K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs,linear_solver)
+                @inbounds temp = step!(temp, w.lambdar, w.lambdai, w.lambdar05, dt*gamma[q], w.hr0, w.hi0, w.hr1, w.hi1, 
+                                        w.K0, w.S0, w.K05, w.S05, w.K1, w.S1, p.Ident, w.κ₁, w.κ₂, w.ℓ₁, w.ℓ₂, w.rhs, p.linear_solver)
 
                 # Accumulate gradient
-                adjoint_grad_calc!(params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, vr0, vi05, vr, 
-                                    lambdar0, lambdar05, lambdai, lambdai0, t0, dt,splinepar, gr, gi, tr_adj) 
-                axpy!(gamma[q]*dt,tr_adj,gradobjfadj)
+                adjoint_grad_calc!(p.Hsym_ops, p.Hanti_ops, p.Hunc_ops, p.Nunc, p.isSymm, w.vr0, w.vi05, w.vr, 
+                                    w.lambdar0, w.lambdar05, w.lambdai, w.lambdai0, t0, dt,splinepar, w.gr, w.gi, w.tr_adj) 
+                axpy!(gamma[q]*dt,w.tr_adj,w.gradobjfadj)
                 
                 # save for next stage
-                copy!(lambdai0,lambdai)
-                copy!(lambdar0,lambdar)
+                copy!(w.lambdai0,w.lambdai)
+                copy!(w.lambdar0,w.lambdar)
 
                 #Do adjoint step to compute infidelity grad (without forcing)
-                if params.objFuncType != 1
+                if p.objFuncType != 1
                     temp = t0
-                    @inbounds temp = step_no_forcing!(temp, lambdar_nfrc, lambdai_nfrc, lambdar05_nfrc, dt*gamma[q], 
-                                                    K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs,linear_solver)
+                    @inbounds temp = step_no_forcing!(temp, w.lambdar_nfrc, w.lambdai_nfrc, w.lambdar05_nfrc, dt*gamma[q], 
+                                                    w.K0, w.S0, w.K05, w.S05, w.K1, w.S1, p.Ident, w.κ₁, w.κ₂, w.ℓ₁, w.ℓ₂, w.rhs, p.linear_solver)
 
                     # Accumulate gradient
-                    adjoint_grad_calc!(params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, vr0, vi05, vr, 
-                                        lambdar0_nfrc, lambdar05_nfrc, lambdai_nfrc, lambdai0_nfrc, t0, dt,splinepar, gr, gi, tr_adj) 
-                    axpy!(gamma[q]*dt,tr_adj,infidelgrad)
+                    adjoint_grad_calc!(p.Hsym_ops, p.Hanti_ops, p.Hunc_ops, p.Nunc, p.isSymm, w.vr0, w.vi05, w.vr, 
+                                        w.lambdar0_nfrc, w.lambdar05_nfrc, w.lambdai_nfrc, w.lambdai0_nfrc, t0, dt,splinepar, w.gr, w.gi, w.tr_adj) 
+                    axpy!(gamma[q]*dt,w.tr_adj,infidelgrad)
                     
                     # save for next stage
-                    copy!(lambdai0_nfrc,lambdai_nfrc)
-                    copy!(lambdar0_nfrc,lambdar_nfrc)    
+                    copy!(w.lambdai0_nfrc,w.lambdai_nfrc)
+                    copy!(w.lambdar0_nfrc,w.lambdar_nfrc)    
                 end
 
             end #for stages
@@ -945,15 +816,15 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, verbose::Bool
 
         # totalgrad = zeros(Psize) # allocate array to return the gradient
         # totalgrad[:] = gradobjfadj[:] # deep copy        
-        totalgrad = gradobjfadj # use a shallow copy for improved efficiency
+        totalgrad = w.gradobjfadj # use a shallow copy for improved efficiency
 
-        if params.objFuncType != 1
+        if p.objFuncType != 1
             leakgrad = zeros(size(totalgrad));
             leakgrad .= totalgrad - infidelgrad # deep copy
         else
             # add in Tikhonov gradient
-            tikhonov_grad!(alpha, params, params.wa.gr)  
-            axpy!(1.0, wa.gr, totalgrad)
+            tikhonov_grad!(alpha, p, w.gr)  
+            axpy!(1.0, w.gr, totalgrad)
         end
     
     end # if evaladjoint
@@ -963,53 +834,53 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, verbose::Bool
         println("Total objective func: ", objfv)
         println("Primary objective func: ", primaryobjf, " Guard state penalty: ", secondaryobjf, " Tikhonov penalty: ", tikhonovpenalty)
         if evaladjoint
-            println("Norm of adjoint gradient = ", norm(gradobjfadj))
+            println("Norm of adjoint gradient = ", norm(w.gradobjfadj))
 
-            if kpar <= Psize
-                dfdp = dfdp + gr[kpar] # add in the tikhonov term
+            if p.kpar <= p.nAlpha
+                dfdp = dfdp + w.gr[p.kpar] # add in the tikhonov term
 
-                println("Forward integration of total gradient[kpar=", kpar, "]: ", dfdp);
-                println("Adjoint integration of total gradient[kpar=", kpar, "]: ", gradobjfadj[kpar]);
-                println("\tAbsolute Error in gradients is : ", abs(dfdp - gradobjfadj[kpar]))
-                println("\tRelative Error in gradients is : ", abs((dfdp - gradobjfadj[kpar])/norm(gradobjfadj)))
-                println("\tPrimary grad = ", primaryobjgrad, " Tikhonov penalty grad = ", gr[kpar], " Guard state grad = ", dfdp - gr[kpar] - primaryobjgrad )
+                println("Forward integration of total gradient[kpar=", p.kpar, "]: ", dfdp);
+                println("Adjoint integration of total gradient[kpar=", p.kpar, "]: ", w.gradobjfadj[p.kpar]);
+                println("\tAbsolute Error in gradients is : ", abs(dfdp - w.gradobjfadj[p.kpar]))
+                println("\tRelative Error in gradients is : ", abs((dfdp - w.gradobjfadj[p.kpar])/norm(w.gradobjfadj)))
+                println("\tPrimary grad = ", primaryobjgrad, " Tikhonov penalty grad = ", w.gr[p.kpar], " Guard state grad = ", dfdp - w.gr[p.kpar] - primaryobjgrad )
             else
                 println("The gradient with respect to the phase angle is computed analytically and not by solving the adjoint equation")
             end
-            if pFidType == 4
+            if p.pFidType == 4
                 println("\tPrimary grad wrt phase = ", primObjGradPhase)
             end
         end
         
-        nlast = 1 + nsteps
+        nlast = 1 + p.nsteps
         println("Unitary test 1, error in length of propagated state vectors:")
         println("Col |   (1 - |psi|)")
         Vnrm ::Float64 = 0.0
-        for q in 1:N
+        for q in 1:p.N
             Vnrm = usaver[:,q,nlast]' * usaver[:,q,nlast] + usavei[:,q,nlast]' * usavei[:,q,nlast]
             Vnrm = sqrt(Vnrm)
             println("  ", q, " |  ", 1.0 - Vnrm)
         end
 
         # output primary objective function (infidelity at final time)
-        fidelityrot = tracefidcomplex(vfinalr, vfinali, vtargetr, vtargeti) # vfinali = -vi
+        fidelityrot = tracefidcomplex(w.vfinalr, w.vfinali, p.Utarget_r, p.Utarget_i) # w.vfinali = -w.vi
         mfidelityrot = abs(fidelityrot)^2
         println("Final trace infidelity = ", 1.0 - mfidelityrot, " trace fidelity = ", mfidelityrot)
         
-        if params.usingPriorCoeffs
-        println("Relative difference from prior: || alpha-prior || / || alpha || = ", norm(alpha - params.priorCoeffs) / norm(alpha) )
+        if p.usingPriorCoeffs
+        println("Relative difference from prior: || alpha-prior || / || alpha || = ", norm(alpha - p.priorCoeffs) / norm(alpha) )
         end
         
         
         # Also output L2 norm of last energy level
-        if Ntot>N
-            #       normlastguard = zeros(N)
-            forbLev = identify_forbidden_levels(params)
-            maxLev = zeros(Ntot)
-            for lev in 1:Ntot
-                maxpop = zeros(N)
+        if p.Ntot>p.N
+            #       normlastguard = zeros(p.N)
+            forbLev = identify_forbidden_levels(p)
+            maxLev = zeros(p.Ntot)
+            for lev in 1:p.Ntot
+                maxpop = zeros(p.N)
                 if forbLev[lev]
-                    for q in 1:N
+                    for q in 1:p.N
                         maxpop[q] = maximum( abs.(usaver[lev, q, :]).^2 + abs.(usavei[lev, q, :]).^2 )
                     end
                     maxLev[lev] = maximum(maxpop)
@@ -1022,9 +893,6 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, verbose::Bool
         end
         
     end #if verbose
-
-
-
 
     # return to calling routine (the order of the return arguments is somewhat inconsistent. At least add a description in the docs)
     if verbose && evaladjoint
@@ -1039,6 +907,28 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, verbose::Bool
     end 
 end # function traceobjgrad
 
+#########################################################
+function initialize_working_arrays(w::working_arrays)
+    w.vi05 .= 0.0
+    w.vr0  .= 0.0
+
+    w.κ₁   .= 0.0
+    w.κ₂   .= 0.0
+    w.ℓ₁   .= 0.0
+    w.ℓ₂   .= 0.0
+    w.rhs  .= 0.0
+
+    w.gr0  .= 0.0
+    w.gi0  .= 0.0
+    w.gr1  .= 0.0
+    w.gi1  .= 0.0
+    w.hr0  .= 0.0
+    w.hi0  .= 0.0
+    w.hi1  .= 0.0
+    w.hr1  .= 0.0
+    w.gr   .= 0.0
+    w.gi   .= 0.0
+end
 
 #########################################################
 #
@@ -1046,240 +936,162 @@ end # function traceobjgrad
 # Evaluate the infidelity and all continuity constraints
 #
 #########################################################
-function lagrange_objgrad(pcof0::Array{Float64,1},  params::objparams, verbose::Bool = false, evaladjoint::Bool = true)
-    wa = params.wa
-    order  = 2
-    N      = params.N    
-    Nguard = params.Nguard  
-    T      = params.T
+function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool = true, evaladjoint::Bool = false)
+    ###############
+    # TODO: add in the term <lambda, (Uend - W)>_F
+    ###############
 
-    # Utarget = params.Utarget # Never used
+    # shortcut to working_arrays object in p::objparams
+    w = p.wa
 
-    nsteps = params.nsteps
-    tik0   = params.tik0
-
-    H0 = params.Hconst
-    Ng = params.Ng
-    Ne = params.Ne
-    
-    Nt   = params.Nt # vector
-    Ntot = N + Nguard # scalar
-
-    Ncoupled  = params.Ncoupled # Number of symmetric control Hamiltonians. We currently assume that the number of anti-symmetric Hamiltonians is the same
-    Nunc  = params.Nunc # Number of uncoupled control functions.
-    Nosc  = params.Nosc
-    Nfreq = params.Nfreq
-    Nsig  = 2*(Ncoupled + Nunc) # Only uses for regular B-splines
-
-    linear_solver = params.linear_solver    
-
-    # Reference pre-allocated working arrays
-    K0 = wa.K0
-    S0 = wa.S0
-    K05 = wa.K05
-    S05 = wa.S05
-    K1 = wa.K1
-    S1 = wa.S1
-    vtargetr = params.Utarget_r
-    vtargeti = params.Utarget_i
-    # vtargetr = wa.vtargetr
-    # vtargeti = wa.vtargeti
-
-    # New variables to accomodate continuation. By default dVds = Utarget
-    dVds_r = params.dVds_r
-    dVds_i = params.dVds_i
-    # tmp
-    # println("dVds")
-
-    lambdar = wa.lambdar
-    lambdar0 = wa.lambdar0
-    lambdai = wa.lambdai
-    lambdai0 = wa.lambdai0
-    lambdar05 = wa.lambdar05
-    lambdar_nfrc  = wa.lambdar_nfrc
-    lambdar0_nfrc = wa.lambdar0_nfrc
-    lambdai_nfrc  = wa.lambdai_nfrc
-    lambdai0_nfrc = wa.lambdai0_nfrc
-    lambdar05_nfrc= wa.lambdar05_nfrc
-    κ₁ = wa.κ₁
-    κ₂ = wa.κ₂
-    ℓ₁ = wa.ℓ₁
-    ℓ₂ = wa.ℓ₂
-    rhs = wa.rhs
-    gr0 = wa.gr0
-    gi0 = wa.gi0
-    gr1 = wa.gr1
-    gi1 = wa.gi1
-    hr0 = wa.hr0
-    hi0 = wa.hi0
-    hi1 = wa.hi1
-    hr1 = wa.hr1
-    vr = wa.vr
-    vi = wa.vi
-    vi05 = wa.vi05
-    vr0 = wa.vr0
-    vfinalr = wa.vfinalr # temporary storage for final time-stepped solution
-    vfinali = wa.vfinali
-    gr = wa.gr
-    gi = wa.gi
-    gradobjfadj = wa.gradobjfadj 
-    tr_adj = wa.tr_adj
-
-
-    # primary fidelity type
-    pFidType = params.pFidType  
-
-    alpha = pcof0[1:params.nAlpha] # extract the B-spline-coefficients
-
-    Psize = size(alpha,1) #must provide separate coefficients for real,imaginary, and uncoupled parts of the control fcn
-    #
-    #
-    if Psize%2 != 0
-        error("alpha must have an even number of elements, not ", Psize)
-    end
-    if params.use_bcarrier
-        # NOTE: Nsig  = 2*(Ncoupled + Nunc)
-        # D1 = div(Psize, Nsig*Nfreq)  # 
-        # Psize = D1*Nsig*Nfreq # active part of the parameter array
-        D1 = div(Psize, 2*params.NfreqTot)  # 
-        Psize = 2*D1*params.NfreqTot # active part of the parameter array
-    else
-        # NOTE: Nsig  = 2*(Ncoupled + Nunc)
-        D1 = div(Psize, Nsig)
-        Psize = D1*Nsig # active part of the parameter array
-    end
-    
-    tinv ::Float64 = 1.0/T
-    
-    # Parameters used for the gradient
-    kpar = params.kpar
+    # coefficient for the norm-squared of the continuity misfit
+    gamma = 0.1
 
     if verbose
-        println("Vector dim Ntot =", Ntot , ", Guard levels Nguard = ", Nguard , ", Param dim, Psize = ", Psize, ", Spline coeffs per func, D1= ", D1, ", Nsteps = ", nsteps, " Tikhonov coeff: ", tik0)
+        println("lagrange_obj_grad: Vector dim Ntot =", p.Ntot , ", Guard levels Nguard = ", p.Nguard , ", Param dim, Psize = ", p.nAlpha, ", Spline coeffs per func, D1= ", p.D1, ", Nsteps = ", p.nsteps, " Tikhonov coeff: ", p.tik0)
     end
-    
-    Ident = params.Ident
 
-    # coefficients for penalty style #2 (wmat is a Diagonal matrix)
-    # wmat = params.wmat
-    
-    wmat_real = params.wmat_real
-    wmat_imag = params.wmat_imag
+    # initializations start here
+    alpha = pcof0[1:p.nAlpha] # extract the B-spline-coefficients
 
-    # Here we can choose what kind of control function expansion we want to use
-    if (params.use_bcarrier)
-        # FMG FIX
-        splinepar = bcparams(T, D1, params.Cfreq, alpha) # Assumes Nunc = 0
+    # setup splinepar
+    if p.use_bcarrier
+        splinepar = bcparams(p.T, p.D1, p.Cfreq, alpha) # Assumes Nunc = 0
     else
-    # the old bsplines is the same as the bcarrier with Cfreq = 0
-        splinepar = splineparams(T, D1, Nsig, alpha)   # parameters for B-splines
+        Nsig  = 2*(p.Ncoupled + p.Nunc) # Only uses for regular B-splines
+        splinepar = splineparams(p.T, p.D1, Nsig, alpha)
     end
+    
+    tinv ::Float64 = 1.0/p.T
 
     # it is up to the user to estimate the number of time steps
-    dt ::Float64 = T/nsteps
+    dt ::Float64 = p.T/p.nsteps
 
-    gamma, stages = getgamma(order)
+    if verbose
+        println("Final time: ", p.T, ", number of time steps: " , p.nsteps , ", time step: " , dt )
+    end
+    
+    # Zero out working arrays
+    initialize_working_arrays(w)
 
-    # Allocate storage for saving the unitary at the final time step
-    Uend = Vector{Matrix{ComplexF64}}(undef, params.nTimeIntervals)
+    # Allocate storage for saving the unitary at the end of each time interval
+    Uend = Matrix{ComplexF64}(undef, p.Ntot, p.Ntot)
+
+    # Total objective
+    objf = 0.0
 
     # Split the time stepping into independent tasks corresponding to each time interval
+    println("lagrange_objgrad: length(pcof) =  ", length(pcof0), " nAlpha = ", p.nAlpha, " nWinit = ", p.nWinit)
+    for interval = 1:p.nTimeIntervals
+        println("interval # ", interval)
+        if interval == 1
+            # initial conditions from Uinit (fixed)
+            Winit_r = p.Uinit_r
+            Winit_i = p.Uinit_i
+        else
+            # initial conditions from pcof0 (determined by optimization)
+            offc = p.nAlpha + (interval-2)*p.nWinit # for interval = 2 the offset should be nAlpha
+            # println("offset 1 = ", offc)
+            nMat = p.Ntot^2
+            Winit_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+            offc += nMat
+            # println("offset 2 = ", offc)
+            Winit_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+        end
 
-    # pseudo-code:
-    #
-    # for interval = 1:params.nTimeIntervals
-    #     if interval == 1
-    #         # get the initial conditions for t=0
-    #         copy!(vr,params.Uinit_r)
-    #         copy!(vi,-params.Uinit_i) # note the sign
-    #     else
-    #         offc = params.nAlpha + (interval-1)*params.nWinit
-    #         nMat = Ntot^2
-    #         Winit_r = reshape(pcof[offc+1:offc+nMat],Ntot,Ntot)
-    #         offc += nMat
-    #         Winit_i = reshape(pcof[offc+1:offc+nMat],Ntot,Ntot)
-    #         copy!(vr, Winit_r)
-    #         copy!(vi,-Winit_i) # note the sign
-    #     end
-    #     t0 = params.T0int[interval]
-    #     time_steps = params.Tsteps[interval]
-
-    #     Uend[interval] = evolve_schroedinger(params, splinepar, t0, time_steps, vr, vi, temporary_arrays)
-    # end
-
-    if verbose
-        println("Final time: ", T, ", number of time steps: " , nsteps , ", time step: " , dt )
-    end
-    
-    #real and imaginary part of initial condition
-    copy!(vr,params.Uinit_r)
-    copy!(vi,-params.Uinit_i) # note the sign
-
-    # initialize temporaries
-    vi05 .= 0.0
-    vr0  .= 0.0
-
-    # Zero out working arrays
-    κ₁   .= 0.0
-    κ₂   .= 0.0
-    ℓ₁   .= 0.0
-    ℓ₂   .= 0.0
-    rhs  .= 0.0
-
-    gr0  .= 0.0
-    gi0  .= 0.0
-    gr1  .= 0.0
-    gi1  .= 0.0
-    hr0  .= 0.0
-    hi0  .= 0.0
-    hi1  .= 0.0
-    hr1  .= 0.0
-    gr   .= 0.0
-    gi   .= 0.0
-    
-    if verbose
-        usaver = zeros(Float64,Ntot,N,nsteps+1)
-        usavei = zeros(Float64,Ntot,N,nsteps+1)
-        usaver[:,:,1] = vr # the rotation to the lab frame is the identity at t=0
-        usavei[:,:,1] = -vi
-
-        #to compute gradient with forward method
-        if evaladjoint
-            wr   = zeros(Float64,Ntot,N) 
-            wi   = zeros(Float64,Ntot,N) 
-            wr1  = zeros(Float64,Ntot,N) 
-            wi05 = zeros(Float64,Ntot,N) 
-            objf_alpha1 = 0.0
+        Uend = evolve_schroedinger(p, splinepar, p.T0int[interval], Winit_r, Winit_i, p.Tsteps[interval], verbose, evaladjoint)
+        
+        if interval < p.nTimeIntervals
+            offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
+            # println("offset 1 = ", offc)
+            nMat = p.Ntot^2
+            Wend_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+            offc += nMat
+            # println("offset 2 = ", offc)
+            Wend_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+            # evaluate continuity constraint (Frobenius norm squared of mismatch)
+            cont_2 = norm( Uend - (Wend_r + im*Wend_i))^2
+            println("Continuity jump (norm2) = ", cont_2)
+            objf += 0.5*gamma * cont_2
+        else
+            traceInfid = (1.0-tracefidabs2(real(Uend), imag(Uend), p.Utarget_r, p.Utarget_i))
+            objf += traceInfid
+            println("Infidelity = ", traceInfid)
         end
     end
+    tp = tikhonov_pen(alpha, p) # Tikhonov penalty
+    objf += tp
+    println("Tikhonov penalty = ", tp)
+
+    if verbose
+        println("Lagrangian = ", objf)
+    end
+
+    return objf
+end # function lagrange_objgrad
+
+##################################################
+function evolve_schroedinger(p::objparams, splinepar::BsplineParams, t0::Float64, Winit_r::Matrix{Float64}, Winit_i::Matrix{Float64}, N_time_steps::Int64, verbose::Bool, evaladjoint::Bool)
+    order  = 2
+    gamma, stages = getgamma(order)
+    
+    # shortcut to working_arrays object in p::objparams
+    w = p.wa
+    
+    # Zero out working arrays
+    initialize_working_arrays(w)
+    
+    # if verbose
+    #     usaver = zeros(Float64, p.Ntot, p.N, p.nsteps+1)
+    #     usavei = zeros(Float64, p.Ntot, p.N, p.nsteps+1)
+    #     usaver[:,:,1] = w.vr # the rotation to the lab frame is the identity at t=0
+    #     usavei[:,:,1] = -w.vi
+
+    #     #to compute gradient with forward method
+    #     if evaladjoint
+    #         wr   = zeros(Float64,p.Ntot,p.N) 
+    #         wi   = zeros(Float64,p.Ntot,p.N) 
+    #         wr1  = zeros(Float64,p.Ntot,p.N) 
+    #         wi05 = zeros(Float64,p.Ntot,p.N) 
+    #         objf_alpha1 = 0.0
+    #     end
+    # end
+
+    tinv = 1.0/p.T
+
+    # global time step
+    dt = p.T/p.nsteps
 
     #initialize variables for time stepping
-    t     ::Float64 = 0.0
-    step  :: Int64 = 0
-    objfv ::Float64 = 0.0
+    t = t0
+    step = 0
+    objfv = 0.0
 
+    # assign initial conditions
+    copy!(w.vr, Winit_r)
+    copy!(w.vi,-Winit_i) # note the sign
 
     # Forward time stepping loop
-    for step in 1:nsteps
+    for step in 1:N_time_steps
 
-        forbidden0 = tinv*penalf2aTrap(vr, wmat_real)
+        forbidden0 = tinv*penalf2aTrap(w.vr, p.wmat_real)
         # Störmer-Verlet
         for q in 1:stages
-            copy!(vr0,vr)
+            copy!(w.vr0, w.vr)
             t0  = t
             
             # Update K and S matrices
             # general case
-            KS!(K0, S0, t, params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq) 
-            KS!(K05, S05, t + 0.5*dt*gamma[q], params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq) 
-            KS!(K1, S1, t + dt*gamma[q], params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq) 
+            KS!(w.K0, w.S0, t, p.Hsym_ops, p.Hanti_ops, p.Hunc_ops, p.Nunc, p.isSymm, splinepar, p.Hconst, p.Rfreq) 
+            KS!(w.K05, w.S05, t + 0.5*dt*gamma[q], p.Hsym_ops, p.Hanti_ops, p.Hunc_ops, p.Nunc, p.isSymm, splinepar, p.Hconst, p.Rfreq) 
+            KS!(w.K1, w.S1, t + dt*gamma[q], p.Hsym_ops, p.Hanti_ops, p.Hunc_ops, p.Nunc, p.isSymm, splinepar, p.Hconst, p.Rfreq) 
             
             # Take a step forward and accumulate weight matrix integral. Note the √2 multiplier is to account
             # for the midpoint rule in the numerical integration of the imaginary part of the signal.
-            @inbounds t = step!(t, vr, vi, vi05, dt*gamma[q], K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs,linear_solver)
+            @inbounds t = step!(t, w.vr, w.vi, w.vi05, dt*gamma[q], w.K0, w.S0, w.K05, w.S05, w.K1, w.S1, p.Ident, w.κ₁, w.κ₂, w.ℓ₁, w.ℓ₂, w.rhs, p.linear_solver)
 
-            forbidden = tinv*penalf2a(vr, vi05, wmat_real)  
-            forbidden_imag1 = tinv*penalf2imag(vr0, vi05, wmat_imag)
+            forbidden = tinv*penalf2a(w.vr, w.vi05, p.wmat_real)  
+            forbidden_imag1 = tinv*penalf2imag(w.vr0, w.vi05, p.wmat_imag)
             objfv = objfv + gamma[q]*dt*0.5*(forbidden0 + forbidden - 2.0*forbidden_imag1)
 
             # Keep prior value for next step (FG: will this work for multiple stages?)
@@ -1288,20 +1100,20 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  params::objparams, verbose::
             # compute component of the gradient for verification of adjoint method
             if evaladjoint && verbose
                 # compute the forcing for (wr, wi)
-                fgradforce!(params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc,
-                            params.isSymm, vr0, vi05, vr, t-dt, dt, splinepar, kpar, gr0, gr1, gi0, gi1, gr, gi)
+                fgradforce!(p.Hsym_ops, p.Hanti_ops, p.Hunc_ops, p.Nunc,
+                            p.isSymm, w.vr0, w.vi05, w.vr, t-dt, dt, splinepar, p.kpar, w.gr0, w.gr1, w.gi0, w.gi1, w.gr, w.gi)
 
                 copy!(wr1,wr)
 
                 @inbounds step_fwdGrad!(t0, wr1, wi, wi05, dt*gamma[q],
-                                        gr0, gi0, gr1, gi1, K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs,linear_solver) 
+                                        w.gr0, w.gi0, w.gr1, w.gi1, w.K0, w.S0, w.K05, w.S05, w.K1, w.S1, p.Ident, w.κ₁, w.κ₂, w.ℓ₁, w.ℓ₂, w.rhs, p.linear_solver) 
                 
                 # Real part of forbidden state weighting
-                forbalpha0 = tinv*penalf2grad(vr0, vi05, wr, wi05, wmat_real)
-                forbalpha1 = tinv*penalf2grad(vr, vi05, wr1, wi05, wmat_real)
+                forbalpha0 = tinv*penalf2grad(w.vr0, w.vi05, wr, wi05, p.wmat_real)
+                forbalpha1 = tinv*penalf2grad(w.vr, w.vi05, wr1, wi05, p.wmat_real)
 
                 # Imaginary part of forbidden state weighting
-                forbalpha2 = tinv*penalf2grad(wi05, vi05, vr0, wr, wmat_imag)                
+                forbalpha2 = tinv*penalf2grad(wi05, w.vi05, w.vr0, wr, p.wmat_imag)                
 
                 copy!(wr,wr1)
                 # accumulate contribution from the leak term
@@ -1310,278 +1122,17 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  params::objparams, verbose::
             end  # evaladjoint && verbose
         end # Stromer-Verlet
         
-        if verbose
-            # rotated frame
-            usaver[:,:, step + 1] = vr
-            usavei[:,:, step + 1] = -vi
-        end
+        # if verbose
+        #     # rotated frame
+        #     usaver[:,:, step + 1] = w.vr
+        #     usavei[:,:, step + 1] = -w.vi
+        # end
     end #forward time stepping loop
 
-    if pFidType == 1
-        scomplex1 = tracefidcomplex(vr, -vi, vtargetr, vtargeti)
-        primaryobjf = 1+tracefidabs2(vr, -vi, vtargetr, vtargeti) - 2*real(scomplex1*exp(-1im*params.globalPhase)) # global phase angle 
-    elseif pFidType == 2
-        primaryobjf = (1.0-tracefidabs2(vr, -vi, vtargetr, vtargeti)) # insensitive to global phase angle
-    elseif pFidType == 4
-        rotTarg = exp(1im*params.globalPhase)*(vtargetr + im*vtargeti)
-        primaryobjf = (1.0 - tracefidreal(vr, -vi, real(rotTarg), imag(rotTarg)) )
-    end
+    return w.vr - im*w.vi
+end
 
-    secondaryobjf = objfv
-    objfv = primaryobjf + secondaryobjf
-
-    if params.objFuncType == 1
-        objfv += tikhonov_pen(alpha, params)
-    end
-
-    if evaladjoint && verbose
-        # salpha1 = tracefidcomplex(wr, -wi, vtargetr, vtargeti)
-        salpha1 = tracefidcomplex(wr, -wi, dVds_r, dVds_i)
-        scomplex1 = tracefidcomplex(vr, -vi, vtargetr, vtargeti)
-        if pFidType==1
-            primaryobjgrad = 2*real(conj( scomplex1 - exp(1im*params.globalPhase) )*salpha1)
-        elseif pFidType == 2
-            primaryobjgrad = - 2*real(conj(scomplex1)*salpha1)
-        elseif pFidType == 4
-            rotTarg = exp(1im*params.globalPhase)*(vtargetr + im*vtargeti)
-            # grad wrt the control function 
-            primaryobjgrad = - tracefidreal(wr, -wi, real(rotTarg), imag(rotTarg))
-            # grad wrt the global phase
-            primObjGradPhase = - tracefidreal(vr, -vi, real(im.*rotTarg), imag(im.*rotTarg))
-        end
-        objf_alpha1 = objf_alpha1 + primaryobjgrad
-    end  
-
-    vfinalr = copy(vr)
-    vfinali = copy(-vi)
-
-    traceFidelity = tracefidabs2(vfinalr, vfinali, vtargetr, vtargeti)
-
-    if evaladjoint
-
-        if verbose
-            dfdp = objf_alpha1
-        end  
-
-        if (params.use_bcarrier)
-            # gradSize = (2*Ncoupled+Nunc)*Nfreq*D1
-            gradSize = params.NfreqTot*2*D1
-        else
-            gradSize = Nsig*D1
-        end
-
-
-        # initialize array for storing the adjoint gradient so it can be returned to the calling function/program
-        leakgrad = zeros(0);
-        infidelgrad = zeros(0);
-        gradobjfadj[:] .= 0.0    
-        t = T
-        dt = -dt
-
-        
-        # println("traceobjgrad(): eval_adjoint: sv_type = ", params.sv_type) # tmp
-        if params.sv_type == 1 || params.sv_type == 2 # regular case
-            # println("scomplex #1 (vtarget)")
-            scomplex0 = tracefidcomplex(vr, -vi, vtargetr, vtargeti)
-        elseif params.sv_type == 3 # term2 for d/ds(grad(G))
-            # println("scomplex #3 (dVds)")
-            scomplex0 = tracefidcomplex(vr, -vi, dVds_r, dVds_i)
-        #     println("Unknown sv_type = ", params.sv_type)
-        end
-
-        if pFidType == 1
-            scomplex0 = exp(1im*params.globalPhase) - scomplex0
-        end
-
-
-        # Set initial condition for adjoint variables
-        # Note (vtargetr, vtargeti) needs to be changed to dV/ds for continuation applications
-        # By default, dVds = vtarget
-        if params.sv_type == 1 # regular case
-            # println("init_adjoint #1 (dVds)")
-            init_adjoint!(pFidType, params.globalPhase, N, scomplex0, lambdar, lambdar0, lambdar05, lambdai, lambdai0,
-                        vtargetr, vtargeti)
-        elseif params.sv_type == 2 # term1 for d/ds(grad(G))
-            # println("init_adjoint #2 (dVds)")
-            init_adjoint!(pFidType, params.globalPhase, N, scomplex0, lambdar, lambdar0, lambdar05, lambdai, lambdai0,
-                        dVds_r, dVds_i)               
-        elseif params.sv_type == 3 # term2 for d/ds(grad(G))
-            init_adjoint!(pFidType, params.globalPhase, N, scomplex0, lambdar, lambdar0, lambdar05, lambdai, lambdai0,
-                        vtargetr, vtargeti)
-        end
-
-        #Initialize adjoint variables without forcing
-        if params.objFuncType != 1
-            lambdar_nfrc  .= lambdar
-            lambdar0_nfrc .= lambdar0
-            lambdai_nfrc  .= lambdai
-            lambdai0_nfrc .= lambdai0
-            lambdar05_nfrc.= lambdar05
-            infidelgrad = zeros(gradSize);
-        end
-
-        #Backward time stepping loop
-        for step in nsteps-1:-1:0
-
-            # Forcing for the real part of the adjoint variables in first PRK "stage"
-            mul!(hr0, wmat_real, vr, tinv, 0.0)
-
-            #loop over stages
-            for q in 1:stages
-                t0 = t
-                copy!(vr0,vr)
-                
-                # update K and S
-                # Since t is negative we have that K0 is K^{n+1}, K05 = K^{n-1/2}, 
-                # K1 = K^{n} and similarly for S.
-                # general case
-                KS!(K0, S0, t, params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq) 
-                KS!(K05, S05, t + 0.5*dt*gamma[q], params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq) 
-                KS!(K1, S1, t + dt*gamma[q], params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq) 
-
-
-                # Integrate state variables backwards in time one step
-                @inbounds t = step!(t, vr, vi, vi05, dt*gamma[q], K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs,linear_solver)
-
-                # Forcing for adjoint equations (real part of forbidden state penalty)
-                mul!(hi0,wmat_real,vi05,tinv,0.0)
-                mul!(hr1,wmat_real,vr,tinv,0.0)
-
-                # Forcing for adjoint equations (imaginary part of forbidden state penalty)
-                mul!(hr1,wmat_imag,vi05,tinv,1.0)
-                copy!(hi1,hi0)
-                mul!(hi1,wmat_imag,vr,-tinv,1.0)
-
-                # evolve lambdar, lambdai
-                temp = t0
-                @inbounds temp = step!(temp, lambdar, lambdai, lambdar05, dt*gamma[q], hr0, hi0, hr1, hi1, 
-                                        K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs,linear_solver)
-
-                # Accumulate gradient
-                adjoint_grad_calc!(params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, vr0, vi05, vr, 
-                                    lambdar0, lambdar05, lambdai, lambdai0, t0, dt,splinepar, gr, gi, tr_adj) 
-                axpy!(gamma[q]*dt,tr_adj,gradobjfadj)
-                
-                # save for next stage
-                copy!(lambdai0,lambdai)
-                copy!(lambdar0,lambdar)
-
-                #Do adjoint step to compute infidelity grad (without forcing)
-                if params.objFuncType != 1
-                    temp = t0
-                    @inbounds temp = step_no_forcing!(temp, lambdar_nfrc, lambdai_nfrc, lambdar05_nfrc, dt*gamma[q], 
-                                                    K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs,linear_solver)
-
-                    # Accumulate gradient
-                    adjoint_grad_calc!(params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, vr0, vi05, vr, 
-                                        lambdar0_nfrc, lambdar05_nfrc, lambdai_nfrc, lambdai0_nfrc, t0, dt,splinepar, gr, gi, tr_adj) 
-                    axpy!(gamma[q]*dt,tr_adj,infidelgrad)
-                    
-                    # save for next stage
-                    copy!(lambdai0_nfrc,lambdai_nfrc)
-                    copy!(lambdar0_nfrc,lambdar_nfrc)    
-                end
-
-            end #for stages
-        end # for step (backward time stepping loop)
-
-        primObjGradPhase=0.0
-
-        # totalgrad = zeros(Psize) # allocate array to return the gradient
-        # totalgrad[:] = gradobjfadj[:] # deep copy        
-        totalgrad = gradobjfadj # use a shallow copy for improved efficiency
-
-        if params.objFuncType != 1
-            leakgrad = zeros(size(totalgrad));
-            leakgrad .= totalgrad - infidelgrad # deep copy
-        else
-            # add in Tikhonov gradient
-            tikhonov_grad!(alpha, params, params.wa.gr)  
-            axpy!(1.0, wa.gr, totalgrad)
-        end
-    
-    end # if evaladjoint
-
-    if verbose
-        tikhonovpenalty = objfv - primaryobjf - secondaryobjf
-        println("Total objective func: ", objfv)
-        println("Primary objective func: ", primaryobjf, " Guard state penalty: ", secondaryobjf, " Tikhonov penalty: ", tikhonovpenalty)
-        if evaladjoint
-            println("Norm of adjoint gradient = ", norm(gradobjfadj))
-
-            if kpar <= Psize
-                dfdp = dfdp + gr[kpar] # add in the tikhonov term
-
-                println("Forward integration of total gradient[kpar=", kpar, "]: ", dfdp);
-                println("Adjoint integration of total gradient[kpar=", kpar, "]: ", gradobjfadj[kpar]);
-                println("\tAbsolute Error in gradients is : ", abs(dfdp - gradobjfadj[kpar]))
-                println("\tRelative Error in gradients is : ", abs((dfdp - gradobjfadj[kpar])/norm(gradobjfadj)))
-                println("\tPrimary grad = ", primaryobjgrad, " Tikhonov penalty grad = ", gr[kpar], " Guard state grad = ", dfdp - gr[kpar] - primaryobjgrad )
-            else
-                println("The gradient with respect to the phase angle is computed analytically and not by solving the adjoint equation")
-            end
-            if pFidType == 4
-                println("\tPrimary grad wrt phase = ", primObjGradPhase)
-            end
-        end
-        
-        nlast = 1 + nsteps
-        println("Unitary test 1, error in length of propagated state vectors:")
-        println("Col |   (1 - |psi|)")
-        Vnrm ::Float64 = 0.0
-        for q in 1:N
-            Vnrm = usaver[:,q,nlast]' * usaver[:,q,nlast] + usavei[:,q,nlast]' * usavei[:,q,nlast]
-            Vnrm = sqrt(Vnrm)
-            println("  ", q, " |  ", 1.0 - Vnrm)
-        end
-
-        # output primary objective function (infidelity at final time)
-        fidelityrot = tracefidcomplex(vfinalr, vfinali, vtargetr, vtargeti) # vfinali = -vi
-        mfidelityrot = abs(fidelityrot)^2
-        println("Final trace infidelity = ", 1.0 - mfidelityrot, " trace fidelity = ", mfidelityrot)
-        
-        if params.usingPriorCoeffs
-        println("Relative difference from prior: || alpha-prior || / || alpha || = ", norm(alpha - params.priorCoeffs) / norm(alpha) )
-        end
-        
-        
-        # Also output L2 norm of last energy level
-        if Ntot>N
-            #       normlastguard = zeros(N)
-            forbLev = identify_forbidden_levels(params)
-            maxLev = zeros(Ntot)
-            for lev in 1:Ntot
-                maxpop = zeros(N)
-                if forbLev[lev]
-                    for q in 1:N
-                        maxpop[q] = maximum( abs.(usaver[lev, q, :]).^2 + abs.(usavei[lev, q, :]).^2 )
-                    end
-                    maxLev[lev] = maximum(maxpop)
-                    println("Row = ", lev, " is a forbidden level, max population = ", maxLev[lev])
-                end #if
-            end
-            println("Max population over all forbidden levels = ", maximum(maxLev))
-        else
-            println("No forbidden levels in this simulation");
-        end
-        
-    end #if verbose
-
-
-
-
-    # return to calling routine (the order of the return arguments is somewhat inconsistent. At least add a description in the docs)
-    if verbose && evaladjoint
-        return objfv, copy(totalgrad), usaver+1im*usavei, mfidelityrot, dfdp, wr1 - 1im*wi
-    elseif verbose
-        println("Returning from traceobjgrad with objfv, unitary history, fidelity")
-        return objfv, usaver+1im*usavei, mfidelityrot
-    elseif evaladjoint
-        return objfv, copy(totalgrad), primaryobjf, secondaryobjf, traceFidelity, infidelgrad, leakgrad
-    else
-        return objfv, primaryobjf, secondaryobjf
-    end 
-end # function lagrange_objgrad
+##################################################
 
 """
     change_target!(params, new_Utarget)
