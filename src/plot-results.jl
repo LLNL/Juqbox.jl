@@ -46,9 +46,10 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
     end
     pconv = Juqbox.plot_conv_hist(params, convname)
 
+    alpha = pcof[1:params.nAlpha] # extract the B-spline coefficients
     # scatter plot of control parameters
     tstring = casename * "-control-vector"
-    plcof = scatter(pcof, lab="", title=tstring, xlabel="Index", ylabel="rad/ns")
+    plcof = scatter(alpha, lab="", title=tstring, xlabel="Index", ylabel="rad/ns")
 
     if params.Nosc <= 3
         guardlev = Juqbox.identify_guard_levels(params, custom)
@@ -144,7 +145,7 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
 
     for q=1:params.Ncoupled+params.Nunc
         # evaluate ctrl functions for the q'th Hamiltonian
-        pfunc, qfunc = Juqbox.evalctrl(params, pcof, td, q)
+        pfunc, qfunc = Juqbox.evalctrl(params, alpha, td, q)
 
         pfunc = scalefactor .* pfunc
         qfunc = scalefactor .* qfunc
@@ -211,8 +212,8 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
     #     for q =1:params.Nunc
     #         qs = 2*params.Ncoupled + (q - 1)*2
     #         qa = qs+1
-    #         pfunc = scalefactor .* Juqbox.evalctrl(params, pcof, td, qs)
-    #         qfunc = scalefactor .* Juqbox.evalctrl(params, pcof, td, qa)
+    #         pfunc = scalefactor .* Juqbox.evalctrl(params, alpha, td, qs)
+    #         qfunc = scalefactor .* Juqbox.evalctrl(params, alpha, td, qa)
     #         ffunc = 2*(pfunc .* cos(2*pi*params.Rfreq[q]) .- qfunc .* sin(2*pi*params.Rfreq[q]))
     #         max_uncoupled[q] = maximum(abs.(ffunc))
     #         plotarray_lab[params.Ncoupled + q] =  Plots.plot(td, qfunc, lab="", linewidth = 2, title = "Uncoupled Ctrl Function",
@@ -254,10 +255,10 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
 
     # Return a tuple of plot objects
     if params.Nosc <= 3
-        println("Returning 10 plot objects (ess-pop, ctrl-rot, guard-pop, ctrl-lab, ctrl-FFT, ctrl-FFT-log, ctrl-pcof, convergence, final-unitary, exp-energy")
+        println("Returning 10 plot objects (ess-pop, ctrl-rot, guard-pop, ctrl-lab, ctrl-FFT, ctrl-FFT-log, ctrl-alpha, convergence, final-unitary, exp-energy")
         return [pl1, pl2, pl3, pl4, pl5, pl6, plcof, pconv, pluf, plen]
     else
-        println("Returning 7 plot objects (ctrl-rot, ctrl-lab, ctrl-FFT, ctrl-FFT-log, ctrl-pcof, convergence, final-unitary")
+        println("Returning 7 plot objects (ctrl-rot, ctrl-lab, ctrl-FFT, ctrl-FFT-log, ctrl-alpha, convergence, final-unitary")
         return [pl2, pl4, pl5, pl6, plcof, pconv, pluf]
     end
 end

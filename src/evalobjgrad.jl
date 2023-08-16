@@ -131,8 +131,8 @@ and either be symmetric or skew-symmetric.
 - `Ng::Array{Int64,1}`: Number of guard energy levels for each subsystem
 - `T::Float64`: Duration of gate
 - `Nsteps::Int64`: Number of timesteps for integrating Schroedinger's equation
-- `Uinit::Array{Float64,2}`: (keyword) Matrix holding the initial conditions for the solution matrix of size Uinit[Ntot, Ness]
-- `Utarget::Array{Complex{Float64},2}`: (keyword) Matrix holding the target gate matrix of size Uinit[Ntot, Ness]
+- `Uinit::Array{ComplexF64,2}`: (keyword) Matrix holding the initial conditions for the solution matrix of size Uinit[Ntot, Ness]
+- `Utarget::Array{ComplexF64,2}`: (keyword) Matrix holding the target gate matrix of size Uinit[Ntot, Ness]
 - `Cfreq::Vector{Vector{Float64}}`: (keyword) Carrier wave (angular) frequencies of size Cfreq[Nctrl]
 - `Rfreq::Array{Float64,1}`: (keyword) Rotational (regular) frequencies for each control Hamiltonian; size Rfreq[Nctrl]
 - `Hconst::Array{Float64,2}`: (keyword) Time-independent part of the Hamiltonian matrix of size Ntot × Ntot
@@ -163,12 +163,15 @@ mutable struct objparams
     Nt     ::Array{Int64,1} # total # levels for each oscillator
     T      ::Float64        # final time
 
-    nsteps       ::Int64    # Number of time steps
-    Uinit        ::Array{Float64,2} # initial condition for each essential state: Should be a basis
-    # Utarget      ::Array{Complex{Float64},2}
-    Utarget_r      ::Array{Float64,2}
-    Utarget_i      ::Array{Float64,2}
-    use_bcarrier ::Bool
+    nsteps::Int64    # Number of time steps
+
+    Uinit_r       ::Array{Float64,2} # Real part of initial condition for each essential state
+    Uinit_i       ::Array{Float64,2} # Imaginar part of the above
+
+    Utarget_r     ::Array{Float64,2}
+    Utarget_i     ::Array{Float64,2}
+
+    use_bcarrier  ::Bool
 #    Nfreq        ::Int64 # number of frequencies
 #    Cfreq        ::Array{Float64,2} # Carrier wave frequencies of dim Cfreq[seg,freq]
     NfreqTot     ::Int64
@@ -250,7 +253,10 @@ mutable struct objparams
     wa:: working_arrays
 
     nCoeff :: Int64 # Length of the control vector (pcof)
-    
+    D1:: Int64 # Number of B-spline coefficients in each segment of the control functions
+    nAlpha:: Int64 # length of the control vector within pcof
+    nWinit:: Int64 # length of each initial condition matrix within pcof
+
     freq01::   Vector{Float64} 
     self_kerr:: Vector{Float64}
     couple_coeff:: Vector{Float64}
@@ -261,15 +267,17 @@ mutable struct objparams
 
     # variables for the direct method
     nTimeIntervals:: Int64 # number of time intervals in [0, T]
-    Tend:: Vector{Float64} # Vector of size nTimeIntervals holding the final time for each interval
-    Wsol_r:: Vector{Matrix{Float64}} # Vector of size nTimeIntervals holding intermediate solution matrices
-    Wsol_i:: Vector{Matrix{Float64}} # Vector of size nTimeIntervals holding intermediate solution matrices
+    T0int:: Vector{Float64} # Vector of size nTimeIntervals holding the starting time for each interval
+    Tsteps:: Vector{Int64} # Number of time steps in each interval
+
+    # Wsol_r:: Vector{Matrix{Float64}} # Vector of size nTimeIntervals holding intermediate solution matrices
+    # Wsol_i:: Vector{Matrix{Float64}} # Vector of size nTimeIntervals holding intermediate solution matrices
 
 # constructor for regular arrays (full matrices)
     function objparams(Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64;
-                       Uinit::Array{Float64,2}, Utarget::Array{Complex{Float64},2}, # keyword args w/o default values (must be assigned)
+                       Uinit::Array{ComplexF64,2}, Utarget::Array{Complex{Float64},2}, # keyword args w/o default values (must be assigned)
                        Cfreq::Vector{Vector{Float64}}, Rfreq::Array{Float64,1}, Hconst::Array{Float64,2},
-                       w_diag_mat::Diagonal{Float64,Array{Float64,1}}, nCoeff::Int,
+                       w_diag_mat::Diagonal{Float64,Array{Float64,1}}, nCoeff::Int64, D1::Int64,
                        # keyword args with default values
                        Hsym_ops:: Array{Array{Float64,2},1} = Array{Float64,2}[], Hanti_ops:: Array{Array{Float64,2},1} = Array{Float64,2}[],
                        Hunc_ops:: Array{Array{Float64,2},1} = Array{Float64,2}[],
@@ -278,7 +286,7 @@ mutable struct objparams
                        objFuncType:: Int64 = 1, leak_ubound:: Float64=1.0e-3,
                        use_sparse::Bool = false, use_custom_forbidden::Bool = false,
                        linear_solver::lsolver_object = lsolver_object(nrhs=prod(Ne)), msb_order::Bool = true,
-                       dVds::Array{ComplexF64,2}= Array{ComplexF64}(undef,0,0), freq01::Vector{Float64} = Vector{Float64}[], self_kerr::Vector{Float64} = Vector{Float64}[], couple_coeff::Vector{Float64} = Vector{Float64}[], couple_type::Int64 = 0,zeroCtrlBC::Bool = true, nTimeIntervals::Int64=1, Tend::Vector{Float64} = [T], Wsol::Vector{Matrix{ComplexF64}} = [Utarget] )
+                       dVds::Array{ComplexF64,2}= Array{ComplexF64}(undef,0,0), freq01::Vector{Float64} = Vector{Float64}[], self_kerr::Vector{Float64} = Vector{Float64}[], couple_coeff::Vector{Float64} = Vector{Float64}[], couple_type::Int64 = 0,zeroCtrlBC::Bool = true, nTimeIntervals::Int64=1)
         pFidType = 2 # Std gate infidelity
         Nosc   = length(Ne) # number of subsystems
         N      = prod(Ne)
@@ -313,6 +321,9 @@ mutable struct objparams
             Nfreq[c] = length(Cfreq[c])
         end
         NfreqTot = sum(Nfreq)
+        nAlpha = 2*D1*NfreqTot # length of control vector within pcof
+        nWinit = 2*Ntot^2 # length of each initial condition within pcof
+
         println("objparams: NfreqTot = ", NfreqTot)
     
         # Track symmetries of uncoupled Hamiltonian terms
@@ -446,10 +457,39 @@ mutable struct objparams
 
         wa = working_arrays(N, Ntot, convert(MyRealMatrix, Hconst), convert(Vector{MyRealMatrix}, Hsym_ops1), convert(Vector{MyRealMatrix}, Hanti_ops1), convert(Vector{MyRealMatrix}, Hunc_ops1), isSymm, objFuncType, nCoeff)
 
+        T0int = zeros(Float64, nTimeIntervals)
+        Tsteps = zeros(Int64, nTimeIntervals)
 
+        # Wsol = Vector{Matrix{ComplexF64}}(undef, nIntermediateIntervals) # add to pcof when initialzing
+        T0int[1] = 0.0 # first interval always starts from t=0.0
+    
+        # Compute intermediate start times by rounding to the nearest time step
+        if nTimeIntervals == 1
+            Tsteps[1] = nsteps
+        else
+            dt = T/nsteps
+            ds = 1.0/nTimeIntervals
+            Tgoal = T*ds
+            Tsteps[1] = round(Int64, Tgoal/dt)
+            #Hdelta = im*log(Ubasis'*Utarget)
+            for q = 2:nTimeIntervals
+                ts_start = sum(Tsteps[1:q-1])
+                T0int[q] = dt*ts_start
+                s1 = q*ds
+                ts_end = round(Int64, T*s1/dt)
+                # println("q=", q, " ts_start=", ts_start, " ts_end=", ts_end)
+                Tsteps[q] = max(1, ts_end - ts_start)
+                #Wsol[q] = Ubasis * exp(-im*s*Hdelta)  # Define the geodesic from Uinit to Utarget
+            end
+            # make sure the number of time steps sum up to nsteps
+            if (sum(Tsteps) != nsteps)
+                Tsteps[nTimeIntervals] = nsteps - Tsteps[nTimeIntervals - 1]
+            end
+        end
+    
         # sv_type is used for continuation. Only change this if you know what you are doing
         new(
-             Nosc, N, Nguard, Ne, Ng, Ne+Ng, T, nsteps, Uinit, real(Utarget), imag(Utarget), 
+             Nosc, N, Nguard, Ne, Ng, Ne+Ng, T, nsteps, real(Uinit), imag(Uinit), real(Utarget), imag(Utarget), 
              use_bcarrier, NfreqTot, Nfreq, Cfreq, kpar, tik0, Hconst, Hsym_ops1, 
              Hanti_ops1, Hunc_ops1, Ncoupled, Nunc, isSymm, Ident, wmat, 
              forb_states, forb_weights, wmat_real, wmat_imag, pFidType, 0.0,
@@ -458,9 +498,9 @@ mutable struct objparams
              zeros(0), zeros(0), zeros(0), zeros(0), 
              linear_solver, objThreshold, traceInfidelityThreshold, 0.0, 0.0, 
              usingPriorCoeffs, priorCoeffs, quiet, Rfreq, false, [],
-             real(my_dVds), imag(my_dVds), my_sv_type, wa, nCoeff,
+             real(my_dVds), imag(my_dVds), my_sv_type, wa, nCoeff, D1, nAlpha, nWinit,
              freq01, self_kerr, couple_coeff, couple_type, # Add some checks for these ones!
-             msb_order, zeroCtrlBC, nTimeIntervals, Tend, real.(Wsol), imag.(Wsol)
+             msb_order, zeroCtrlBC, nTimeIntervals, T0int, Tsteps
             )
 
     end
@@ -469,7 +509,7 @@ end # mutable struct objparams
 
 
 """
-    objf = traceobjgrad(pcof0, params[, verbose = false, evaladjoint = true])
+    tpl = traceobjgrad(pcof0, params[, verbose = false, evaladjoint = true])
 
 Perform a forward and/or adjoint Schrödinger solve to evaluate the objective
 function and/or gradient.
@@ -479,6 +519,14 @@ function and/or gradient.
 - `param::objparams`: Struct with problem definition
 - `verbose::Bool = false`: Run simulation with additional terminal output and store state history.
 - `evaladjoint::Bool = true`: Solve the adjoint equation and calculate the gradient of the objective function.
+
+# Return argument
+The return argument `tpl` is a tuple with a content that depends on the input arguments `verbose` and `evaladjoint`. 
+- `verbose=false`, `evaladjoint=false`: tpl[1] = objective, tpl[2] = infidelity, tpl[3] = leakage. 
+- `verbose=false`, `evaladjoint=true`: tpl[1] = objective, tpl[2] = gradient, tpl[3] = infidelity, tpl[4] = leakage, tpl[5] = trace-fidelity, tpl[6] = infidelity-gradient, tpl[7] = leakage-gradient.  
+- `verbose=true`, `evaladjoint=false`: tpl[1] = objective, tpl[2] = final-unitary, tpl[3] = trace-fidelity. 
+- `verbose=true`, `evaladjoint=true`: tpl[1] = objective, tpl[2] = gradient, tpl[3] = final-unitary, tpl[4] = trace-fidelity, tpl[5] = dfdp, tpl[6] = wr1 - im*wi. 
+
 """
 function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, verbose::Bool = false, evaladjoint::Bool = true)
     wa = params.wa
@@ -563,13 +611,13 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, verbose::Bool
     # primary fidelity type
     pFidType = params.pFidType  
 
-    pcof = pcof0
+    alpha = pcof0[1:params.nAlpha] # extract the B-spline-coefficients
 
-    Psize = size(pcof,1) #must provide separate coefficients for real,imaginary, and uncoupled parts of the control fcn
+    Psize = size(alpha,1) #must provide separate coefficients for real,imaginary, and uncoupled parts of the control fcn
     #
     #
     if Psize%2 != 0
-        error("pcof must have an even number of elements, not ", Psize)
+        error("alpha must have an even number of elements, not ", Psize)
     end
     if params.use_bcarrier
         # NOTE: Nsig  = 2*(Ncoupled + Nunc)
@@ -603,10 +651,10 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, verbose::Bool
     # Here we can choose what kind of control function expansion we want to use
     if (params.use_bcarrier)
         # FMG FIX
-        splinepar = bcparams(T, D1, params.Cfreq, pcof) # Assumes Nunc = 0
+        splinepar = bcparams(T, D1, params.Cfreq, alpha) # Assumes Nunc = 0
     else
     # the old bsplines is the same as the bcarrier with Cfreq = 0
-        splinepar = splineparams(T, D1, Nsig, pcof)   # parameters for B-splines
+        splinepar = splineparams(T, D1, Nsig, alpha)   # parameters for B-splines
     end
 
     # it is up to the user to estimate the number of time steps
@@ -619,8 +667,9 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, verbose::Bool
     end
     
     #real and imaginary part of initial condition
-    copy!(vr,params.Uinit)
-    vi   .= 0.0
+    copy!(vr,params.Uinit_r)
+    copy!(vi,-params.Uinit_i) # note the sign
+    #vi   .= 0.0
 
     # initialize temporaries
     vi05 .= 0.0
@@ -738,7 +787,7 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, verbose::Bool
     objfv = primaryobjf + secondaryobjf
 
     if params.objFuncType == 1
-        objfv += tikhonov_pen(pcof, params)
+        objfv += tikhonov_pen(alpha, params)
     end
 
     if evaladjoint && verbose
@@ -903,7 +952,7 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, verbose::Bool
             leakgrad .= totalgrad - infidelgrad # deep copy
         else
             # add in Tikhonov gradient
-            tikhonov_grad!(pcof, params, params.wa.gr)  
+            tikhonov_grad!(alpha, params, params.wa.gr)  
             axpy!(1.0, wa.gr, totalgrad)
         end
     
@@ -948,7 +997,7 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, verbose::Bool
         println("Final trace infidelity = ", 1.0 - mfidelityrot, " trace fidelity = ", mfidelityrot)
         
         if params.usingPriorCoeffs
-        println("Relative difference from prior: || pcof-prior || / || pcof || = ", norm(pcof - params.priorCoeffs) / norm(pcof) )
+        println("Relative difference from prior: || alpha-prior || / || alpha || = ", norm(alpha - params.priorCoeffs) / norm(alpha) )
         end
         
         
@@ -989,6 +1038,550 @@ function traceobjgrad(pcof0::Array{Float64,1},  params::objparams, verbose::Bool
         return objfv, primaryobjf, secondaryobjf
     end 
 end # function traceobjgrad
+
+
+#########################################################
+#
+# Augmented Lagrange method with multiple time intervals
+# Evaluate the infidelity and all continuity constraints
+#
+#########################################################
+function lagrange_objgrad(pcof0::Array{Float64,1},  params::objparams, verbose::Bool = false, evaladjoint::Bool = true)
+    wa = params.wa
+    order  = 2
+    N      = params.N    
+    Nguard = params.Nguard  
+    T      = params.T
+
+    # Utarget = params.Utarget # Never used
+
+    nsteps = params.nsteps
+    tik0   = params.tik0
+
+    H0 = params.Hconst
+    Ng = params.Ng
+    Ne = params.Ne
+    
+    Nt   = params.Nt # vector
+    Ntot = N + Nguard # scalar
+
+    Ncoupled  = params.Ncoupled # Number of symmetric control Hamiltonians. We currently assume that the number of anti-symmetric Hamiltonians is the same
+    Nunc  = params.Nunc # Number of uncoupled control functions.
+    Nosc  = params.Nosc
+    Nfreq = params.Nfreq
+    Nsig  = 2*(Ncoupled + Nunc) # Only uses for regular B-splines
+
+    linear_solver = params.linear_solver    
+
+    # Reference pre-allocated working arrays
+    K0 = wa.K0
+    S0 = wa.S0
+    K05 = wa.K05
+    S05 = wa.S05
+    K1 = wa.K1
+    S1 = wa.S1
+    vtargetr = params.Utarget_r
+    vtargeti = params.Utarget_i
+    # vtargetr = wa.vtargetr
+    # vtargeti = wa.vtargeti
+
+    # New variables to accomodate continuation. By default dVds = Utarget
+    dVds_r = params.dVds_r
+    dVds_i = params.dVds_i
+    # tmp
+    # println("dVds")
+
+    lambdar = wa.lambdar
+    lambdar0 = wa.lambdar0
+    lambdai = wa.lambdai
+    lambdai0 = wa.lambdai0
+    lambdar05 = wa.lambdar05
+    lambdar_nfrc  = wa.lambdar_nfrc
+    lambdar0_nfrc = wa.lambdar0_nfrc
+    lambdai_nfrc  = wa.lambdai_nfrc
+    lambdai0_nfrc = wa.lambdai0_nfrc
+    lambdar05_nfrc= wa.lambdar05_nfrc
+    κ₁ = wa.κ₁
+    κ₂ = wa.κ₂
+    ℓ₁ = wa.ℓ₁
+    ℓ₂ = wa.ℓ₂
+    rhs = wa.rhs
+    gr0 = wa.gr0
+    gi0 = wa.gi0
+    gr1 = wa.gr1
+    gi1 = wa.gi1
+    hr0 = wa.hr0
+    hi0 = wa.hi0
+    hi1 = wa.hi1
+    hr1 = wa.hr1
+    vr = wa.vr
+    vi = wa.vi
+    vi05 = wa.vi05
+    vr0 = wa.vr0
+    vfinalr = wa.vfinalr # temporary storage for final time-stepped solution
+    vfinali = wa.vfinali
+    gr = wa.gr
+    gi = wa.gi
+    gradobjfadj = wa.gradobjfadj 
+    tr_adj = wa.tr_adj
+
+
+    # primary fidelity type
+    pFidType = params.pFidType  
+
+    alpha = pcof0[1:params.nAlpha] # extract the B-spline-coefficients
+
+    Psize = size(alpha,1) #must provide separate coefficients for real,imaginary, and uncoupled parts of the control fcn
+    #
+    #
+    if Psize%2 != 0
+        error("alpha must have an even number of elements, not ", Psize)
+    end
+    if params.use_bcarrier
+        # NOTE: Nsig  = 2*(Ncoupled + Nunc)
+        # D1 = div(Psize, Nsig*Nfreq)  # 
+        # Psize = D1*Nsig*Nfreq # active part of the parameter array
+        D1 = div(Psize, 2*params.NfreqTot)  # 
+        Psize = 2*D1*params.NfreqTot # active part of the parameter array
+    else
+        # NOTE: Nsig  = 2*(Ncoupled + Nunc)
+        D1 = div(Psize, Nsig)
+        Psize = D1*Nsig # active part of the parameter array
+    end
+    
+    tinv ::Float64 = 1.0/T
+    
+    # Parameters used for the gradient
+    kpar = params.kpar
+
+    if verbose
+        println("Vector dim Ntot =", Ntot , ", Guard levels Nguard = ", Nguard , ", Param dim, Psize = ", Psize, ", Spline coeffs per func, D1= ", D1, ", Nsteps = ", nsteps, " Tikhonov coeff: ", tik0)
+    end
+    
+    Ident = params.Ident
+
+    # coefficients for penalty style #2 (wmat is a Diagonal matrix)
+    # wmat = params.wmat
+    
+    wmat_real = params.wmat_real
+    wmat_imag = params.wmat_imag
+
+    # Here we can choose what kind of control function expansion we want to use
+    if (params.use_bcarrier)
+        # FMG FIX
+        splinepar = bcparams(T, D1, params.Cfreq, alpha) # Assumes Nunc = 0
+    else
+    # the old bsplines is the same as the bcarrier with Cfreq = 0
+        splinepar = splineparams(T, D1, Nsig, alpha)   # parameters for B-splines
+    end
+
+    # it is up to the user to estimate the number of time steps
+    dt ::Float64 = T/nsteps
+
+    gamma, stages = getgamma(order)
+
+    # Allocate storage for saving the unitary at the final time step
+    Uend = Vector{Matrix{ComplexF64}}(undef, params.nTimeIntervals)
+
+    # Split the time stepping into independent tasks corresponding to each time interval
+
+    # pseudo-code:
+    #
+    # for interval = 1:params.nTimeIntervals
+    #     if interval == 1
+    #         # get the initial conditions for t=0
+    #         copy!(vr,params.Uinit_r)
+    #         copy!(vi,-params.Uinit_i) # note the sign
+    #     else
+    #         offc = params.nAlpha + (interval-1)*params.nWinit
+    #         nMat = Ntot^2
+    #         Winit_r = reshape(pcof[offc+1:offc+nMat],Ntot,Ntot)
+    #         offc += nMat
+    #         Winit_i = reshape(pcof[offc+1:offc+nMat],Ntot,Ntot)
+    #         copy!(vr, Winit_r)
+    #         copy!(vi,-Winit_i) # note the sign
+    #     end
+    #     t0 = params.T0int[interval]
+    #     time_steps = params.Tsteps[interval]
+
+    #     Uend[interval] = evolve_schroedinger(params, splinepar, t0, time_steps, vr, vi, temporary_arrays)
+    # end
+
+    if verbose
+        println("Final time: ", T, ", number of time steps: " , nsteps , ", time step: " , dt )
+    end
+    
+    #real and imaginary part of initial condition
+    copy!(vr,params.Uinit_r)
+    copy!(vi,-params.Uinit_i) # note the sign
+
+    # initialize temporaries
+    vi05 .= 0.0
+    vr0  .= 0.0
+
+    # Zero out working arrays
+    κ₁   .= 0.0
+    κ₂   .= 0.0
+    ℓ₁   .= 0.0
+    ℓ₂   .= 0.0
+    rhs  .= 0.0
+
+    gr0  .= 0.0
+    gi0  .= 0.0
+    gr1  .= 0.0
+    gi1  .= 0.0
+    hr0  .= 0.0
+    hi0  .= 0.0
+    hi1  .= 0.0
+    hr1  .= 0.0
+    gr   .= 0.0
+    gi   .= 0.0
+    
+    if verbose
+        usaver = zeros(Float64,Ntot,N,nsteps+1)
+        usavei = zeros(Float64,Ntot,N,nsteps+1)
+        usaver[:,:,1] = vr # the rotation to the lab frame is the identity at t=0
+        usavei[:,:,1] = -vi
+
+        #to compute gradient with forward method
+        if evaladjoint
+            wr   = zeros(Float64,Ntot,N) 
+            wi   = zeros(Float64,Ntot,N) 
+            wr1  = zeros(Float64,Ntot,N) 
+            wi05 = zeros(Float64,Ntot,N) 
+            objf_alpha1 = 0.0
+        end
+    end
+
+    #initialize variables for time stepping
+    t     ::Float64 = 0.0
+    step  :: Int64 = 0
+    objfv ::Float64 = 0.0
+
+
+    # Forward time stepping loop
+    for step in 1:nsteps
+
+        forbidden0 = tinv*penalf2aTrap(vr, wmat_real)
+        # Störmer-Verlet
+        for q in 1:stages
+            copy!(vr0,vr)
+            t0  = t
+            
+            # Update K and S matrices
+            # general case
+            KS!(K0, S0, t, params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq) 
+            KS!(K05, S05, t + 0.5*dt*gamma[q], params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq) 
+            KS!(K1, S1, t + dt*gamma[q], params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq) 
+            
+            # Take a step forward and accumulate weight matrix integral. Note the √2 multiplier is to account
+            # for the midpoint rule in the numerical integration of the imaginary part of the signal.
+            @inbounds t = step!(t, vr, vi, vi05, dt*gamma[q], K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs,linear_solver)
+
+            forbidden = tinv*penalf2a(vr, vi05, wmat_real)  
+            forbidden_imag1 = tinv*penalf2imag(vr0, vi05, wmat_imag)
+            objfv = objfv + gamma[q]*dt*0.5*(forbidden0 + forbidden - 2.0*forbidden_imag1)
+
+            # Keep prior value for next step (FG: will this work for multiple stages?)
+            forbidden0 = forbidden
+
+            # compute component of the gradient for verification of adjoint method
+            if evaladjoint && verbose
+                # compute the forcing for (wr, wi)
+                fgradforce!(params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc,
+                            params.isSymm, vr0, vi05, vr, t-dt, dt, splinepar, kpar, gr0, gr1, gi0, gi1, gr, gi)
+
+                copy!(wr1,wr)
+
+                @inbounds step_fwdGrad!(t0, wr1, wi, wi05, dt*gamma[q],
+                                        gr0, gi0, gr1, gi1, K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs,linear_solver) 
+                
+                # Real part of forbidden state weighting
+                forbalpha0 = tinv*penalf2grad(vr0, vi05, wr, wi05, wmat_real)
+                forbalpha1 = tinv*penalf2grad(vr, vi05, wr1, wi05, wmat_real)
+
+                # Imaginary part of forbidden state weighting
+                forbalpha2 = tinv*penalf2grad(wi05, vi05, vr0, wr, wmat_imag)                
+
+                copy!(wr,wr1)
+                # accumulate contribution from the leak term
+                objf_alpha1 = objf_alpha1 + gamma[q]*dt*0.5*2.0*(forbalpha0 + forbalpha1 + forbalpha2) 
+
+            end  # evaladjoint && verbose
+        end # Stromer-Verlet
+        
+        if verbose
+            # rotated frame
+            usaver[:,:, step + 1] = vr
+            usavei[:,:, step + 1] = -vi
+        end
+    end #forward time stepping loop
+
+    if pFidType == 1
+        scomplex1 = tracefidcomplex(vr, -vi, vtargetr, vtargeti)
+        primaryobjf = 1+tracefidabs2(vr, -vi, vtargetr, vtargeti) - 2*real(scomplex1*exp(-1im*params.globalPhase)) # global phase angle 
+    elseif pFidType == 2
+        primaryobjf = (1.0-tracefidabs2(vr, -vi, vtargetr, vtargeti)) # insensitive to global phase angle
+    elseif pFidType == 4
+        rotTarg = exp(1im*params.globalPhase)*(vtargetr + im*vtargeti)
+        primaryobjf = (1.0 - tracefidreal(vr, -vi, real(rotTarg), imag(rotTarg)) )
+    end
+
+    secondaryobjf = objfv
+    objfv = primaryobjf + secondaryobjf
+
+    if params.objFuncType == 1
+        objfv += tikhonov_pen(alpha, params)
+    end
+
+    if evaladjoint && verbose
+        # salpha1 = tracefidcomplex(wr, -wi, vtargetr, vtargeti)
+        salpha1 = tracefidcomplex(wr, -wi, dVds_r, dVds_i)
+        scomplex1 = tracefidcomplex(vr, -vi, vtargetr, vtargeti)
+        if pFidType==1
+            primaryobjgrad = 2*real(conj( scomplex1 - exp(1im*params.globalPhase) )*salpha1)
+        elseif pFidType == 2
+            primaryobjgrad = - 2*real(conj(scomplex1)*salpha1)
+        elseif pFidType == 4
+            rotTarg = exp(1im*params.globalPhase)*(vtargetr + im*vtargeti)
+            # grad wrt the control function 
+            primaryobjgrad = - tracefidreal(wr, -wi, real(rotTarg), imag(rotTarg))
+            # grad wrt the global phase
+            primObjGradPhase = - tracefidreal(vr, -vi, real(im.*rotTarg), imag(im.*rotTarg))
+        end
+        objf_alpha1 = objf_alpha1 + primaryobjgrad
+    end  
+
+    vfinalr = copy(vr)
+    vfinali = copy(-vi)
+
+    traceFidelity = tracefidabs2(vfinalr, vfinali, vtargetr, vtargeti)
+
+    if evaladjoint
+
+        if verbose
+            dfdp = objf_alpha1
+        end  
+
+        if (params.use_bcarrier)
+            # gradSize = (2*Ncoupled+Nunc)*Nfreq*D1
+            gradSize = params.NfreqTot*2*D1
+        else
+            gradSize = Nsig*D1
+        end
+
+
+        # initialize array for storing the adjoint gradient so it can be returned to the calling function/program
+        leakgrad = zeros(0);
+        infidelgrad = zeros(0);
+        gradobjfadj[:] .= 0.0    
+        t = T
+        dt = -dt
+
+        
+        # println("traceobjgrad(): eval_adjoint: sv_type = ", params.sv_type) # tmp
+        if params.sv_type == 1 || params.sv_type == 2 # regular case
+            # println("scomplex #1 (vtarget)")
+            scomplex0 = tracefidcomplex(vr, -vi, vtargetr, vtargeti)
+        elseif params.sv_type == 3 # term2 for d/ds(grad(G))
+            # println("scomplex #3 (dVds)")
+            scomplex0 = tracefidcomplex(vr, -vi, dVds_r, dVds_i)
+        #     println("Unknown sv_type = ", params.sv_type)
+        end
+
+        if pFidType == 1
+            scomplex0 = exp(1im*params.globalPhase) - scomplex0
+        end
+
+
+        # Set initial condition for adjoint variables
+        # Note (vtargetr, vtargeti) needs to be changed to dV/ds for continuation applications
+        # By default, dVds = vtarget
+        if params.sv_type == 1 # regular case
+            # println("init_adjoint #1 (dVds)")
+            init_adjoint!(pFidType, params.globalPhase, N, scomplex0, lambdar, lambdar0, lambdar05, lambdai, lambdai0,
+                        vtargetr, vtargeti)
+        elseif params.sv_type == 2 # term1 for d/ds(grad(G))
+            # println("init_adjoint #2 (dVds)")
+            init_adjoint!(pFidType, params.globalPhase, N, scomplex0, lambdar, lambdar0, lambdar05, lambdai, lambdai0,
+                        dVds_r, dVds_i)               
+        elseif params.sv_type == 3 # term2 for d/ds(grad(G))
+            init_adjoint!(pFidType, params.globalPhase, N, scomplex0, lambdar, lambdar0, lambdar05, lambdai, lambdai0,
+                        vtargetr, vtargeti)
+        end
+
+        #Initialize adjoint variables without forcing
+        if params.objFuncType != 1
+            lambdar_nfrc  .= lambdar
+            lambdar0_nfrc .= lambdar0
+            lambdai_nfrc  .= lambdai
+            lambdai0_nfrc .= lambdai0
+            lambdar05_nfrc.= lambdar05
+            infidelgrad = zeros(gradSize);
+        end
+
+        #Backward time stepping loop
+        for step in nsteps-1:-1:0
+
+            # Forcing for the real part of the adjoint variables in first PRK "stage"
+            mul!(hr0, wmat_real, vr, tinv, 0.0)
+
+            #loop over stages
+            for q in 1:stages
+                t0 = t
+                copy!(vr0,vr)
+                
+                # update K and S
+                # Since t is negative we have that K0 is K^{n+1}, K05 = K^{n-1/2}, 
+                # K1 = K^{n} and similarly for S.
+                # general case
+                KS!(K0, S0, t, params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq) 
+                KS!(K05, S05, t + 0.5*dt*gamma[q], params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq) 
+                KS!(K1, S1, t + dt*gamma[q], params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, splinepar, H0, params.Rfreq) 
+
+
+                # Integrate state variables backwards in time one step
+                @inbounds t = step!(t, vr, vi, vi05, dt*gamma[q], K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs,linear_solver)
+
+                # Forcing for adjoint equations (real part of forbidden state penalty)
+                mul!(hi0,wmat_real,vi05,tinv,0.0)
+                mul!(hr1,wmat_real,vr,tinv,0.0)
+
+                # Forcing for adjoint equations (imaginary part of forbidden state penalty)
+                mul!(hr1,wmat_imag,vi05,tinv,1.0)
+                copy!(hi1,hi0)
+                mul!(hi1,wmat_imag,vr,-tinv,1.0)
+
+                # evolve lambdar, lambdai
+                temp = t0
+                @inbounds temp = step!(temp, lambdar, lambdai, lambdar05, dt*gamma[q], hr0, hi0, hr1, hi1, 
+                                        K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs,linear_solver)
+
+                # Accumulate gradient
+                adjoint_grad_calc!(params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, vr0, vi05, vr, 
+                                    lambdar0, lambdar05, lambdai, lambdai0, t0, dt,splinepar, gr, gi, tr_adj) 
+                axpy!(gamma[q]*dt,tr_adj,gradobjfadj)
+                
+                # save for next stage
+                copy!(lambdai0,lambdai)
+                copy!(lambdar0,lambdar)
+
+                #Do adjoint step to compute infidelity grad (without forcing)
+                if params.objFuncType != 1
+                    temp = t0
+                    @inbounds temp = step_no_forcing!(temp, lambdar_nfrc, lambdai_nfrc, lambdar05_nfrc, dt*gamma[q], 
+                                                    K0, S0, K05, S05, K1, S1, Ident, κ₁, κ₂, ℓ₁, ℓ₂, rhs,linear_solver)
+
+                    # Accumulate gradient
+                    adjoint_grad_calc!(params.Hsym_ops, params.Hanti_ops, params.Hunc_ops, Nunc, params.isSymm, vr0, vi05, vr, 
+                                        lambdar0_nfrc, lambdar05_nfrc, lambdai_nfrc, lambdai0_nfrc, t0, dt,splinepar, gr, gi, tr_adj) 
+                    axpy!(gamma[q]*dt,tr_adj,infidelgrad)
+                    
+                    # save for next stage
+                    copy!(lambdai0_nfrc,lambdai_nfrc)
+                    copy!(lambdar0_nfrc,lambdar_nfrc)    
+                end
+
+            end #for stages
+        end # for step (backward time stepping loop)
+
+        primObjGradPhase=0.0
+
+        # totalgrad = zeros(Psize) # allocate array to return the gradient
+        # totalgrad[:] = gradobjfadj[:] # deep copy        
+        totalgrad = gradobjfadj # use a shallow copy for improved efficiency
+
+        if params.objFuncType != 1
+            leakgrad = zeros(size(totalgrad));
+            leakgrad .= totalgrad - infidelgrad # deep copy
+        else
+            # add in Tikhonov gradient
+            tikhonov_grad!(alpha, params, params.wa.gr)  
+            axpy!(1.0, wa.gr, totalgrad)
+        end
+    
+    end # if evaladjoint
+
+    if verbose
+        tikhonovpenalty = objfv - primaryobjf - secondaryobjf
+        println("Total objective func: ", objfv)
+        println("Primary objective func: ", primaryobjf, " Guard state penalty: ", secondaryobjf, " Tikhonov penalty: ", tikhonovpenalty)
+        if evaladjoint
+            println("Norm of adjoint gradient = ", norm(gradobjfadj))
+
+            if kpar <= Psize
+                dfdp = dfdp + gr[kpar] # add in the tikhonov term
+
+                println("Forward integration of total gradient[kpar=", kpar, "]: ", dfdp);
+                println("Adjoint integration of total gradient[kpar=", kpar, "]: ", gradobjfadj[kpar]);
+                println("\tAbsolute Error in gradients is : ", abs(dfdp - gradobjfadj[kpar]))
+                println("\tRelative Error in gradients is : ", abs((dfdp - gradobjfadj[kpar])/norm(gradobjfadj)))
+                println("\tPrimary grad = ", primaryobjgrad, " Tikhonov penalty grad = ", gr[kpar], " Guard state grad = ", dfdp - gr[kpar] - primaryobjgrad )
+            else
+                println("The gradient with respect to the phase angle is computed analytically and not by solving the adjoint equation")
+            end
+            if pFidType == 4
+                println("\tPrimary grad wrt phase = ", primObjGradPhase)
+            end
+        end
+        
+        nlast = 1 + nsteps
+        println("Unitary test 1, error in length of propagated state vectors:")
+        println("Col |   (1 - |psi|)")
+        Vnrm ::Float64 = 0.0
+        for q in 1:N
+            Vnrm = usaver[:,q,nlast]' * usaver[:,q,nlast] + usavei[:,q,nlast]' * usavei[:,q,nlast]
+            Vnrm = sqrt(Vnrm)
+            println("  ", q, " |  ", 1.0 - Vnrm)
+        end
+
+        # output primary objective function (infidelity at final time)
+        fidelityrot = tracefidcomplex(vfinalr, vfinali, vtargetr, vtargeti) # vfinali = -vi
+        mfidelityrot = abs(fidelityrot)^2
+        println("Final trace infidelity = ", 1.0 - mfidelityrot, " trace fidelity = ", mfidelityrot)
+        
+        if params.usingPriorCoeffs
+        println("Relative difference from prior: || alpha-prior || / || alpha || = ", norm(alpha - params.priorCoeffs) / norm(alpha) )
+        end
+        
+        
+        # Also output L2 norm of last energy level
+        if Ntot>N
+            #       normlastguard = zeros(N)
+            forbLev = identify_forbidden_levels(params)
+            maxLev = zeros(Ntot)
+            for lev in 1:Ntot
+                maxpop = zeros(N)
+                if forbLev[lev]
+                    for q in 1:N
+                        maxpop[q] = maximum( abs.(usaver[lev, q, :]).^2 + abs.(usavei[lev, q, :]).^2 )
+                    end
+                    maxLev[lev] = maximum(maxpop)
+                    println("Row = ", lev, " is a forbidden level, max population = ", maxLev[lev])
+                end #if
+            end
+            println("Max population over all forbidden levels = ", maximum(maxLev))
+        else
+            println("No forbidden levels in this simulation");
+        end
+        
+    end #if verbose
+
+
+
+
+    # return to calling routine (the order of the return arguments is somewhat inconsistent. At least add a description in the docs)
+    if verbose && evaladjoint
+        return objfv, copy(totalgrad), usaver+1im*usavei, mfidelityrot, dfdp, wr1 - 1im*wi
+    elseif verbose
+        println("Returning from traceobjgrad with objfv, unitary history, fidelity")
+        return objfv, usaver+1im*usavei, mfidelityrot
+    elseif evaladjoint
+        return objfv, copy(totalgrad), primaryobjf, secondaryobjf, traceFidelity, infidelgrad, leakgrad
+    else
+        return objfv, primaryobjf, secondaryobjf
+    end 
+end # function lagrange_objgrad
 
 """
     change_target!(params, new_Utarget)
@@ -1210,29 +1803,27 @@ end
 
 #------------------------------------------------------------
 """
-    minCoeff, maxCoeff = assign_thresholds_ctrl_freq(params, D1, maxAmp)
+    minCoeff, maxCoeff = assign_thresholds_ctrl_freq(params, maxAmp)
 
 Build vector of parameter min/max constraints that can depend on the control function and carrier wave frequency, 
 with `minCoeff = -maxCoeff`.
  
 # Arguments
 - `params:: objparams`: Struct containing problem definition.
-- `D1:: Int64`: Number of basis functions in each segment.
 - `maxAmp:: Matrix{Float64}`: `maxAmp[c,f]` is the maximum parameter value for ctrl `c` and frequency `f`
 """
-function assign_thresholds_ctrl_freq(params::objparams, D1:: Int64, maxAmp:: Vector{Vector{Float64}})
+function assign_thresholds_ctrl_freq(params::objparams, maxAmp:: Vector{Vector{Float64}})
     Nfreq = params.Nfreq
     Ncoupled = params.Ncoupled
     Nunc = params.Nunc
     @assert(Nunc == 0)
 
-    NfreqTot = sum(Nfreq) 
-    nCoeff = 2*D1*NfreqTot
-    #nCoeff = 2*(Ncoupled+Nunc)*Nfreq*D1
+    D1 = params.D1
+    nCoeff = params.nCoeff
     minCoeff = zeros(nCoeff) # Initialize storage
     maxCoeff = zeros(nCoeff)
 
-#    @printf("Ncoupled = %d, Nfreq = %d, D1 = %d, nCoeff = %d\n", Ncoupled, Nfreq, D1, nCoeff)
+#    @printf("Ncoupled = %d, Nfreq = %d, D1 = %d, nAlpha = %d\n", Ncoupled, Nfreq, D1, nAlpha)
     baseOffset = 0
     for c in 1:Ncoupled  # We assume that either Nunc = 0 or Ncoupled = 0
         for f in 1:Nfreq[c]
@@ -1248,28 +1839,26 @@ end
 
 
 """
-    minCoeff, maxCoeff = assign_thresholds(params, D1, maxAmp)
+    minCoeff, maxCoeff = assign_thresholds(params, maxAmp)
 
 Build vector of frequency independent min/max parameter constraints for each control function. Here, `minCoeff = -maxCoeff`.
  
 # Arguments
 - `params:: objparams`: Struct containing problem definition.
-- `D1:: Int64`: Number of basis functions in each segment.
 - `maxAmp:: Vector{Float64}`: `maxAmp[c]` is the maximum for ctrl function number `c`. Same bounds for p & q.
 """
-function assign_thresholds(params::objparams, D1::Int64, maxAmp::Vector{Float64})
+function assign_thresholds(params::objparams, maxAmp::Vector{Float64})
     Nfreq = params.Nfreq
     Ncoupled = params.Ncoupled
     Nunc = params.Nunc
     @assert(Nunc == 0)
 
-    NfreqTot = params.NfreqTot
-    nCoeff = 2*D1*NfreqTot
-    #nCoeff = 2*(Ncoupled+Nunc)*Nfreq*D1
+    D1 = params.D1
+    nCoeff = params.nCoeff
     minCoeff = zeros(nCoeff) # Initialize storage
     maxCoeff = zeros(nCoeff)
 
-#    @printf("Ncoupled = %d, Nfreq = %d, D1 = %d, nCoeff = %d\n", Ncoupled, Nfreq, D1, nCoeff)
+#    @printf("Ncoupled = %d, Nfreq = %d, D1 = %d, nAlpha = %d\n", Ncoupled, Nfreq, D1, nAlpha)
     baseOffset = 0
     for c in 1:Ncoupled  # We assume that either Nunc = 0 or Ncoupled = 0
         for f in 1:Nfreq[c]
