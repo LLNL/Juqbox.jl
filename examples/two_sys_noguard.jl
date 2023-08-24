@@ -22,17 +22,12 @@ rot_freq = favg * ones(nSys)
 T = 200.0
 # Number of coefficients per spline
 # D1 = 26
-dtau = 3.33
+dtau = 10.0 # 3.33
 D1 = ceil(Int64,T/dtau) + 2
 D1 = max(D1,5)
 
-
-
 # Points per shortest period
 Pmin = 40 # 60 # 40 # 80
-
-# Tikhonov coeff
-tikCoeff = 1e-2 # 1.0 # 0.1
 
 # bounds on the ctrl vector elements (rot frame)
 # This number is divided by Nfreq
@@ -51,7 +46,10 @@ ncores = 4 # prod(Ne)
 init_amp_frac = 0.9/5 # Fraction of max ctrl amplitude for initial random guess
 rand_seed = 2345
 
-cw_amp_thres = 1e-7 # Include cross-resonance
-cw_prox_thres = 1e-2 # 1e-3
+# Tikhonov coeff
+tikCoeff = 1e-2 # 1.0 # 0.1
 
-use_carrier_waves = false
+cw_amp_thres = 1e-7 # Include cross-resonance
+cw_prox_thres = 1e-2 # 1e-2 # 1e-3
+
+use_carrier_waves = true # false

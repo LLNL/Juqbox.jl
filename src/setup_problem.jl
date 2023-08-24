@@ -999,6 +999,7 @@ Setup a Hamiltonian model, parameters for numerical time stepping, a target unit
 
     if use_carrier_waves
         om, growth_rate, Utrans = get_resonances(is_ess, it2in, Ness=Ne, Nguard=Ng, Hsys=Hsys, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, msb_order=msb_order, cw_amp_thres=cw_amp_thres, cw_prox_thres=cw_prox_thres, rot_freq=rot_freq)
+        println("Info: using carrier waves in control pulses")
     else
         Utrans = Matrix{Float64}(I, Ntot, Ntot)
 
@@ -1008,6 +1009,7 @@ Setup a Hamiltonian model, parameters for numerical time stepping, a target unit
             om[q] = [0.0]
             growth_rate[q] = [1.0]
         end
+        println("Info: NOT using carrier waves in control pulses")
     end
 
     Nfreq = zeros(Int64,Nosc) # Number of frequencies per control Hamiltonian
