@@ -1015,8 +1015,8 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
             dUda_i = res[4]
 
             # test infidelity gradient wrt control parameter p.kpar
-            salpha1 = tracefidcomplex(p.Utarget_r, p.Utarget_i, dUda_r, dUda_i) # scaled by 1/N
-            scomplex0 = tracefidcomplex(p.Utarget_r, p.Utarget_i, Uend_r, Uend_i) # scaled by 1/N
+            salpha1 = tracefidcomplex(dUda_r, dUda_i, p.Utarget_r, p.Utarget_i) # scaled by 1/N
+            scomplex0 = tracefidcomplex(Uend_r, Uend_i, p.Utarget_r, p.Utarget_i) # scaled by 1/N
 
             dFda_kpar = -2*real(conj(scomplex0)*salpha1) # gradient of infidelity NOTE: minus sign
 
@@ -1047,7 +1047,7 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
             println("kpar = ", p.kpar, " dCda_kpar = ", dCda_kpar, " dCda_adj = ", quadGrad[p.kpar]," diff = ", dCda_kpar - quadGrad[p.kpar])
 
             # adjoint gradient of infidelity
-            Amat = scomplex0 * (p.Utarget_r + im*p.Utarget_i)/p.N # for infidelity gradient
+            Amat = conj(scomplex0) * (p.Utarget_r + im*p.Utarget_i)/p.N # for infidelity gradient
             # Calculate gradients
             infidGrad = adjoint_gradient(p, splinepar, tEnd, p.Tsteps[interval], Uend_r, Uend_i, real(Amat), imag(Amat))
             println("kpar = ", p.kpar, " dFda_kpar = ", dFda_kpar, " dFds_adj = ", infidGrad[p.kpar]," diff = ", dFda_kpar - infidGrad[p.kpar])
