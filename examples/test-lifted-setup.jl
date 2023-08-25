@@ -7,7 +7,8 @@ using Plots
 include("two_sys_noguard.jl")
 
 # assign the target gate
-target_gate = get_swap_1d_gate(2)
+Vtg = get_swap_1d_gate(2)
+target_gate = sqrt(Vtg)
 
 nTimeIntervals = 1
 

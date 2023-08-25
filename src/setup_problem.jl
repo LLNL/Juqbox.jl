@@ -205,13 +205,16 @@ function control_bounds(params::objparams, maxAmp::Vector{Float64})
 end
 
 
-function eigen_and_reorder(H0::Union{Matrix{ComplexF64},Matrix{Float64}}, is_ess::Vector{Bool})
+function eigen_and_reorder(H0::Union{Matrix{ComplexF64},Matrix{Float64}}, is_ess::Vector{Bool}, verbose::Bool = false)
+
     H0_eigen = eigen(H0)
     Ntot = size(H0_eigen.vectors,1)
     @assert(size(H0_eigen.vectors,2) == Ntot) #only square matrices
 
     # test
-    # println("H0 eigenvalues:", H0_eigen.values)
+    if verbose
+        println("H0 eigenvalues (before sorting):", H0_eigen.values)
+    end
 
     # look for the largest element in each column
     # What if 2 elements have the same magnitude?
@@ -219,8 +222,11 @@ function eigen_and_reorder(H0::Union{Matrix{ComplexF64},Matrix{Float64}}, is_ess
     for j in 1:Ntot
         maxrow[j] = argmax(abs.(H0_eigen.vectors[:,j]));
     end
-    #println("maxrow: ", maxrow)
-    #println()
+    
+    if verbose
+        println("maxrow: ", maxrow)
+        println()
+    end
     # pl1 = histogram(maxrow,bins=1:Ntot+1,bar_width=0.25, leg=:none)
 
     # loop over all columns and check maxrow for duplicates
@@ -233,6 +239,10 @@ function eigen_and_reorder(H0::Union{Matrix{ComplexF64},Matrix{Float64}}, is_ess
                 #println("Warning: detected identical maxrow = ", maxrow[j], " in columns j = ", j, " and k = ", k, " is_ess = (", is_ess[j], is_ess[k], ")")
             end
         end
+    end
+
+    if verbose
+        println("Ndup = ", Ndup)
     end
 
     if Ndup > 0
@@ -367,6 +377,10 @@ function eigen_and_reorder(H0::Union{Matrix{ComplexF64},Matrix{Float64}}, is_ess
     # get the permutation vector
     s_perm = sortperm(maxrow)
 
+    if verbose
+        println("s_perm = ", s_perm)
+    end
+
     Utrans = H0_eigen.vectors[:,s_perm[:]]
     # make sure all diagonal elements in Utrans are positive
     for j in 1:Ntot
@@ -450,7 +464,9 @@ function identify_essential_levels(Ness::Vector{Int64}, Nt::Vector{Int64}, msb_o
     return is_ess, it2in
 end
 
-function get_resonances(is_ess::Vector{Bool}, it2in::Matrix{Int64};Ness::Vector{Int64}, Nguard::Vector{Int64}, Hsys::Matrix{Float64}, Hsym_ops::Vector{Matrix{Float64}}, Hanti_ops::Vector{Matrix{Float64}}, msb_order::Bool = true, cw_amp_thres::Float64, cw_prox_thres::Float64, rot_freq::Vector{Float64})
+function get_resonances(is_ess::Vector{Bool}, it2in::Matrix{Int64};Ness::Vector{Int64}, Nguard::Vector{Int64}, Hsys::Matrix{Float64}, Hsym_ops::Vector{Matrix{Float64}}, Hanti_ops::Vector{Matrix{Float64}}, cw_amp_thres::Float64, cw_prox_thres::Float64, rot_freq::Vector{Float64}, verbose::Bool=false)
+    # Enable verbose mode for debug printout
+
     Nosc = length(Hsym_ops)
 
     nrows = size(Hsys,1)
@@ -466,7 +482,7 @@ function get_resonances(is_ess::Vector{Bool}, it2in::Matrix{Int64};Ness::Vector{
     #throw("Temporary breakpoint")
 
     # Note: if Hsys is diagonal, then Hsys_evals = diag(Hsys) and Utrans = IdentityMatrix
-    Hsys_evals, Utrans = eigen_and_reorder(Hsys, is_ess)
+    Hsys_evals, Utrans = eigen_and_reorder(Hsys, is_ess, verbose)
 
     # H0diag = Utrans' * Hsys * Utrans
     # println("get_resonances: H0diag = Utrans' * Hsys * Utrans:")
@@ -480,8 +496,10 @@ function get_resonances(is_ess::Vector{Bool}, it2in::Matrix{Int64};Ness::Vector{
     # scale the eigen-values
     ka_delta = Hsys_evals./(2*pi) 
 
-    #println("Re-computed Hdelta-eigenvals/(2*pi):")
-    #println(ka_delta)
+    if verbose
+        println("Hsys eigenvals/(2*pi):")
+        println(ka_delta)
+    end
 
     ## Identify resonances for all controls ## 
     # Note: Only resonances between *essential* levels are considered
@@ -495,6 +513,9 @@ function get_resonances(is_ess::Vector{Bool}, it2in::Matrix{Int64};Ness::Vector{
         Hctrl_ad = Hsym_ops[q] - Hanti_ops[q] # raising op
         Hctrl_ad_trans = Utrans' * Hctrl_ad * Utrans
 
+        # if verbose
+        #     println("q = ", q, " Hctrl_ad_trans = ", Hctrl_ad_trans)
+        # end
         #initialize
         resonances_a =zeros(0)
         speed_a = zeros(0)
@@ -503,6 +524,9 @@ function get_resonances(is_ess::Vector{Bool}, it2in::Matrix{Int64};Ness::Vector{
         println("\nResonances in oscillator # ", q, " Ignoring transitions with ad_coeff <: ", cw_amp_thres)
         for i in 1:nrows # Hsys is of size nrows x nrows
             for j in 1:i # Only consider transitions from lower to higher levels
+                if verbose
+                    println("i=", i, " j=", j, " is_ess[i]=", is_ess[i], " is_ess[j]", is_ess[j])
+                end
                 if abs(Hctrl_ad_trans[i,j]) >= cw_amp_thres
                     # Use only essential level transitions
                     if is_ess[i] && is_ess[j]
@@ -970,7 +994,7 @@ Setup a Hamiltonian model, parameters for numerical time stepping, a target unit
 - `maxAmp::Vector{Float64}`: Max amplitudes for each segement of the control vector. Here a segment corresponds to a control Hamiltonian
 """
   ################################
-  function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float64}, xi::Vector{Float64}, couple_coeff::Vector{Float64}, couple_type::Int64, rot_freq::Vector{Float64}, T::Float64, D1::Int64, gate_final::Matrix{ComplexF64}; maxctrl_MHz::Float64=10.0, msb_order::Bool = false, Pmin::Int64 = 40, init_amp_frac::Float64=0.0, randomize_init_ctrl::Bool = true, rand_seed::Int64=2345, pcofFileName::String="", zeroCtrlBC::Bool = true, use_eigenbasis::Bool = false, cw_amp_thres::Float64=5e-2, cw_prox_thres::Float64=2e-3, splines_real_imag::Bool=true, wmatScale::Float64=1.0, use_carrier_waves::Bool=true, nTimeIntervals::Int64=1)
+  function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float64}, xi::Vector{Float64}, couple_coeff::Vector{Float64}, couple_type::Int64, rot_freq::Vector{Float64}, T::Float64, D1::Int64, gate_final::Matrix{ComplexF64}; maxctrl_MHz::Float64=10.0, msb_order::Bool = false, Pmin::Int64 = 40, init_amp_frac::Float64=0.0, randomize_init_ctrl::Bool = true, rand_seed::Int64=2345, pcofFileName::String="", zeroCtrlBC::Bool = true, use_eigenbasis::Bool = false, cw_amp_thres::Float64=5e-2, cw_prox_thres::Float64=2e-3, splines_real_imag::Bool=true, wmatScale::Float64=1.0, use_carrier_waves::Bool=true, nTimeIntervals::Int64=1, verbose::Bool=false)
   
     # convert maxctrl_MHz to rad/ns per frequency
     # This is (approximately) the max amplitude of each control function (p & q)
@@ -993,12 +1017,12 @@ Setup a Hamiltonian model, parameters for numerical time stepping, a target unit
     Ness = prod(Ne)
     Ntot = prod(Ne + Ng)
 
-    if (Ness != Ntot)
-        throw("The lifted approach is only implemented for square targets")
+    if (nTimeIntervals > 1 && Ness != Ntot)
+        throw("The lifted approach with intermediate targets is only implemented for square unitaries")
     end
 
     if use_carrier_waves
-        om, growth_rate, Utrans = get_resonances(is_ess, it2in, Ness=Ne, Nguard=Ng, Hsys=Hsys, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, msb_order=msb_order, cw_amp_thres=cw_amp_thres, cw_prox_thres=cw_prox_thres, rot_freq=rot_freq)
+        om, growth_rate, Utrans = get_resonances(is_ess, it2in, Ness=Ne, Nguard=Ng, Hsys=Hsys, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, cw_amp_thres=cw_amp_thres, cw_prox_thres=cw_prox_thres, rot_freq=rot_freq, verbose=verbose)
         println("Info: using carrier waves in control pulses")
     else
         Utrans = Matrix{Float64}(I, Ntot, Ntot)

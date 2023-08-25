@@ -1033,21 +1033,21 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
             dLda_kpar = p.N*real(tracefidcomplex(p.Lmult_r[1], p.Lmult_i[1], dUda_r, dUda_i))
             
             # adjoint gradient of Lagrange mult.
-            Amat_r = p.Lmult_r[1]
-            Amat_i = p.Lmult_i[1]
+            Amat_r = -0.5*p.Lmult_r[1]
+            Amat_i = -0.5*p.Lmult_i[1]
             lagrangeGrad = adjoint_gradient(p, splinepar, tEnd, p.Tsteps[interval], Uend_r, Uend_i, Amat_r, Amat_i)
             println("kpar = ", p.kpar, " dLda_kpar = ", dLda_kpar, " dLda_adj = ", lagrangeGrad[p.kpar]," diff = ", dLda_kpar - lagrangeGrad[p.kpar])
 
             # adjoint gradient of quadratic jump
-            Amat_r = Cjump_r
-            Amat_i = Cjump_i
+            Amat_r = -Cjump_r
+            Amat_i = -Cjump_i
             # Calculate gradients
             quadGrad = adjoint_gradient(p, splinepar, tEnd, p.Tsteps[interval], Uend_r, Uend_i, Amat_r, Amat_i)
 
             println("kpar = ", p.kpar, " dCda_kpar = ", dCda_kpar, " dCda_adj = ", quadGrad[p.kpar]," diff = ", dCda_kpar - quadGrad[p.kpar])
 
             # adjoint gradient of infidelity
-            Amat = conj(scomplex0) * (p.Utarget_r + im*p.Utarget_i)/p.N # for infidelity gradient
+            Amat = scomplex0 * (p.Utarget_r + im*p.Utarget_i)/p.N # for infidelity gradient
             # Calculate gradients
             infidGrad = adjoint_gradient(p, splinepar, tEnd, p.Tsteps[interval], Uend_r, Uend_i, real(Amat), imag(Amat))
             println("kpar = ", p.kpar, " dFda_kpar = ", dFda_kpar, " dFds_adj = ", infidGrad[p.kpar]," diff = ", dFda_kpar - infidGrad[p.kpar])
@@ -1060,10 +1060,12 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
             # Jump in state at the end of the time interval
             Wend_r = p.Utarget_r
             Wend_i = p.Utarget_i
-            cont_2 = norm( Uend_r - Wend_r )^2 + norm( Uend_i - Wend_i )^2 # evaluate continuity constraint
+            Cjump_r = Uend_r - Wend_r
+            Cjump_i = Uend_i - Wend_i
+            cont_2 = norm( Cjump_r )^2 + norm( Cjump_i )^2 # evaluate continuity constraint
             println("Continuity jump (norm2) = ", cont_2)
 
-            Lmult_cont = real(tr(p.Lmult_r[1]' * (Uend_r - Wend_r)) + tr(p.Lmult_i[1]' * (Uend_i - Wend_i)))
+            Lmult_cont = p.N*real(tracefidcomplex(p.Lmult_r[1], p.Lmult_i[1], Cjump_r, Cjump_i))
 
             objf = Lmult_cont
         else
@@ -1223,7 +1225,7 @@ function adjoint_gradient(p::objparams, splinepar::BsplineParams, tEnd::Float64,
     dt = - p.T/p.nsteps # going backwards
 
     # Set terminal conditions for adjoint variables
-    set_adjoint_termial_cond!(Amat_r, Amat_i, w.lambdar, w.lambdar0, w.lambdar05, w.lambdai, w.lambdai0)
+    set_adjoint_termial_cond!(Amat_r, -Amat_i, w.lambdar, w.lambdar0, w.lambdar05, w.lambdai, w.lambdai0)
 
     #Backwards time stepping loop
     for step in N_time_steps-1: -1: 0 # p.nsteps-1:-1:0
