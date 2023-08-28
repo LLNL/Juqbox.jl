@@ -254,15 +254,16 @@ mutable struct objparams
     nCoeff :: Int64 # Total length of the design vector (pcof). nCoeff = nAlpha + (nTimeIntervals - 1) * nWinit
     D1:: Int64 # Number of B-spline coefficients in each segment of the control functions
     nAlpha:: Int64 # length of the parameter vector (alpha) within pcof
-    nWinit:: Int64 # length of each initial condition matrix within pcof
+    nWinit:: Int64 # length of each block of initial condition matrices within pcof
 
+    # Hamiltonian coefficients
     freq01::   Vector{Float64} 
     self_kerr:: Vector{Float64}
     couple_coeff:: Vector{Float64}
     couple_type:: Int64
 
     msb_order:: Bool # false: Least significant bit ordering of state vector:| i1 i2 i3 i4 >
-    zeroCtrlBC:: Bool
+    zeroCtrlBC:: Bool # Boundary conditions for the control functions
 
     # variables for the direct method
     nTimeIntervals:: Int64 # number of time intervals in [0, T]
@@ -271,6 +272,8 @@ mutable struct objparams
 
     Lmult_r:: Vector{Matrix{Float64}} # Vector of size (nTimeIntervals-1) for the Lagrange multiplier coefficients (real)
     Lmult_i:: Vector{Matrix{Float64}} # Vector of size (nTimeIntervals-1) for the Lagrange multiplier coefficients (imag)
+
+    gammaJump:: Float64 # Coefficient of the quadratic penalty term for jumps across time intervals
 
 # constructor for regular arrays (full matrices)
     function objparams(Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64;
@@ -285,7 +288,7 @@ mutable struct objparams
                        objFuncType:: Int64 = 1, leak_ubound:: Float64=1.0e-3,
                        use_sparse::Bool = false, use_custom_forbidden::Bool = false,
                        linear_solver::lsolver_object = lsolver_object(nrhs=prod(Ne)), msb_order::Bool = true,
-                       dVds::Array{ComplexF64,2}= Array{ComplexF64}(undef,0,0), freq01::Vector{Float64} = Vector{Float64}[], self_kerr::Vector{Float64} = Vector{Float64}[], couple_coeff::Vector{Float64} = Vector{Float64}[], couple_type::Int64 = 0,zeroCtrlBC::Bool = true, nTimeIntervals::Int64=1)
+                       dVds::Array{ComplexF64,2}= Array{ComplexF64}(undef,0,0), freq01::Vector{Float64} = Vector{Float64}[], self_kerr::Vector{Float64} = Vector{Float64}[], couple_coeff::Vector{Float64} = Vector{Float64}[], couple_type::Int64 = 0,zeroCtrlBC::Bool = true, nTimeIntervals::Int64=1, gammaJump::Float64=0.1)
         pFidType = 2 # Std gate infidelity
         Nosc   = length(Ne) # number of subsystems
         N      = prod(Ne)
@@ -459,7 +462,6 @@ mutable struct objparams
         T0int = zeros(Float64, nTimeIntervals)
         Tsteps = zeros(Int64, nTimeIntervals)
 
-        # Wsol = Vector{Matrix{ComplexF64}}(undef, nIntermediateIntervals) # add to pcof when initialzing
         T0int[1] = 0.0 # first interval always starts from t=0.0
     
         # Allocate storage for Lagrange multipliers
@@ -505,7 +507,7 @@ mutable struct objparams
              usingPriorCoeffs, priorCoeffs, quiet, Rfreq, false, [],
              real(my_dVds), imag(my_dVds), my_sv_type, wa, nCoeff, D1, nAlpha, nWinit,
              freq01, self_kerr, couple_coeff, couple_type, # Add some checks for these ones!
-             msb_order, zeroCtrlBC, nTimeIntervals, T0int, Tsteps, Lmult_r, Lmult_i
+             msb_order, zeroCtrlBC, nTimeIntervals, T0int, Tsteps, Lmult_r, Lmult_i, gammaJump
             )
 
     end
@@ -950,15 +952,43 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
     # shortcut to working_arrays object in p::objparams
     w = p.wa
 
-    # coefficient for the norm-squared of the continuity misfit
-    gamma = 0.1
+    if evaladjoint
+        objf_grad = zeros(p.nCoeff) # allocate storage for the gradient
+    end
 
     if verbose
-        println("lagrange_obj_grad: Vector dim Ntot =", p.Ntot , ", Guard levels Nguard = ", p.Nguard , ", Param dim, Psize = ", p.nAlpha, ", Spline coeffs per func, D1= ", p.D1, ", Nsteps = ", p.nsteps, " Tikhonov coeff: ", p.tik0)
+        println("lagrange_obj_grad: Vector dim Ntot =", p.Ntot , ", Guard levels Nguard = ", p.Nguard , ", Param dim, Psize = ", p.nCoeff, ", Spline coeffs per func, D1= ", p.D1, " Tikhonov coeff: ", p.tik0)
     end
 
     # initializations start here
     alpha = pcof0[1:p.nAlpha] # extract the B-spline-coefficients
+
+    hasW::Bool = p.nCoeff > p.nAlpha
+    if hasW
+        println(" Objective depends on W-initial conditions, nIntervals = ", p.nTimeIntervals)
+        nT2 = p.Ntot^2
+        for interval = 1:p.nTimeIntervals
+            if interval == 1
+                offc = p.nAlpha + (interval-1)*2*nT2 # for interval = 1 the offset should be nAlpha
+                println("Cont. cond. for interval # ", interval, " pcof: [", offc+1, ", ", offc+nT2, " (real)")
+                println("                                and [", offc+nT2+1, " ,", offc+2*nT2, " (imag)")
+            elseif interval < p.nTimeIntervals
+                offc = p.nAlpha + (interval-2)*2*nT2 # for interval = 1 the offset should be nAlpha
+                println("Init. cond. for interval # ", interval, " pcof: [", offc+1, ", ", offc+nT2, " (real)")
+                println("                                and [", offc+nT2+1, " ,", offc+2*nT2, " (imag)")
+                
+                offc = p.nAlpha + (interval-1)*2*nT2 # for interval = 2 the offset should be nAlpha
+                println("Cont. cond. for interval # ", interval, " pcof: [", offc+1, ", ", offc+nT2, " (real)")
+                println("                                and [", offc+nT2+1, " ,", offc+2*nT2, " (imag)")
+            else
+                offc = p.nAlpha + (interval-2)*2*nT2 # for interval = 2 the offset should be nAlpha
+                println("Init. cond. for interval # ", interval, " pcof: [", offc+1, ", ", offc+nT2, " (real)")
+                println("                                and [", offc+nT2+1, " ,", offc+2*nT2, " (imag)")
+            end
+        end
+    else
+        println("Objective does NOT depend on W, nIntervals = ", p.nTimeIntervals)
+    end 
 
     # setup splinepar
     if p.use_bcarrier
@@ -967,14 +997,11 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
         Nsig  = 2*(p.Ncoupled + p.Nunc) # Only uses for regular B-splines
         splinepar = splineparams(p.T, p.D1, Nsig, alpha)
     end
-    
-    tinv ::Float64 = 1.0/p.T
 
-    # it is up to the user to estimate the number of time steps
-    dt ::Float64 = p.T/p.nsteps
+    dt ::Float64 = p.T/p.nsteps # global time step
 
     if verbose
-        println("Final time: ", p.T, ", number of time steps: " , p.nsteps , ", time step: " , dt )
+        println("Final time: ", p.T, ", total number of time steps: " , p.nsteps , ", time step: " , dt )
     end
     
     # Zero out working arrays
@@ -987,10 +1014,16 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
     # Total objective
     objf = 0.0
 
+    eval1gradient = verbose && evaladjoint # for testing the adjoint gradient
+
     # Split the time stepping into independent tasks corresponding to each time interval
     println("lagrange_objgrad: length(pcof) =  ", length(pcof0), " nAlpha = ", p.nAlpha, " nWinit = ", p.nWinit)
     for interval = 1:p.nTimeIntervals
-        println("Assigning initial conditions for interval # ", interval)
+        tEnd = p.T0int[interval] + p.Tsteps[interval]*dt # terminal time for this time interval
+
+        if verbose 
+            println("Interval # ", interval)
+        end
         if interval == 1
             # initial conditions from Uinit (fixed)
             Winit_r = p.Uinit_r
@@ -1006,115 +1039,134 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
             Winit_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
         end
 
-        res = evolve_schroedinger(p, splinepar, p.T0int[interval], Winit_r, Winit_i, p.Tsteps[interval], evaladjoint)
+        # Evolve state under Schroedinger's equation
+        res = evolve_schroedinger(p, splinepar, p.T0int[interval], Winit_r, Winit_i, p.Tsteps[interval], eval1gradient)
 
         Uend_r = res[1]
         Uend_i = res[2]
-        if evaladjoint
+        scomplex0 = tracefidcomplex(Uend_r, Uend_i, p.Utarget_r, p.Utarget_i) # scaled by 1/N
+
+        if eval1gradient # test 1 component of the gradient
             dUda_r = res[3]
             dUda_i = res[4]
 
-            # test infidelity gradient wrt control parameter p.kpar
-            salpha1 = tracefidcomplex(dUda_r, dUda_i, p.Utarget_r, p.Utarget_i) # scaled by 1/N
-            scomplex0 = tracefidcomplex(Uend_r, Uend_i, p.Utarget_r, p.Utarget_i) # scaled by 1/N
-
-            dFda_kpar = -2*real(conj(scomplex0)*salpha1) # gradient of infidelity NOTE: minus sign
-
-            # Get the terminal time for this time interval
-            dt = p.T/p.nsteps
-            tEnd = p.T0int[interval] + p.Tsteps[interval]*dt
-
-            # test quadratic jump gradient
-            Cjump_r = Uend_r - p.Utarget_r
-            Cjump_i = Uend_i - p.Utarget_i
-            dCda_kpar = 2*p.N*real(tracefidcomplex(Cjump_r, Cjump_i, dUda_r, dUda_i))
-
-            # test Lagrange multiplier gradient
-            dLda_kpar = p.N*real(tracefidcomplex(p.Lmult_r[1], p.Lmult_i[1], dUda_r, dUda_i))
-            
-            # adjoint gradient of Lagrange mult.
-            Amat_r = -0.5*p.Lmult_r[1]
-            Amat_i = -0.5*p.Lmult_i[1]
-            lagrangeGrad = adjoint_gradient(p, splinepar, tEnd, p.Tsteps[interval], Uend_r, Uend_i, Amat_r, Amat_i)
-            println("kpar = ", p.kpar, " dLda_kpar = ", dLda_kpar, " dLda_adj = ", lagrangeGrad[p.kpar]," diff = ", dLda_kpar - lagrangeGrad[p.kpar])
-
-            # adjoint gradient of quadratic jump
-            Amat_r = -Cjump_r
-            Amat_i = -Cjump_i
-            # Calculate gradients
-            quadGrad = adjoint_gradient(p, splinepar, tEnd, p.Tsteps[interval], Uend_r, Uend_i, Amat_r, Amat_i)
-
-            println("kpar = ", p.kpar, " dCda_kpar = ", dCda_kpar, " dCda_adj = ", quadGrad[p.kpar]," diff = ", dCda_kpar - quadGrad[p.kpar])
-
-            # adjoint gradient of infidelity
-            Amat = conj(scomplex0) * (p.Utarget_r + im*p.Utarget_i)/p.N # for infidelity gradient
-            # Calculate gradients
-            infidGrad = adjoint_gradient(p, splinepar, tEnd, p.Tsteps[interval], Uend_r, Uend_i, real(Amat), imag(Amat))
-            println("kpar = ", p.kpar, " dFda_kpar = ", dFda_kpar, " dFds_adj = ", infidGrad[p.kpar]," diff = ", dFda_kpar - infidGrad[p.kpar])
-
-
-        end
-
-        test_mode = true
-        if test_mode
-            # Jump in state at the end of the time interval
-            Wend_r = p.Utarget_r
-            Wend_i = p.Utarget_i
-            Cjump_r = Uend_r - Wend_r
-            Cjump_i = Uend_i - Wend_i
-            cont_2 = norm( Cjump_r )^2 + norm( Cjump_i )^2 # evaluate continuity constraint
-            println("Continuity jump (norm2) = ", cont_2)
-
-            Lmult_cont = p.N*real(tracefidcomplex(p.Lmult_r[1], p.Lmult_i[1], Cjump_r, Cjump_i))
-
-            objf = Lmult_cont
-        else
             if interval < p.nTimeIntervals
                 offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
-                # println("offset 1 = ", offc)
                 nMat = p.Ntot^2
                 Wend_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
                 offc += nMat
-                # println("offset 2 = ", offc)
                 Wend_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
 
-                # Jump in state at the end of interval k equals C^k = Uend^k - Wend^k (Ntot x Ntot matrices)
-                # evaluate continuity constraint (Frobenius norm squared of mismatch)
-                cont_2 = norm( Uend_r - Wend_r )^2 + norm( Uend_i - Wend_i )^2
-                println("Continuity jump (norm2) = ", cont_2)
+                # test quadratic jump gradient
+                Cjump_r = Uend_r - Wend_r
+                Cjump_i = Uend_i - Wend_i
 
-                # println("Sizes: p.Lmult_r = ", size(p.Lmult_r[interval]), " Uend_r = ", size(Uend_r), " Wend_r = ", size(Wend_r))
-                Lmult_cont = tr(p.Lmult_r[interval]' * (Uend_r - Wend_r)) + tr(p.Lmult_i[interval]' * (Uend_i - Wend_i)) # Not the most efficient way...
-                println("(Lagrange multiplier) x (continuity jump) = ", Lmult_cont)
-                objf += 0.5*gamma * cont_2 - Lmult_cont # add in contributions to the total Lagrangian
+                dCda_kpar = p.gammaJump*p.N*real(tracefidcomplex(Cjump_r, Cjump_i, dUda_r, dUda_i))
+
+                # test Lagrange multiplier gradient
+                dLda_kpar = -p.N*real(tracefidcomplex(p.Lmult_r[interval], p.Lmult_i[interval], dUda_r, dUda_i)) # Assumes interval = 1
+
+                dFda_kpar = 0.0 # only the last interval contributes to the infidelity
             else
-                traceInfid = (1.0-tracefidabs2(Uend_r, Uend_i, p.Utarget_r, p.Utarget_i))
-                objf += traceInfid
-                println("Infidelity = ", traceInfid)
+                # test infidelity gradient wrt control parameter p.kpar
+                salpha1 = tracefidcomplex(dUda_r, dUda_i, p.Utarget_r, p.Utarget_i) # scaled by 1/N
+
+                dFda_kpar = -2*real(conj(scomplex0)*salpha1) # gradient of infidelity NOTE: minus sign
+
+                dCda_kpar = 0.0 # there is no quadratic penalty or lagrange multiplier term fr the last interval
+                dLda_kpar = 0.0
+            end
+        end # if eval1gradient
+
+        if interval < p.nTimeIntervals
+            offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
+            # println("offset 1 = ", offc)
+            nMat = p.Ntot^2
+            Wend_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+            offc += nMat
+            # println("offset 2 = ", offc)
+            Wend_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+
+            Cjump_r = Uend_r - Wend_r
+            Cjump_i = Uend_i - Wend_i
+
+            # Jump in state at the end of interval k equals C^k = Uend^k - Wend^k (Ntot x Ntot matrices)
+            # evaluate continuity constraint (Frobenius norm squared of mismatch)
+            cont_2 = 0.5*p.gammaJump * (norm( Cjump_r )^2 + norm( Cjump_i )^2)
+            println("Continuity jump (norm2) = ", cont_2)
+            objf += cont_2 # accumulate contributions to the augemnted Lagrangian
+
+            # println("Sizes: p.Lmult_r = ", size(p.Lmult_r[interval]), " Uend_r = ", size(Uend_r), " Wend_r = ", size(Wend_r))
+            Lmult_cont = -p.N*real(tracefidcomplex(p.Lmult_r[interval], p.Lmult_i[interval], Cjump_r, Cjump_i))
+            println("(Lagrange multiplier) x (continuity jump) = ", Lmult_cont)
+            objf += Lmult_cont # accumulate contributions to the augemnted Lagrangian
+
+            if evaladjoint            
+
+                # adjoint gradient of quadratic jump
+                Amat_r = p.gammaJump*Cjump_r
+                Amat_i = p.gammaJump*Cjump_i
+                # Calculate gradients
+                quadGrad = adjoint_gradient(p, splinepar, tEnd, p.Tsteps[interval], Uend_r, Uend_i, Amat_r, Amat_i)
+                
+                objf_grad += quadGrad # accumulate gradient
+
+                # adjoint gradient of Lagrange mult.
+                Amat_r = -p.Lmult_r[interval]
+                Amat_i = -p.Lmult_i[interval]
+                lagrangeGrad = adjoint_gradient(p, splinepar, tEnd, p.Tsteps[interval], Uend_r, Uend_i, Amat_r, Amat_i)
+                
+                objf_grad += lagrangeGrad # accumulate gradient
+
+                if eval1gradient
+                    println("kpar = ", p.kpar, " dLda_kpar = ", dLda_kpar, " dLda_adj = ", lagrangeGrad[p.kpar]," diff = ", dLda_kpar - lagrangeGrad[p.kpar])
+                    println("kpar = ", p.kpar, " dCda_kpar = ", dCda_kpar, " dCda_adj = ", quadGrad[p.kpar]," diff = ", dCda_kpar - quadGrad[p.kpar])
+                end
+            end
+        else
+            # final time interval
+            traceInfid = (1.0-tracefidabs2(Uend_r, Uend_i, p.Utarget_r, p.Utarget_i))
+            objf += traceInfid
+            println("Infidelity = ", traceInfid)
+
+            if evaladjoint
+                # adjoint gradient of infidelity
+                Amat = -2*conj(scomplex0) * (p.Utarget_r + im*p.Utarget_i)/p.N # for infidelity gradient
+                # Calculate gradients
+                infidGrad = adjoint_gradient(p, splinepar, tEnd, p.Tsteps[interval], Uend_r, Uend_i, real(Amat), imag(Amat))
+                
+                objf_grad += infidGrad # accumulate gradient
+
+                if eval1gradient
+                    println("kpar = ", p.kpar, " dFda_kpar = ", dFda_kpar)
+                    println("kpar = ", p.kpar, " dFda_adj = ", infidGrad[p.kpar]," diff = ", dFda_kpar - infidGrad[p.kpar])
+                end
             end
         end
-    end
+
+    end # for interval...
 
     # tp = tikhonov_pen(alpha, p) # Tikhonov penalty
     # objf += tp
     # println("Tikhonov penalty = ", tp)
 
     if verbose
-        println("Lagrangian = ", objf)
+        println("Augmented Lagrangian = ", objf)
     end
 
-    # if evaladjoint
-    #     return objf, grad_infid # need to allocate(?) and assign grad_infid
-    # else
+    if evaladjoint
+        if eval1gradient
+            println("kpar = ", p.kpar, " totalGrad[kpar] = ", objf_grad[p.kpar])
+        end
+        return objf, objf_grad # need to allocate(?) objf_grad
+    else
         return objf
-    # end
+    end
 
 end # function lagrange_objgrad
 
 ##################################################
 function evolve_schroedinger(p::objparams, splinepar::BsplineParams, tStart::Float64, Winit_r::Matrix{Float64}, Winit_i::Matrix{Float64}, N_time_steps::Int64, eval1gradient::Bool = false)
-    order  = 2
-    gamma, stages = getgamma(order)
     
     # shortcut to working_arrays object in p::objparams
     w = p.wa
@@ -1128,7 +1180,6 @@ function evolve_schroedinger(p::objparams, splinepar::BsplineParams, tStart::Flo
         wi   = zeros(Float64, p.Ntot, p.N) 
         wr1  = zeros(Float64, p.Ntot, p.N) 
         wi05 = zeros(Float64, p.Ntot, p.N) 
-        objf_alpha1 = 0.0
     end
 
     tinv = 1.0/p.T
@@ -1150,41 +1201,39 @@ function evolve_schroedinger(p::objparams, splinepar::BsplineParams, tStart::Flo
 
         forbidden0 = tinv*penalf2aTrap(w.vr, p.wmat_real)
         # Störmer-Verlet
-        for q in 1:stages
-            copy!(w.vr0, w.vr)
-            t0 = t # starting time for this time step (needed to evaluate gradient)
-            
-            # Update K and S matrices
-            # general case
-            KS!(w.K0, w.S0, t, p.Hsym_ops, p.Hanti_ops, p.Hunc_ops, p.Nunc, p.isSymm, splinepar, p.Hconst, p.Rfreq) 
-            KS!(w.K05, w.S05, t + 0.5*dt*gamma[q], p.Hsym_ops, p.Hanti_ops, p.Hunc_ops, p.Nunc, p.isSymm, splinepar, p.Hconst, p.Rfreq) 
-            KS!(w.K1, w.S1, t + dt*gamma[q], p.Hsym_ops, p.Hanti_ops, p.Hunc_ops, p.Nunc, p.isSymm, splinepar, p.Hconst, p.Rfreq) 
-            
-            # Take a step forward and accumulate weight matrix integral. Note the √2 multiplier is to account
-            # for the midpoint rule in the numerical integration of the imaginary part of the signal.
-            @inbounds t = step!(t, w.vr, w.vi, w.vi05, dt*gamma[q], w.K0, w.S0, w.K05, w.S05, w.K1, w.S1, p.Ident, w.κ₁, w.κ₂, w.ℓ₁, w.ℓ₂, w.rhs, p.linear_solver)
+        copy!(w.vr0, w.vr)
+        t0 = t # starting time for this time step (needed to evaluate gradient)
+        
+        # Update K and S matrices
+        # general case
+        KS!(w.K0, w.S0, t, p.Hsym_ops, p.Hanti_ops, p.Hunc_ops, p.Nunc, p.isSymm, splinepar, p.Hconst, p.Rfreq) 
+        KS!(w.K05, w.S05, t + 0.5*dt*1.0, p.Hsym_ops, p.Hanti_ops, p.Hunc_ops, p.Nunc, p.isSymm, splinepar, p.Hconst, p.Rfreq) 
+        KS!(w.K1, w.S1, t + dt*1.0, p.Hsym_ops, p.Hanti_ops, p.Hunc_ops, p.Nunc, p.isSymm, splinepar, p.Hconst, p.Rfreq) 
+        
+        # Take a step forward and accumulate weight matrix integral. Note the √2 multiplier is to account
+        # for the midpoint rule in the numerical integration of the imaginary part of the signal.
+        @inbounds t = step!(t, w.vr, w.vi, w.vi05, dt*1.0, w.K0, w.S0, w.K05, w.S05, w.K1, w.S1, p.Ident, w.κ₁, w.κ₂, w.ℓ₁, w.ℓ₂, w.rhs, p.linear_solver)
 
-            forbidden = tinv*penalf2a(w.vr, w.vi05, p.wmat_real)  
-            forbidden_imag1 = tinv*penalf2imag(w.vr0, w.vi05, p.wmat_imag)
-            objfv = objfv + gamma[q]*dt*0.5*(forbidden0 + forbidden - 2.0*forbidden_imag1)
+        forbidden = tinv*penalf2a(w.vr, w.vi05, p.wmat_real)  
+        forbidden_imag1 = tinv*penalf2imag(w.vr0, w.vi05, p.wmat_imag)
+        objfv = objfv + 1.0*dt*0.5*(forbidden0 + forbidden - 2.0*forbidden_imag1)
 
-            # Keep prior value for next step (FG: will this work for multiple stages?)
-            forbidden0 = forbidden
+        # Keep prior value for next step (FG: will this work for multiple stages?)
+        forbidden0 = forbidden
 
-            # compute 1 component (p.kpar) of the gradient for verification of adjoint method
-            if eval1gradient
-                # compute the forcing for (wr, wi)
-                fgradforce!(p.Hsym_ops, p.Hanti_ops, p.Hunc_ops, p.Nunc,
-                            p.isSymm, w.vr0, w.vi05, w.vr, t-dt, dt, splinepar, p.kpar, w.gr0, w.gr1, w.gi0, w.gi1, w.gr, w.gi)
+        # compute 1 component (p.kpar) of the gradient for verification of adjoint method
+        if eval1gradient
+            # compute the forcing for (wr, wi)
+            fgradforce!(p.Hsym_ops, p.Hanti_ops, p.Hunc_ops, p.Nunc,
+                        p.isSymm, w.vr0, w.vi05, w.vr, t-dt, dt, splinepar, p.kpar, w.gr0, w.gr1, w.gi0, w.gi1, w.gr, w.gi)
 
-                copy!(wr1,wr)
+            copy!(wr1,wr)
 
-                @inbounds step_fwdGrad!(t0, wr1, wi, wi05, dt*gamma[q],
-                                        w.gr0, w.gi0, w.gr1, w.gi1, w.K0, w.S0, w.K05, w.S05, w.K1, w.S1, p.Ident, w.κ₁, w.κ₂, w.ℓ₁, w.ℓ₂, w.rhs, p.linear_solver)               
+            @inbounds step_fwdGrad!(t0, wr1, wi, wi05, dt*1.0,
+                                    w.gr0, w.gi0, w.gr1, w.gi1, w.K0, w.S0, w.K05, w.S05, w.K1, w.S1, p.Ident, w.κ₁, w.κ₂, w.ℓ₁, w.ℓ₂, w.rhs, p.linear_solver)               
 
-                copy!(wr,wr1)
-            end  # evaladjoint && verbose
-        end # Stromer-Verlet
+            copy!(wr,wr1)
+        end  # evaladjoint && verbose
         
     end # end forward time stepping loop
 
@@ -1199,9 +1248,9 @@ function evolve_schroedinger(p::objparams, splinepar::BsplineParams, tStart::Flo
 end # function evolve_schroedinger
 
 ########################################
+# Solve the adjoint Stormer-Verlet scheme, assuming NO leak term
+########################################
 function adjoint_gradient(p::objparams, splinepar::BsplineParams, tEnd::Float64, N_time_steps::Int64, Uend_r::Matrix{Float64}, Uend_i::Matrix{Float64}, Amat_r::Matrix{Float64}, Amat_i::Matrix{Float64})
-    order  = 2
-    gamma, stages = getgamma(order)
     
     # shortcut to working_arrays object in p::objparams
     w = p.wa
@@ -1218,8 +1267,6 @@ function adjoint_gradient(p::objparams, splinepar::BsplineParams, tEnd::Float64,
 
     # Zero out working arrays
     initialize_working_arrays(w) 
-    
-    tinv = 1.0/p.T
 
     # global time step (the same in all intervals)
     dt = - p.T/p.nsteps # going backwards
@@ -1230,43 +1277,35 @@ function adjoint_gradient(p::objparams, splinepar::BsplineParams, tEnd::Float64,
     #Backwards time stepping loop
     for step in N_time_steps-1: -1: 0 # p.nsteps-1:-1:0
 
-        # Forcing for the real part of the adjoint variables in first PRK "stage"
-        mul!(w.hr0, p.wmat_real, w.vr, tinv, 0.0)
+        t0 = t
+        copy!(w.vr0, w.vr)
+        
+        # Assign K and S matrices, general case
+        # Since dt is negative we have that w.K0 is K^{n+1}, w.K05 = K^{n-1/2}, w.K1 = K^{n} and similarly for S.
+        KS!(w.K0, w.S0, t, p.Hsym_ops, p.Hanti_ops, p.Hunc_ops, p.Nunc, p.isSymm, splinepar, p.Hconst, p.Rfreq) 
+        KS!(w.K05, w.S05, t + 0.5*dt*1.0, p.Hsym_ops, p.Hanti_ops, p.Hunc_ops, p.Nunc, p.isSymm, splinepar, p.Hconst, p.Rfreq) 
+        KS!(w.K1, w.S1, t + dt*1.0, p.Hsym_ops, p.Hanti_ops, p.Hunc_ops, p.Nunc, p.isSymm, splinepar, p.Hconst, p.Rfreq) 
 
-        #loop over stages
-        for q in 1:stages
-            t0 = t
-            copy!(w.vr0, w.vr)
-            
-            # update K and S
-            # Since dt is negative we have that w.K0 is K^{n+1}, w.K05 = K^{n-1/2}, 
-            # w.K1 = K^{n} and similarly for S.
-            # Assign matrices, general case
-            KS!(w.K0, w.S0, t, p.Hsym_ops, p.Hanti_ops, p.Hunc_ops, p.Nunc, p.isSymm, splinepar, p.Hconst, p.Rfreq) 
-            KS!(w.K05, w.S05, t + 0.5*dt*gamma[q], p.Hsym_ops, p.Hanti_ops, p.Hunc_ops, p.Nunc, p.isSymm, splinepar, p.Hconst, p.Rfreq) 
-            KS!(w.K1, w.S1, t + dt*gamma[q], p.Hsym_ops, p.Hanti_ops, p.Hunc_ops, p.Nunc, p.isSymm, splinepar, p.Hconst, p.Rfreq) 
+        # Integrate state variables backwards in time one step (w.rhs is a working array, holding the right hand side during linear solves)
+        @inbounds t = step!(t, w.vr, w.vi, w.vi05, dt*1.0, w.K0, w.S0, w.K05, w.S05, w.K1, w.S1, p.Ident, w.κ₁, w.κ₂, w.ℓ₁, w.ℓ₂, w.rhs, p.linear_solver)
 
-            # Integrate state variables backwards in time one step (w.rhs is a working array, holding the right hand side during linear solves)
-            @inbounds t = step!(t, w.vr, w.vi, w.vi05, dt*gamma[q], w.K0, w.S0, w.K05, w.S05, w.K1, w.S1, p.Ident, w.κ₁, w.κ₂, w.ℓ₁, w.ℓ₂, w.rhs, p.linear_solver)
+        # evolve w.lambdar, w.lambdai (w.rhs is a working array, holding the right hand side during linear solves)
+        temp = t0
+        @inbounds temp = step!(temp, w.lambdar, w.lambdai, w.lambdar05, dt*1.0, w.hr0, w.hi0, w.hr1, w.hi1, w.K0, w.S0, w.K05, w.S05, w.K1, w.S1, p.Ident, w.κ₁, w.κ₂, w.ℓ₁, w.ℓ₂, w.rhs, p.linear_solver)
 
-            # evolve w.lambdar, w.lambdai (w.rhs is a working array, holding the right hand side during linear solves)
-            temp = t0
-            @inbounds temp = step!(temp, w.lambdar, w.lambdai, w.lambdar05, dt*gamma[q], w.hr0, w.hi0, w.hr1, w.hi1, 
-                                    w.K0, w.S0, w.K05, w.S05, w.K1, w.S1, p.Ident, w.κ₁, w.κ₂, w.ℓ₁, w.ℓ₂, w.rhs, p.linear_solver)
+        # Accumulate gradient
+        adjoint_grad_calc!(p.Hsym_ops, p.Hanti_ops, p.Hunc_ops, p.Nunc, p.isSymm, w.vr0, w.vi05, w.vr, w.lambdar0, w.lambdar05, w.lambdai, w.lambdai0, t0, dt, splinepar, w.gr, w.gi, w.tr_adj) 
+        
+        # axpy!(1.0*dt, w.tr_adj, w.gradobjfadj)
+        axpy!(-0.5*dt, w.tr_adj, w.gradobjfadj) # Getting the factor in the adjoint terminal condition right
 
-            # Accumulate gradient
-            adjoint_grad_calc!(p.Hsym_ops, p.Hanti_ops, p.Hunc_ops, p.Nunc, p.isSymm, w.vr0, w.vi05, w.vr, 
-                                w.lambdar0, w.lambdar05, w.lambdai, w.lambdai0, t0, dt, splinepar, w.gr, w.gi, w.tr_adj) 
-            axpy!(gamma[q]*dt, w.tr_adj, w.gradobjfadj)
-            
-            # save for next stage
-            copy!(w.lambdai0, w.lambdai)
-            copy!(w.lambdar0, w.lambdar)
+        # save for next stage
+        copy!(w.lambdai0, w.lambdai)
+        copy!(w.lambdar0, w.lambdar)
 
-        end #for stages
     end # for step (backward time stepping loop)    
 
-    return w.gradobjfadj # do we need to copy the gradient before returning it?
+    return copy(w.gradobjfadj) # do we need to copy the gradient before returning it?
 end
 
 ##################################################
