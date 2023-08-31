@@ -481,6 +481,11 @@ function get_resonances(is_ess::Vector{Bool}, it2in::Matrix{Int64};Ness::Vector{
     # end
     #throw("Temporary breakpoint")
 
+    if verbose
+        println("Hsys/(2*pi):")
+        println(Hsys./(2*pi))
+    end
+
     # Note: if Hsys is diagonal, then Hsys_evals = diag(Hsys) and Utrans = IdentityMatrix
     Hsys_evals, Utrans = eigen_and_reorder(Hsys, is_ess, verbose)
 
@@ -510,43 +515,48 @@ function get_resonances(is_ess::Vector{Bool}, it2in::Matrix{Int64};Ness::Vector{
     speed = []
     for q in 1:Nosc
         # Transformation of control Hamiltonian (a+adag) - (a-adag) = 2*adag
-        Hctrl_ad = Hsym_ops[q] - Hanti_ops[q] # raising op
-        Hctrl_ad_trans = Utrans' * Hctrl_ad * Utrans
+        #Hctrl_ad = Hsym_ops[q] - Hanti_ops[q] # raising op
+        #Hctrl_ad_trans = Utrans' * Hctrl_ad * Utrans
 
-        # if verbose
-        #     println("q = ", q, " Hctrl_ad_trans = ", Hctrl_ad_trans)
-        # end
+        # look for resonances in both the symmetric and anti-symmetric control Hamiltonians
+        Hsym_trans = Utrans' * Hsym_ops[q] * Utrans
+        Hanti_trans = Utrans' * Hanti_ops[q] * Utrans
         #initialize
         resonances_a =zeros(0)
         speed_a = zeros(0)
 
-        # identify resonant couplings in 'a+adag'
-        println("\nResonances in oscillator # ", q, " Ignoring transitions with ad_coeff <: ", cw_amp_thres)
-        for i in 1:nrows # Hsys is of size nrows x nrows
-            for j in 1:i # Only consider transitions from lower to higher levels
-                if verbose
-                    println("i=", i, " j=", j, " is_ess[i]=", is_ess[i], " is_ess[j]", is_ess[j])
-                end
-                if abs(Hctrl_ad_trans[i,j]) >= cw_amp_thres
-                    # Use only essential level transitions
-                    if is_ess[i] && is_ess[j]
-                        delta_f = ka_delta[i] - ka_delta[j]
-                        if abs(delta_f) < 1e-10 
-                            delta_f = 0.0
-                        end
-                        # Use all sufficiently separated resonance frequencies
-                        if exists(delta_f, resonances_a, cw_prox_thres) < 0
-                            append!(resonances_a, delta_f)
-                            append!(speed_a, abs(Hctrl_ad_trans[i,j]))
-                            #println(" resonance from (i1 i2 i3 i4) = (", it2i1[j], it2i2[j], it2i3[j], it2i4[j], ") to (i1 i2 i3 i4) = (", it2i1[i], it2i2[i], it2i3[i], it2i4[i], "), Freq = ", delta_f, " = l_", i, " - l_", j, ", ad_coeff=", abs(Hctrl_ad_trans[i,j]))
-                            println(" resonance from (j-idx) = (", it2in[j,:], ") to (i-idx) = (", it2in[i,:], "), lab-freq = ", rot_freq[q] + delta_f, " = l_", i, " - l_", j, ", ad_coeff=", abs(Hctrl_ad_trans[i,j]))
-                        # else
-                        #     println("Info, skipping frequency: ", delta_f, " Too close to previous frequencies")
+        matNo = 1
+        for Hc_trans in (Hsym_trans, Hanti_trans)
+            println("Matrix number ", matNo)
+            # identify resonant couplings in 'a+adag'
+            println("Resonances in oscillator # ", q, " Ignoring transitions with ad_coeff <: ", cw_amp_thres)
+            for i in 1:nrows # Hsys is of size nrows x nrows
+                for j in 1:i # Only consider transitions from lower to higher levels
+                    # if verbose
+                    #     println("i=", i, " j=", j, " is_ess[i]=", is_ess[i], " is_ess[j]", is_ess[j])
+                    # end
+                    if abs(Hc_trans[i,j]) >= cw_amp_thres
+                        # Use only essential level transitions
+                        if is_ess[i] && is_ess[j]
+                            delta_f = ka_delta[i] - ka_delta[j]
+                            if abs(delta_f) < 1e-10 
+                                delta_f = 0.0
+                            end
+                            # Use all sufficiently separated resonance frequencies
+                            if exists(delta_f, resonances_a, cw_prox_thres) < 0
+                                append!(resonances_a, delta_f)
+                                append!(speed_a, abs(Hc_trans[i,j]))
+                                #println(" resonance from (i1 i2 i3 i4) = (", it2i1[j], it2i2[j], it2i3[j], it2i4[j], ") to (i1 i2 i3 i4) = (", it2i1[i], it2i2[i], it2i3[i], it2i4[i], "), Freq = ", delta_f, " = l_", i, " - l_", j, ", ad_coeff=", abs(Hc_trans[i,j]))
+                                println(" resonance from (j-idx) = (", it2in[j,:], ") to (i-idx) = (", it2in[i,:], "), lab-freq = ", rot_freq[q] + delta_f, " = l_", i, " - l_", j, ", ad_coeff=", abs(Hc_trans[i,j]))
+                            # else
+                            #     println("Info, skipping frequency: ", delta_f, " Too close to previous frequencies")
+                            end
                         end
                     end
                 end
             end
-        end 
+            matNo+=1
+        end # end for Hc_trans
     
         # Store the result
         push!(resonances, resonances_a)
