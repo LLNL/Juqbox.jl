@@ -7,6 +7,7 @@ using Plots
 
 Ne = [2,2,2] # Number of essential energy levels
 Ng = [1,1,1] # Number of extra guard levels
+#Ng = [0,0,0]
 
 f01 = [5.18, 5.12, 5.06] # 0-1 transition freq's
 

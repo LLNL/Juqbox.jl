@@ -37,6 +37,8 @@ function hamiltonians(;Nsys::Int64, Ness::Vector{Int64}, Nguard::Vector{Int64}, 
             Num[q]  = numq # Full size number operator
             Amat[q] = lowq
         end
+        # println("Amat, k = ", q)
+        # println(Amat[q])
     end
 
 
@@ -481,10 +483,10 @@ function get_resonances(is_ess::Vector{Bool}, it2in::Matrix{Int64};Ness::Vector{
     # end
     #throw("Temporary breakpoint")
 
-    if verbose
-        println("Hsys/(2*pi):")
-        println(Hsys./(2*pi))
-    end
+    # if verbose
+    #     println("Hsys/(2*pi):")
+    #     println(Hsys./(2*pi))
+    # end
 
     # Note: if Hsys is diagonal, then Hsys_evals = diag(Hsys) and Utrans = IdentityMatrix
     Hsys_evals, Utrans = eigen_and_reorder(Hsys, is_ess, verbose)
