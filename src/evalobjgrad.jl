@@ -494,6 +494,8 @@ mutable struct objparams
             end
         end
     
+        # println("\nNorm real(Uinit), image(Uinit): ", norm(real(Uinit)), ", ", norm(imag(Uinit)), "\n")
+
         # sv_type is used for continuation. Only change this if you know what you are doing
         new(
              Nosc, N, Nguard, N+Nguard, Ne, Ng, Ne+Ng, T, nsteps, real(Uinit), imag(Uinit), real(Utarget), imag(Utarget), 
@@ -939,6 +941,47 @@ function initialize_working_arrays(w::working_arrays)
 end
 
 #########################################################
+function get_Winit_index(p::objparams, kpar::Int64, verbose::Bool = false)
+    if kpar < 1 || kpar > p.nCoeff
+        if verbose
+            println("kpar = ", kpar, " is out of bounds")
+        end
+        interv = -1
+        real_imag0 = -1
+        row = -1
+        col = -1
+    elseif kpar <= p.nAlpha
+        if verbose
+            println("kpar = ", kpar, " corresponds to a B-spline coefficient")
+        end
+        interv = 0
+        real_imag0 = -1
+        row = -1
+        col = -1
+    else
+        kpar0 = kpar - 1
+        inter0 = div(kpar0-p.nAlpha, p.nWinit)
+        interv = inter0 + 1
+
+        offset0 = (kpar0 - p.nAlpha) % p.nWinit
+        nT2 = p.Ntot^2
+        real_imag0 = div(offset0, nT2)
+        offset0 -= real_imag0 * nT2
+        
+        j0 = div(offset0, p.Ntot)
+        i0 = offset0 % p.Ntot 
+        
+        row = i0+1
+        col = j0+1
+        if verbose
+            println("kpar = ", kpar, " corresponds to a Winit element in interval = ", interv, " real/imag = ", real_imag0, " matrix element = [", row, ", ", col, "]")
+        end        
+    end
+
+    return interv, real_imag0, row, col
+end
+
+#########################################################
 #
 # Augmented Lagrange method with multiple time intervals
 # Evaluate the infidelity and all continuity constraints
@@ -970,22 +1013,25 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
         for interval = 1:p.nTimeIntervals
             if interval == 1
                 offc = p.nAlpha + (interval-1)*2*nT2 # for interval = 1 the offset should be nAlpha
-                println("Cont. cond. for interval # ", interval, " pcof: [", offc+1, ", ", offc+nT2, " (real)")
-                println("                                and [", offc+nT2+1, " ,", offc+2*nT2, " (imag)")
+                println("Cont. cond. for interval # ", interval, " pcof: [", offc+1, ", ", offc+nT2, "] (real) and [", offc+nT2+1, " ,", offc+2*nT2, "] (imag)")
             elseif interval < p.nTimeIntervals
                 offc = p.nAlpha + (interval-2)*2*nT2 # for interval = 1 the offset should be nAlpha
-                println("Init. cond. for interval # ", interval, " pcof: [", offc+1, ", ", offc+nT2, " (real)")
-                println("                                and [", offc+nT2+1, " ,", offc+2*nT2, " (imag)")
+                println("Init. cond. for interval # ", interval, " pcof: [", offc+1, ", ", offc+nT2, "] (real) and [", offc+nT2+1, " ,", offc+2*nT2, "] (imag)")
                 
                 offc = p.nAlpha + (interval-1)*2*nT2 # for interval = 2 the offset should be nAlpha
-                println("Cont. cond. for interval # ", interval, " pcof: [", offc+1, ", ", offc+nT2, " (real)")
-                println("                                and [", offc+nT2+1, " ,", offc+2*nT2, " (imag)")
+                println("Cont. cond. for interval # ", interval, " pcof: [", offc+1, ", ", offc+nT2, "] (real) and [", offc+nT2+1, " ,", offc+2*nT2, "] (imag)")
             else
                 offc = p.nAlpha + (interval-2)*2*nT2 # for interval = 2 the offset should be nAlpha
-                println("Init. cond. for interval # ", interval, " pcof: [", offc+1, ", ", offc+nT2, " (real)")
-                println("                                and [", offc+nT2+1, " ,", offc+2*nT2, " (imag)")
+                println("Init. cond. for interval # ", interval, " pcof: [", offc+1, ", ", offc+nT2, "] (real) and [", offc+nT2+1, " ,", offc+2*nT2, "] (imag)")
             end
         end
+        # test index gymnastics
+        if p.kpar <= p.nAlpha
+            println("kpar = ", p.kpar, " corresponds to a B-spline coefficient")
+        else
+            interv, real_imag, row, col = get_Winit_index(p, p.kpar, true)
+        end
+
     else
         println("Objective does NOT depend on W, nIntervals = ", p.nTimeIntervals)
     end 
@@ -1015,8 +1061,10 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
     objf = 0.0
 
     eval1gradient = verbose && evaladjoint # for testing the adjoint gradient
+    # figure out if kpar corresponds to a B-spl coeff or a Winit matrix
+    interval_kp, real_imag_kp, row_kp, col_kp = get_Winit_index(p, p.kpar, true)
 
-    # Split the time stepping into independent tasks corresponding to each time interval
+    # Split the time stepping into independent tasks in each time interval
     println("lagrange_objgrad: length(pcof) =  ", length(pcof0), " nAlpha = ", p.nAlpha, " nWinit = ", p.nWinit)
     for interval = 1:p.nTimeIntervals
         tEnd = p.T0int[interval] + p.Tsteps[interval]*dt # terminal time for this time interval
@@ -1039,18 +1087,41 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
             Winit_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
         end
 
-        # Evolve state under Schroedinger's equation
-        res = evolve_schroedinger(p, splinepar, p.T0int[interval], Winit_r, Winit_i, p.Tsteps[interval], eval1gradient)
+        # Evolve the state under Schroedinger's equation
+        # res = evolve_schroedinger(p, splinepar, p.T0int[interval], Winit_r, Winit_i, p.Tsteps[interval], eval1gradient)
 
-        Uend_r = res[1]
-        Uend_i = res[2]
+        # Uend_r = res[1]
+        # Uend_i = res[2]
+
+        # NOTE: the S-V scheme treats the real and imaginary parts with different time integrators
+        # First compute the solution operator for a basis of real initial conditions: I
+        solOp_r = evolve_schroedinger(p, splinepar, p.T0int[interval], p.Uinit_r, p.Uinit_i, p.Tsteps[interval], eval1gradient)
+        # solOp_r[1] = U_real, solOp_r[2] = U_imag
+        # println("Norm(solOp_r): ", norm(solOp_r[1]), ", ", norm(solOp_r[2]))
+        
+        # Then a basis for purely imaginary initial conditions: iI
+        solOp_i = evolve_schroedinger(p, splinepar, p.T0int[interval], p.Uinit_i, p.Uinit_r, p.Tsteps[interval], eval1gradient)
+        # solOp_i[1] = U2_real, solOp_i[2] = U2_imag
+        # println("Norm(solOp_i): ", norm(solOp_i[1]), ", ", norm(solOp_i[2]))
+        
+        # Now we can  account for the initial conditions for this time interval and easily calculate the gradient wrt Winit
+        Uend_r = (solOp_r[1] * Winit_r + solOp_i[1] * Winit_i)
+        Uend_i = (solOp_r[2] * Winit_r + solOp_i[2] * Winit_i)
+
         scomplex0 = tracefidcomplex(Uend_r, Uend_i, p.Utarget_r, p.Utarget_i) # scaled by 1/N
 
         if eval1gradient # test 1 component of the gradient
-            dUda_r = res[3]
-            dUda_i = res[4]
+            # dUda_r = res[3]
+            # dUda_i = res[4]
+
+            # Then account for the initial conditions for this time interval
+            dUda_r = (solOp_r[3] * Winit_r + solOp_i[3] * Winit_i)
+            dUda_i = (solOp_r[4] * Winit_r + solOp_i[4] * Winit_i)
 
             if interval < p.nTimeIntervals
+                # gradient wrt alpha (B-spline coefficients)
+
+                # get offset in pcof0 array
                 offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
                 nMat = p.Ntot^2
                 Wend_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
@@ -1067,14 +1138,32 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
                 dLda_kpar = -p.N*real(tracefidcomplex(p.Lmult_r[interval], p.Lmult_i[interval], dUda_r, dUda_i)) # Assumes interval = 1
 
                 dFda_kpar = 0.0 # only the last interval contributes to the infidelity
-            else
+                dFdW_kpar = 0.0 
+
+                # gradient wrt Winit
+                if interval_kp == 1 # gradient wrt W^{(1)}
+                    if real_imag_kp == 0 # real part
+                        dCdW_kpar = -p.gammaJump*Cjump_r[row_kp, col_kp]
+                        dLdW_kpar = p.Lmult_r[interval][row_kp, col_kp]
+                    else # imaginary part
+                        dCdW_kpar = -p.gammaJump*Cjump_i[row_kp, col_kp]
+                        dLdW_kpar = p.Lmult_i[interval][row_kp, col_kp]
+                    end
+                end
+            else # last interval
                 # test infidelity gradient wrt control parameter p.kpar
                 salpha1 = tracefidcomplex(dUda_r, dUda_i, p.Utarget_r, p.Utarget_i) # scaled by 1/N
 
                 dFda_kpar = -2*real(conj(scomplex0)*salpha1) # gradient of infidelity NOTE: minus sign
 
-                dCda_kpar = 0.0 # there is no quadratic penalty or lagrange multiplier term fr the last interval
+                dCda_kpar = 0.0 # there is no quadratic penalty or lagrange multiplier term from the last interval
                 dLda_kpar = 0.0
+                dCdW_kpar = 0.0
+                dLdW_kpar = 0.0
+
+                # tmp this one is a bit complicated...
+                dFdW_kpar = 0.0 
+
             end
         end # if eval1gradient
 
@@ -1102,6 +1191,19 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
             objf += Lmult_cont # accumulate contributions to the augemnted Lagrangian
 
             if evaladjoint            
+                # gradient wrt Wend
+                ws_grad = zeros(p.nCoeff) # workspace
+                if interval == 1
+                    offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
+                    # Cjump only depends on Wend
+                    d_cont2_dWend_r = - p.gammaJump * Cjump_r
+                    ws_grad[offc+1:offc+nMat] = vec(d_cont2_dWend_r)
+
+                    offc += nMat
+                    d_cont2_dWend_i = - p.gammaJump * Cjump_i
+                    ws_grad[offc+1:offc+nMat] = vec(d_cont2_dWend_i)
+                end
+                # gradient wrt alpha (B-spline coefficients)
 
                 # adjoint gradient of quadratic jump
                 Amat_r = p.gammaJump*Cjump_r
@@ -1121,6 +1223,10 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
                 if eval1gradient
                     println("kpar = ", p.kpar, " dLda_kpar = ", dLda_kpar, " dLda_adj = ", lagrangeGrad[p.kpar]," diff = ", dLda_kpar - lagrangeGrad[p.kpar])
                     println("kpar = ", p.kpar, " dCda_kpar = ", dCda_kpar, " dCda_adj = ", quadGrad[p.kpar]," diff = ", dCda_kpar - quadGrad[p.kpar])
+
+                    if interval_kp == 1 # gradient wrt W^{(1)}
+                        println("dCdW_kpar = ", dCdW_kpar, " dLdW_kpar = ", dLdW_kpar)
+                    end
                 end
             end
         else
