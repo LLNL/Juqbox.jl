@@ -1059,6 +1059,7 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
 
     # Total objective
     objf = 0.0
+    grad_kpar = 0.0
 
     eval1gradient = verbose && evaladjoint # for testing the adjoint gradient
     # figure out if kpar corresponds to a B-spl coeff or a Winit matrix
@@ -1095,18 +1096,18 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
 
         # NOTE: the S-V scheme treats the real and imaginary parts with different time integrators
         # First compute the solution operator for a basis of real initial conditions: I
-        solOp_r = evolve_schroedinger(p, splinepar, p.T0int[interval], p.Uinit_r, p.Uinit_i, p.Tsteps[interval], eval1gradient)
-        # solOp_r[1] = U_real, solOp_r[2] = U_imag
-        # println("Norm(solOp_r): ", norm(solOp_r[1]), ", ", norm(solOp_r[2]))
+        reInitOp = evolve_schroedinger(p, splinepar, p.T0int[interval], p.Uinit_r, p.Uinit_i, p.Tsteps[interval], eval1gradient)
+        # reInitOp[1] = U_real, reInitOp[2] = U_imag
+        # println("Norm(reInitOp): ", norm(reInitOp[1]), ", ", norm(reInitOp[2]))
         
         # Then a basis for purely imaginary initial conditions: iI
-        solOp_i = evolve_schroedinger(p, splinepar, p.T0int[interval], p.Uinit_i, p.Uinit_r, p.Tsteps[interval], eval1gradient)
-        # solOp_i[1] = U2_real, solOp_i[2] = U2_imag
-        # println("Norm(solOp_i): ", norm(solOp_i[1]), ", ", norm(solOp_i[2]))
+        imInitOp = evolve_schroedinger(p, splinepar, p.T0int[interval], p.Uinit_i, p.Uinit_r, p.Tsteps[interval], eval1gradient)
+        # imInitOp[1] = U2_real, imInitOp[2] = U2_imag
+        # println("Norm(imInitOp): ", norm(imInitOp[1]), ", ", norm(imInitOp[2]))
         
         # Now we can  account for the initial conditions for this time interval and easily calculate the gradient wrt Winit
-        Uend_r = (solOp_r[1] * Winit_r + solOp_i[1] * Winit_i)
-        Uend_i = (solOp_r[2] * Winit_r + solOp_i[2] * Winit_i)
+        Uend_r = (reInitOp[1] * Winit_r + imInitOp[1] * Winit_i)
+        Uend_i = (reInitOp[2] * Winit_r + imInitOp[2] * Winit_i)
 
         scomplex0 = tracefidcomplex(Uend_r, Uend_i, p.Utarget_r, p.Utarget_i) # scaled by 1/N
 
@@ -1115,13 +1116,13 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
             # dUda_i = res[4]
 
             # Then account for the initial conditions for this time interval
-            dUda_r = (solOp_r[3] * Winit_r + solOp_i[3] * Winit_i)
-            dUda_i = (solOp_r[4] * Winit_r + solOp_i[4] * Winit_i)
+            dUda_r = (reInitOp[3] * Winit_r + imInitOp[3] * Winit_i)
+            dUda_i = (reInitOp[4] * Winit_r + imInitOp[4] * Winit_i)
 
             if interval < p.nTimeIntervals
                 # gradient wrt alpha (B-spline coefficients)
 
-                # get offset in pcof0 array
+                # get initial condition offset in pcof0 array
                 offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
                 nMat = p.Ntot^2
                 Wend_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
@@ -1137,11 +1138,14 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
                 # test Lagrange multiplier gradient
                 dLda_kpar = -p.N*real(tracefidcomplex(p.Lmult_r[interval], p.Lmult_i[interval], dUda_r, dUda_i)) # Assumes interval = 1
 
+                grad_kpar += dCda_kpar + dLda_kpar
+
                 dFda_kpar = 0.0 # only the last interval contributes to the infidelity
                 dFdW_kpar = 0.0 
 
                 # gradient wrt Winit
-                if interval_kp == 1 # gradient wrt W^{(1)}
+                if interval == interval_kp # gradient wrt W^{(1)}
+                    # dependence through Cjump^{interval} = U^{interval} - W^{interval_kp}
                     if real_imag_kp == 0 # real part
                         dCdW_kpar = -p.gammaJump*Cjump_r[row_kp, col_kp]
                         dLdW_kpar = p.Lmult_r[interval][row_kp, col_kp]
@@ -1149,7 +1153,29 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
                         dCdW_kpar = -p.gammaJump*Cjump_i[row_kp, col_kp]
                         dLdW_kpar = p.Lmult_i[interval][row_kp, col_kp]
                     end
-                end
+                elseif interval == interval_kp+1
+                    # p = row_kp, q = col_kp
+                    c_rq = Cjump_r[:, col_kp]
+                    c_iq = Cjump_i[:, col_kp]
+                    la_rq = p.Lmult_r[interval][:, col_kp]
+                    la_iq = p.Lmult_i[interval][:, col_kp]
+                    # dependence through initial condition Cjump^{interval} = U^{interval}(W^{interval_kp}) - W^{interval}
+                    if real_imag_kp == 0 # real part
+                        s_rp = reInitOp[1][:, row_kp]
+                        s_ip = reInitOp[2][:, row_kp]
+
+                    else # imaginary part
+                        s_rp = imInitOp[1][:, row_kp]
+                        s_ip = imInitOp[2][:, row_kp]
+                    end
+                    dCdW_kpar = p.gammaJump*( s_rp' * c_rq + s_ip' * c_iq)
+                    dLdW_kpar = -( s_rp' * la_rq + s_ip' * la_iq)
+                else
+                    dCdW_kpar = 0.0
+                    dLdW_kpar = 0.0
+                end # if interval
+                # testing
+                grad_kpar += dCdW_kpar + dLdW_kpar
             else # last interval
                 # test infidelity gradient wrt control parameter p.kpar
                 salpha1 = tracefidcomplex(dUda_r, dUda_i, p.Utarget_r, p.Utarget_i) # scaled by 1/N
@@ -1183,11 +1209,13 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
             # evaluate continuity constraint (Frobenius norm squared of mismatch)
             cont_2 = 0.5*p.gammaJump * (norm( Cjump_r )^2 + norm( Cjump_i )^2)
             println("Continuity jump (norm2) = ", cont_2)
+
             objf += cont_2 # accumulate contributions to the augemnted Lagrangian
 
             # println("Sizes: p.Lmult_r = ", size(p.Lmult_r[interval]), " Uend_r = ", size(Uend_r), " Wend_r = ", size(Wend_r))
             Lmult_cont = -p.N*real(tracefidcomplex(p.Lmult_r[interval], p.Lmult_i[interval], Cjump_r, Cjump_i))
             println("(Lagrange multiplier) x (continuity jump) = ", Lmult_cont)
+            
             objf += Lmult_cont # accumulate contributions to the augemnted Lagrangian
 
             if evaladjoint            
@@ -1224,15 +1252,15 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
                     println("kpar = ", p.kpar, " dLda_kpar = ", dLda_kpar, " dLda_adj = ", lagrangeGrad[p.kpar]," diff = ", dLda_kpar - lagrangeGrad[p.kpar])
                     println("kpar = ", p.kpar, " dCda_kpar = ", dCda_kpar, " dCda_adj = ", quadGrad[p.kpar]," diff = ", dCda_kpar - quadGrad[p.kpar])
 
-                    if interval_kp == 1 # gradient wrt W^{(1)}
-                        println("dCdW_kpar = ", dCdW_kpar, " dLdW_kpar = ", dLdW_kpar)
-                    end
+                    println("dCdW_kpar = ", dCdW_kpar, " dLdW_kpar = ", dLdW_kpar, " grad_kpar = ", grad_kpar)
                 end
             end
         else
             # final time interval
             traceInfid = (1.0-tracefidabs2(Uend_r, Uend_i, p.Utarget_r, p.Utarget_i))
-            objf += traceInfid
+             
+            # AP disabling while testing
+            # objf += traceInfid
             println("Infidelity = ", traceInfid)
 
             if evaladjoint
@@ -1262,7 +1290,7 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
 
     if evaladjoint
         if eval1gradient
-            println("kpar = ", p.kpar, " totalGrad[kpar] = ", objf_grad[p.kpar])
+            println("kpar = ", p.kpar, " adjointGrad[kpar] = ", objf_grad[p.kpar], " grad_kpar = ", grad_kpar)
         end
         return objf, objf_grad # need to allocate(?) objf_grad
     else

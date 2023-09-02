@@ -10,7 +10,7 @@ include("two_sys_noguard.jl")
 Vtg = get_swap_1d_gate(2)
 target_gate = sqrt(Vtg)
 
-nTimeIntervals = 2 # 3 # 2 # 1
+nTimeIntervals = 3 # 3 # 2 # 1
 
 retval = setup_std_model(Ne, Ng, f01, xi, xi12, couple_type, rot_freq, T, D1, target_gate, maxctrl_MHz=maxctrl_MHz, msb_order=msb_order, init_amp_frac=init_amp_frac, rand_seed=rand_seed, Pmin=Pmin, cw_prox_thres=cw_prox_thres, cw_amp_thres=cw_amp_thres, use_carrier_waves=use_carrier_waves, nTimeIntervals=nTimeIntervals)
 
@@ -39,7 +39,8 @@ end
 # for 3 intervals with D1=22 try 3, 9, 15, 18
 # for 2 intervals with D1=22 try 5, 15
 # for 2 intervals and the grad wrt W, try kpar in [177, 208]
-params.kpar = 206 # test this component of the gradient
+# for 3 intervals, Winit^{(1)} has in [177, 208], for Winit^{(2)} add 32
+params.kpar = 178 +16 # 178, 178 + 16, 178 + 32 # test this component of the gradient
 
 println("Setup completed\n")
 println("Calling lagrange_objgrad for total objective and gradient")
