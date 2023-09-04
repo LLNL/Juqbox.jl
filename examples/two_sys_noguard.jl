@@ -53,3 +53,5 @@ cw_amp_thres = 1e-7 # Include cross-resonance
 cw_prox_thres = 1e-2 # 1e-2 # 1e-3
 
 use_carrier_waves = true # false
+
+zeroCtrlBC = true # Impose zero boundary conditions for each B-spline segemnt

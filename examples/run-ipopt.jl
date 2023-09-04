@@ -10,7 +10,7 @@ include("two_sys_noguard.jl")
 Vtg = get_swap_1d_gate(2)
 target_gate = sqrt(Vtg)
 
-nTimeIntervals = 2 # 3 # 3 # 2 # 1
+nTimeIntervals = 3 # 3 # 3 # 2 # 1
 
 retval = setup_std_model(Ne, Ng, f01, xi, xi12, couple_type, rot_freq, T, D1, target_gate, maxctrl_MHz=maxctrl_MHz, msb_order=msb_order, init_amp_frac=init_amp_frac, rand_seed=rand_seed, Pmin=Pmin, cw_prox_thres=cw_prox_thres, cw_amp_thres=cw_amp_thres, use_carrier_waves=use_carrier_waves, nTimeIntervals=nTimeIntervals, zeroCtrlBC=zeroCtrlBC)
 
@@ -25,22 +25,17 @@ Ntot = params.Ntot
 # Test non-zero Lagrange multipliers
 if params.nTimeIntervals > 1
     for q = 1:params.nTimeIntervals-1
-        params.Lmult_r[q] = rand(Ntot, Ntot) # zeros(Ntot, Ntot) # 
-        params.Lmult_i[q] = rand(Ntot, Ntot)
+        params.Lmult_r[q] = zeros(Ntot, Ntot) # rand(Ntot, Ntot) # zeros(Ntot, Ntot) # 
+        params.Lmult_i[q] = zeros(Ntot, Ntot) # rand(Ntot, Ntot)
     end
-else
-    # Only for testing the Lagrange multiplier term
-    params.Lmult_r = Vector{Matrix{Float64}}(undef, 1)
-    params.Lmult_i = Vector{Matrix{Float64}}(undef, 1)
-    params.Lmult_r[1] = rand(Ntot, Ntot)
-    params.Lmult_i[1] = rand(Ntot, Ntot)
 end
 
 println("Setup completed\n")
 
-nCallLagrange = 0
+params.objThreshold = -9999.9
+params.traceInfidelityThreshold = -9999.9
 
 println("Calling run_optimizer for derivative check")
-pcof = run_optimizer(params, pcof0, maxAmp, maxIter=0, derivative_test=true)
+pcof = run_optimizer(params, pcof0, maxAmp, maxIter=100, derivative_test=true)
 
-println("IPOpt test completed")
+println("IPOpt completed")

@@ -201,8 +201,6 @@ function control_bounds(params::objparams, maxAmp::Vector{Float64})
         zero_start_end!(Nctrl, Nfreq, D1, minCoeff, maxCoeff) # maxCoeff stores the bounds for the controls amplitudes (zero at the boundary)
     end
 
-    #println("Number of coefficients per spline = ", D1, " Total number of parameters = ", nCoeff)
-
     return minCoeff, maxCoeff
 end
 

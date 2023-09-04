@@ -288,7 +288,7 @@ mutable struct objparams
                        objFuncType:: Int64 = 1, leak_ubound:: Float64=1.0e-3,
                        use_sparse::Bool = false, use_custom_forbidden::Bool = false,
                        linear_solver::lsolver_object = lsolver_object(nrhs=prod(Ne)), msb_order::Bool = true,
-                       dVds::Array{ComplexF64,2}= Array{ComplexF64}(undef,0,0), freq01::Vector{Float64} = Vector{Float64}[], self_kerr::Vector{Float64} = Vector{Float64}[], couple_coeff::Vector{Float64} = Vector{Float64}[], couple_type::Int64 = 0,zeroCtrlBC::Bool = true, nTimeIntervals::Int64=1, gammaJump::Float64=0.1)
+                       dVds::Array{ComplexF64,2}= Array{ComplexF64}(undef,0,0), freq01::Vector{Float64} = Vector{Float64}[], self_kerr::Vector{Float64} = Vector{Float64}[], couple_coeff::Vector{Float64} = Vector{Float64}[], couple_type::Int64 = 0, zeroCtrlBC::Bool = true, nTimeIntervals::Int64=1, gammaJump::Float64=0.1)
         pFidType = 2 # Std gate infidelity
         Nosc   = length(Ne) # number of subsystems
         N      = prod(Ne)
@@ -1001,24 +1001,22 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
 
     if verbose
         println("lagrange_obj_grad: Vector dim Ntot =", p.Ntot , ", Guard levels Nguard = ", p.Nguard , ", Param dim, Psize = ", p.nCoeff, ", Spline coeffs per func, D1= ", p.D1, " Tikhonov coeff: ", p.tik0)
+        if evaladjoint
+            if p.nCoeff > p.nAlpha
+                println("Objective depends on W-initial conditions, nIntervals = ", p.nTimeIntervals)
+                if p.kpar <= p.nAlpha
+                    println("kpar = ", p.kpar, " corresponds to a B-spline coefficient")
+                else
+                    println("kpar = ", p.kpar, " corresponds to intermediate initial conditions")
+                end
+            else
+                println("Objective does NOT depend on W, nIntervals = ", p.nTimeIntervals)
+            end
+        end
     end
 
     # initializations start here
     alpha = pcof0[1:p.nAlpha] # extract the B-spline-coefficients
-
-    hasW::Bool = p.nCoeff > p.nAlpha
-    if hasW
-        println("Objective depends on W-initial conditions, nIntervals = ", p.nTimeIntervals)
-        if p.kpar <= p.nAlpha
-            println("kpar = ", p.kpar, " corresponds to a B-spline coefficient")
-        # else
-            # test index gymnastics
-            #     interv, real_imag, row, col = get_Winit_index(p, p.kpar, true)
-        end
-
-    else
-        println("Objective does NOT depend on W, nIntervals = ", p.nTimeIntervals)
-    end 
 
     # setup splinepar
     if p.use_bcarrier
@@ -1032,6 +1030,7 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
 
     if verbose
         println("Final time: ", p.T, ", total number of time steps: " , p.nsteps , ", time step: " , dt )
+        println("lagrange_objgrad: length(pcof) =  ", length(pcof0), " nAlpha = ", p.nAlpha, " nWinit = ", p.nWinit)
     end
     
     # Zero out working arrays
@@ -1046,17 +1045,11 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
     grad_kpar = 0.0
 
     eval1gradient = verbose && evaladjoint # for testing the adjoint gradient
-    # figure out if kpar corresponds to a B-spl coeff or a Winit matrix
-    interval_kp, real_imag_kp, row_kp, col_kp = get_Winit_index(p, p.kpar, true)
 
     # Split the time stepping into independent tasks in each time interval
-    println("lagrange_objgrad: length(pcof) =  ", length(pcof0), " nAlpha = ", p.nAlpha, " nWinit = ", p.nWinit)
     for interval = 1:p.nTimeIntervals
         tEnd = p.T0int[interval] + p.Tsteps[interval]*dt # terminal time for this time interval
 
-        if verbose 
-            println("Interval # ", interval)
-        end
         if interval == 1
             # initial conditions from Uinit (fixed)
             Winit_r = p.Uinit_r
@@ -1088,8 +1081,8 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
         scomplex0 = tracefidcomplex(Uend_r, Uend_i, p.Utarget_r, p.Utarget_i) # scaled by 1/N
 
         if eval1gradient # test 1 component of the gradient
-            # dUda_r = res[3]
-            # dUda_i = res[4]
+            # figure out if kpar corresponds to a B-spl coeff or a Winit matrix
+            interval_kp, real_imag_kp, row_kp, col_kp = get_Winit_index(p, p.kpar, true)
 
             # Then account for the initial conditions for this time interval
             dUda_r = (reInitOp[3] * Winit_r + imInitOp[3] * Winit_i)
@@ -1203,13 +1196,14 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
             # Jump in state at the end of interval k equals C^k = Uend^k - Wend^k (Ntot x Ntot matrices)
             # evaluate continuity constraint (Frobenius norm squared of mismatch)
             cont_2 = 0.5*p.gammaJump * (norm( Cjump_r )^2 + norm( Cjump_i )^2)
-            println("Continuity jump (norm2) = ", cont_2)
 
             objf += cont_2 # accumulate contributions to the augemnted Lagrangian
 
             # println("Sizes: p.Lmult_r = ", size(p.Lmult_r[interval]), " Uend_r = ", size(Uend_r), " Wend_r = ", size(Wend_r))
             Lmult_cont = -p.N*real(tracefidcomplex(p.Lmult_r[interval], p.Lmult_i[interval], Cjump_r, Cjump_i))
-            println("(Lagrange multiplier) x (continuity jump) = ", Lmult_cont)
+            if verbose
+                println("Interval # ", interval, " Continuity jump (norm2) = ", cont_2, " (Lagrange multiplier) x (continuity jump) = ", Lmult_cont)
+            end
             
             objf += Lmult_cont # accumulate contributions to the augemnted Lagrangian
 
@@ -1240,12 +1234,15 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
                         # real part: vectorize over 'row'
                         s_rp = reInitOp[1]
                         s_ip = reInitOp[2]
-                        objf_grad[offc_r + (col-1)*p.N + 1: offc_r + (col-1)*p.N + p.N] += p.gammaJump*( s_rp' * c_rq + s_ip' * c_iq) - ( s_rp' * la_rq + s_ip' * la_iq) 
+                        objf_grad[offc_r + 1: offc_r + p.N] += p.gammaJump*( s_rp' * c_rq + s_ip' * c_iq) - ( s_rp' * la_rq + s_ip' * la_iq) 
                         
                         # imaginary part: vectorize over row
                         s_rp = imInitOp[1]
                         s_ip = imInitOp[2]
-                        objf_grad[offc_i + (col-1)*p.N + 1: offc_i + (col-1)*p.N + p.N] += p.gammaJump*( s_rp' * c_rq + s_ip' * c_iq) - ( s_rp' * la_rq + s_ip' * la_iq)
+                        objf_grad[offc_i + 1: offc_i + p.N] += p.gammaJump*( s_rp' * c_rq + s_ip' * c_iq) - ( s_rp' * la_rq + s_ip' * la_iq)
+
+                        offc_r += p.N
+                        offc_i += p.N
                     end # for col
                 end # if interval >= 2
 
@@ -1278,10 +1275,12 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
             end
         else # final time interval
             traceInfid = (1.0-tracefidabs2(Uend_r, Uend_i, p.Utarget_r, p.Utarget_i))
-             
-            # AP disable while testing
+            
             objf += traceInfid
-            println("Infidelity = ", traceInfid)
+            
+            if verbose
+                println("Interval # ", interval, " Infidelity = ", traceInfid)
+            end 
 
             if evaladjoint
                 # Gradient of infidelity
@@ -1337,15 +1336,14 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
     # println("Tikhonov penalty = ", tp)
 
     if verbose
-        println("Results from lagrange_objgrad():")
-        println("Augmented Lagrangian = ", objf)
+        println("lagrange_objgrad():, objf = ", objf)
     end
 
     if evaladjoint
         if eval1gradient
             println("kpar = ", p.kpar, " adjointGrad[kpar] = ", objf_grad[p.kpar], " Fwd grad_kpar = ", grad_kpar, " diff = ", grad_kpar - objf_grad[p.kpar])
         end
-        return objf, objf_grad # need to allocate(?) objf_grad
+        return objf, copy(objf_grad) # ipopt interface requires a copy of objf_grad?
     else
         return objf
     end
@@ -1645,9 +1643,9 @@ function zero_start_end!(params::objparams, D1:: Int64, minCoeff:: Array{Float64
     Nunc = params.Nunc
     # nCoeff = 2*Ncoupled*Nfreq*D1
     NfreqTot = sum(Nfreq) # not used
-    nCoeff = 2*D1*NfreqTot # not used
+    nAlpha = 2*D1*NfreqTot # not used
 
-#    @printf("Ncoupled = %d, Nfreq = %d, D1 = %d, nCoeff = %d\n", Ncoupled, Nfreq, D1, nCoeff)
+    @printf("zero_start_end!(): Ncoupled = %d, Nfreq = %d, D1 = %d, nAlpha = %d, nCoeff = %d\n", Ncoupled, Nfreq, D1, nAlpha, params.nCoeff)
     baseOffset = 0
     for c in 1:Ncoupled+Nunc  # We assume that either Nunc = 0 or Ncoupled = 0
         for f in 1:Nfreq[c]
@@ -1737,7 +1735,7 @@ function assign_thresholds_ctrl_freq(params::objparams, maxAmp:: Vector{Vector{F
     minCoeff = zeros(nCoeff) # Initialize storage
     maxCoeff = zeros(nCoeff)
 
-#    @printf("Ncoupled = %d, Nfreq = %d, D1 = %d, nAlpha = %d\n", Ncoupled, Nfreq, D1, nAlpha)
+    # @printf("assign_thresholds Ncoupled = %d, Nfreq = %d, D1 = %d, nAlpha = %d, nCoeff = %d\n", Ncoupled, Nfreq, D1, params.nAlpha, params.nCoeff)
     baseOffset = 0
     for c in 1:Ncoupled  # We assume that either Nunc = 0 or Ncoupled = 0
         for f in 1:Nfreq[c]
@@ -1747,6 +1745,12 @@ function assign_thresholds_ctrl_freq(params::objparams, maxAmp:: Vector{Vector{F
             maxCoeff[offset1 + 1:offset1+2*D1] .= maxAmp[c][f]
         end
         baseOffset += 2*D1*Nfreq[c]
+    end
+
+    if params.nCoeff > params.nAlpha # Box constraints on the intermediate initial conditions
+        wInitBound = 10.0 # Do we need a bound on these elements?
+        maxCoeff[params.nAlpha+1: params.nCoeff] .= wInitBound
+        minCoeff[params.nAlpha+1: params.nCoeff] .= -wInitBound
     end
     return minCoeff, maxCoeff
 end
@@ -1772,7 +1776,8 @@ function assign_thresholds(params::objparams, maxAmp::Vector{Float64})
     minCoeff = zeros(nCoeff) # Initialize storage
     maxCoeff = zeros(nCoeff)
 
-#    @printf("Ncoupled = %d, Nfreq = %d, D1 = %d, nAlpha = %d\n", Ncoupled, Nfreq, D1, nAlpha)
+    #@printf("assign_thresholds: Ncoupled = %d, D1 = %d, nAlpha = %d, nCoeff = %d\n", Ncoupled, D1, params.nAlpha, params.nCoeff)
+
     baseOffset = 0
     for c in 1:Ncoupled  # We assume that either Nunc = 0 or Ncoupled = 0
         for f in 1:Nfreq[c]
@@ -1784,6 +1789,13 @@ function assign_thresholds(params::objparams, maxAmp::Vector{Float64})
         end
         baseOffset += 2*D1*Nfreq[c]
     end
+
+    if params.nCoeff > params.nAlpha # Box constraints on the intermediate initial conditions
+        wInitBound = 1.1 # Do we need a bound on these elements?
+        maxCoeff[params.nAlpha+1: params.nCoeff] .= wInitBound
+        minCoeff[params.nAlpha+1: params.nCoeff] .= -wInitBound
+    end
+
     return minCoeff, maxCoeff
 end
 

@@ -268,6 +268,53 @@ function eval_grad_f_par1(pcof::Vector{Float64}, grad_f::Vector{Float64}, params
 
 end
 
+
+# for objFuncType == 1, intermediate initial conditions (no leak term and no qudrature)
+function eval_f_par2(pcof::Vector{Float64}, params:: Juqbox.objparams)
+
+    f = Juqbox.lagrange_objgrad(pcof, params, false, false)
+
+    params.lastTraceInfidelity = f
+    params.lastLeakIntegral = 0.0
+
+    # debugging
+    # println(pcof)
+    # throw("Intentionally stopping here")
+    
+    # Add in Tikhonov regularization
+    #tikhonovpenalty = Juqbox.tikhonov_pen(pcof, params)
+
+    return f #.+ tikhonovpenalty
+  end
+
+  # for objFuncType == 1, intermediate initial conditions (no leak term)
+function eval_grad_f_par2(pcof::Vector{Float64}, grad_f::Vector{Float64}, params:: Juqbox.objparams)
+
+    grad_f .= 0.0 # initialize gradient storage
+    
+    f1, totalgrad = Juqbox.lagrange_objgrad(pcof, params, false, true)
+    axpy!(1.0, totalgrad, grad_f) # AP: why is this needed? By directly assigning grad_f, the calling function reports grad_f = 0 ????
+
+    # debugging
+    # println(pcof)
+    # throw("Intentionally stopping here")
+    
+    params.lastTraceInfidelity = f1
+    params.lastLeakIntegral = 0.0
+
+    # Add in Tikhonov regularization gradient term
+    #wa = params.wa # use pre-allocated storage
+    #wa.gr .= 0.0
+    #Juqbox.tikhonov_grad!(pcof, params, wa.gr)  
+    #axpy!(1.0, wa.gr, grad_f)
+
+    # Save intermediate parameter vectors
+    if params.save_pcof_hist
+        push!(params.pcof_hist, copy(pcof)) #pcof_hist is an Array of Vector{Float64}
+    end
+    return true
+end
+
 function eval_g_empty(pcof::Vector{Float64}, g::Vector{Float64})
     return nothing
     #g[1] = 0.0
@@ -362,7 +409,8 @@ function ipopt_setup(params:: Juqbox.objparams, nCoeff:: Int64, maxAmp:: Vector{
                     intermediate_par(alg_mod, iter_count, obj_value, inf_pr, inf_du, mu,
                                     d_norm, regularization_size, alpha_du, alpha_pr, ls_trials, params)
 
-
+    #testing
+    #println("ipopt_setup(): params.objFuncType = ", params.objFuncType, " #intervals = ", params.nTimeIntervals)
 
     if params.objFuncType == 3
         # treat the leakage as an inequality constraint
@@ -391,19 +439,30 @@ function ipopt_setup(params:: Juqbox.objparams, nCoeff:: Int64, maxAmp:: Vector{
         
         # setup the Ipopt data structure
         prob = CreateIpoptProblem( nCoeff, minCoeff, maxCoeff, nconst, g_L, g_U, nEleJac, nEleHess, eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h);
-    else
+    else # params.objFuncType = 1 (add infidelity and leakage in the objective) 
         nconst = 0
         nEleJac = 0
         nEleHess = 0
         g_L = zeros(0);
         g_U = zeros(0);
 
-        # callback functions need access to the params object
-        eval_f1(pcof) = eval_f_par1(pcof, params, nodes, weights)
-        eval_grad_f1(pcof, grad_f) = eval_grad_f_par1(pcof,grad_f, params, nodes, weights)
-        
-        # setup the Ipopt data structure
-        prob = CreateIpoptProblem( nCoeff, minCoeff, maxCoeff, nconst, g_L, g_U, nEleJac, nEleHess, eval_f1, eval_g_empty, eval_grad_f1, eval_jac_g_empty, eval_h);
+        if (params.nTimeIntervals == 1) # Minimize the infidelity + leakage; no intermediate initial conditions
+            # println("ipopt_setup: using eval_grad_f_par1, # timeIntervals = ", params.nTimeIntervals)
+            # callback functions need access to the params object
+            eval_f1(pcof) = eval_f_par1(pcof, params, nodes, weights)
+            eval_grad_f1(pcof, grad_f) = eval_grad_f_par1(pcof, grad_f, params, nodes, weights)
+            
+            # setup the Ipopt data structure
+            prob = CreateIpoptProblem( nCoeff, minCoeff, maxCoeff, nconst, g_L, g_U, nEleJac, nEleHess, eval_f1, eval_g_empty, eval_grad_f1, eval_jac_g_empty, eval_h);
+        else # minimize the augmented lagrangian: infidelity + 0.5*gammaJump|| Cjump ||^2_F
+            # println("ipopt_setup: using eval_grad_f_par2, # timeIntervals = ", params.nTimeIntervals)
+            # callback functions need access to the params object
+            eval_f2(pcof) = eval_f_par2(pcof, params)
+            eval_grad_f2(pcof, grad_f) = eval_grad_f_par2(pcof, grad_f, params)
+            
+            # setup the Ipopt data structure
+            prob = CreateIpoptProblem( nCoeff, minCoeff, maxCoeff, nconst, g_L, g_U, nEleJac, nEleHess, eval_f2, eval_g_empty, eval_grad_f2, eval_jac_g_empty, eval_h);
+        end
     end
 
 
@@ -518,6 +577,9 @@ function run_optimizer(params:: objparams, pcof0:: Vector{Float64}, maxAmp:: Vec
     # start by setting up the Ipopt object: prob
     #println("Ipopt initialization timing:")
     #@time 
+
+    println("run_optimizer: length(pcof0) = ", length(pcof0))
+
     prob = Juqbox.ipopt_setup(params, length(pcof0), maxAmp, maxIter=maxIter, lbfgsMax=lbfgsMax, coldStart=coldStart, ipTol=ipTol, acceptTol=acceptTol, acceptIter=acceptIter, nodes=nodes, weights=weights)
 
     AddIpoptIntOption(prob, "print_level", print_level)
