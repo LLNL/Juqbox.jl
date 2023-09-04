@@ -1214,7 +1214,7 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
             objf += Lmult_cont # accumulate contributions to the augemnted Lagrangian
 
             if evaladjoint            
-                # gradient wrt Winit^{(interval)} 
+                # gradient wrt Winit^{(interval)} through Cjump = Uend - Winit
                 ws_grad = zeros(p.nCoeff) # workspace
                 # contribution to gradient wrt Winit^{(interval)} from Wend in Cjump and Lmult
                 offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
@@ -1224,10 +1224,31 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
                 
                 objf_grad += ws_grad # accumulate total gradient
 
-                if interval >= 2 # gradient wrt Winit^{(interval - 1)} from initial condition for (Uend_r, Uend_i)
-                    offc = p.nAlpha + (interval-2)*p.nWinit # for interval = 2 the offset should be nAlpha
-                    println("interval = ", interval, " Enter gradient wrt Winit(interval-1)")
-                end
+                if interval >= 2 # gradient wrt Winit^{(interval - 1)} through initial condition for (Uend_r, Uend_i)
+                    offc_r = p.nAlpha + (interval-2)*p.nWinit # for interval = 2 the offset should be nAlpha
+                    offc_i = offc_r + nMat
+                    
+                    # p = row, q = col
+                    for col in 1:p.N
+                        c_rq = Cjump_r[:, col]
+                        c_iq = Cjump_i[:, col]
+                        la_rq = p.Lmult_r[interval][:, col]
+                        la_iq = p.Lmult_i[interval][:, col]
+                        # dependence through initial condition 
+                        # Cjump^{interval} = U^{interval}(W^{interval - 1}) - W^{interval}
+                         
+                        # real part: vectorize over 'row'
+                        s_rp = reInitOp[1]
+                        s_ip = reInitOp[2]
+                        objf_grad[offc_r + (col-1)*p.N + 1: offc_r + (col-1)*p.N + p.N] += p.gammaJump*( s_rp' * c_rq + s_ip' * c_iq) - ( s_rp' * la_rq + s_ip' * la_iq) 
+                        
+                        # imaginary part: vectorize over row
+                        s_rp = imInitOp[1]
+                        s_ip = imInitOp[2]
+                        objf_grad[offc_i + (col-1)*p.N + 1: offc_i + (col-1)*p.N + p.N] += p.gammaJump*( s_rp' * c_rq + s_ip' * c_iq) - ( s_rp' * la_rq + s_ip' * la_iq)
+                    end # for col
+                end # if interval >= 2
+
                 # End gradient wrt Wend 
 
                 # gradient wrt alpha (B-spline coefficients)
@@ -1255,8 +1276,7 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
                     println("Fwd grad_kpar = ", grad_kpar, " adjoint_grad_kpar = ", objf_grad[p.kpar], " diff = ", grad_kpar - objf_grad[p.kpar])
                 end
             end
-        else
-            # final time interval
+        else # final time interval
             traceInfid = (1.0-tracefidabs2(Uend_r, Uend_i, p.Utarget_r, p.Utarget_i))
              
             # AP disable while testing
@@ -1264,7 +1284,36 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
             println("Infidelity = ", traceInfid)
 
             if evaladjoint
-                # adjoint gradient of infidelity
+                # Gradient of infidelity
+
+                # Gradient wrt Winit^{interval -  1} through initial condition for Uend
+                offc_r = p.nAlpha + (interval-2)*p.nWinit # for interval = 2 the offset should be nAlpha
+                offc_i = offc_r + nMat
+
+                # p = row, q = col
+                for col in 1:p.N
+                    v_rq = p.Utarget_r[:, col]
+                    v_iq = p.Utarget_i[:, col]
+                     
+                    # real part: vectorize over 'row'
+                    s_rp = reInitOp[1]
+                    s_ip = reInitOp[2]
+                    sW1 = (s_rp' * v_rq + s_ip' * v_iq) + im*( s_rp' * v_iq - s_ip' * v_rq )
+                        
+                    objf_grad[offc_r + 1: offc_r + p.N] += -2*real( conj(scomplex0) * sW1 )/p.N
+                    
+                    # imaginary part: vectorize over row
+                    s_rp = imInitOp[1]
+                    s_ip = imInitOp[2]
+                    sW1 = (s_rp' * v_rq + s_ip' * v_iq) + im*( s_rp' * v_iq - s_ip' * v_rq )
+                    
+                    objf_grad[offc_i + 1: offc_i + p.N] += -2*real( conj(scomplex0) * sW1 )/p.N
+
+                    offc_r += p.N
+                    offc_i += p.N
+                end # for col
+
+                # gradient wrt alpha (B-spline coefficients)
                 Amat = -2*conj(scomplex0) * (p.Utarget_r + im*p.Utarget_i)/p.N # for infidelity gradient
                 # Calculate gradients
                 infidGrad = adjoint_gradient(p, splinepar, tEnd, p.Tsteps[interval], Uend_r, Uend_i, real(Amat), imag(Amat))

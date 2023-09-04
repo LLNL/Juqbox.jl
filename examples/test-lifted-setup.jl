@@ -40,7 +40,7 @@ end
 # for 2 intervals with D1=22 try 5, 15
 # for 2 intervals and the grad wrt W, try kpar in [177, 208]
 # for 3 intervals, Winit^{(1)} has index [177, 208], for Winit^{(2)} add 32
-params.kpar = 178 # 178, 178 + 16, 178 + 32 # test this component of the gradient
+params.kpar = 178 + 32 +16 + 8# 178, 178 + 16, 178 + 32 # test this component of the gradient
 
 println("Setup completed\n")
 println("Calling lagrange_objgrad for total objective and gradient")
