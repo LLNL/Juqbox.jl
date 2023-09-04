@@ -39,8 +39,8 @@ end
 # for 3 intervals with D1=22 try 3, 9, 15, 18
 # for 2 intervals with D1=22 try 5, 15
 # for 2 intervals and the grad wrt W, try kpar in [177, 208]
-# for 3 intervals, Winit^{(1)} has in [177, 208], for Winit^{(2)} add 32
-params.kpar = 178 +16 # 178, 178 + 16, 178 + 32 # test this component of the gradient
+# for 3 intervals, Winit^{(1)} has index [177, 208], for Winit^{(2)} add 32
+params.kpar = 178 # 178, 178 + 16, 178 + 32 # test this component of the gradient
 
 println("Setup completed\n")
 println("Calling lagrange_objgrad for total objective and gradient")
@@ -61,5 +61,5 @@ obj_m = lagrange_objgrad(pcof_m, params, true, false)
 obj_grad_fd = 0.5*(obj_p - obj_m)/pert
 println()
 println("FD testing of the gradient")
-println("kpar = ", params.kpar, " obj_grad_fd = ", obj_grad_fd, " fd - adj = ", obj_grad_fd - total_grad[params.kpar])
+println("kpar = ", params.kpar, " obj_grad_fd = ", obj_grad_fd, " obj_grad_adj = ", total_grad[params.kpar], " fd - adj = ", obj_grad_fd - total_grad[params.kpar])
 # println("Setup complete")
