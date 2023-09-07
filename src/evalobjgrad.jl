@@ -982,16 +982,36 @@ function get_Winit_index(p::objparams, kpar::Int64, verbose::Bool = false)
 end
 
 #########################################################
+function get_pcof_index(p::objparams, interv::Int64, real_imag0::Int64, row::Int64, col::Int64, verbose::Bool = false)
+    # initial conditions from pcof0 (determined by optimization)
+    offc_r = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the starting offset should be nAlpha
+    # println("offset 1 = ", offc)
+    nMat = p.Ntot^2
+    
+    offc_i = offc_r + nMat
+
+    if real_imag0 == 0
+        p_idx = offc_r + (col-1)*p.Ntot + row
+    else
+        p_idx = offc_i + (col-1)*p.Ntot + row
+    end
+
+    if p_idx > p.nCoeff || p_idx <= p.nAlpha
+        prinln("Error: get_pcof_index: p_idx = ", p_idx, " is out of bounds for interv = ", interv, " real_imag0 = ", real_imag0, " row = ", row, " col = ", col)
+        throw("p_idx is out of bounds")
+    end
+
+    return p_idx
+end
+
+#########################################################
 #
 # Augmented Lagrange method with multiple time intervals
-# Evaluate the infidelity and all continuity constraints
+# Evaluate the infidelity, all continuity penalty terms
+# and all Lagrange multiplier terms
 #
 #########################################################
 function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool = true, evaladjoint::Bool = false)
-    ###############
-    # TODO: add in the term <lambda, (Uend - W)>_F
-    ###############
-
     # shortcut to working_arrays object in p::objparams
     w = p.wa
 
@@ -1494,6 +1514,96 @@ function adjoint_gradient(p::objparams, splinepar::BsplineParams, tEnd::Float64,
 end
 
 ##################################################
+#  Evaluate non-linear (quadratic) constraints for unitary initial conditions
+##################################################
+function unitary_constraints(pcof0::Vector{Float64}, e_con::Vector{Float64}, p::objparams, verbose::Bool = true)
+    if p.nTimeIntervals == 1
+        # No constraints
+        return
+    end
+
+    e_con .= 0.0
+
+    if verbose
+        println("unitary_constraints: # time intervals = ", p.nTimeIntervals, " length(pcof) =  ", length(pcof0), " nAlpha = ", p.nAlpha, " nWinit = ", p.nWinit)
+        
+        if p.nCoeff > p.nAlpha
+            println("Objective depends on W-initial conditions, nIntervals = ", p.nTimeIntervals)
+        else
+            println("Objective does NOT depend on W, nIntervals = ", p.nTimeIntervals)
+        end
+    end
+
+    for interval = 1:p.nTimeIntervals-1
+        println("Interval # ", interval)
+        # get initial condition offset in pcof0 array
+        offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
+        nMat = p.Ntot^2
+        W_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+        offc += nMat
+        W_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+
+        # offset in e_con
+        eoff = (interval-1)*p.Ntot^2
+        
+        for q_col in 1:p.Ntot
+            p_row = q_col
+            eoff += 1
+            e_con[eoff] = W_r[:,p_row]' * W_r[:,q_col] + W_i[:,p_row]' * W_i[:,q_col] - 1.0 # diagonal
+            for p_row in q_col+1:p.Ntot
+                eoff += 1
+                e_con[eoff] = W_r[:,p_row]' * W_r[:,q_col] + W_i[:,p_row]' * W_i[:,q_col] # symmetric
+                eoff += 1
+                e_con[eoff] = W_r[:,p_row]' * W_i[:,q_col] - W_i[:,p_row]' * W_r[:,q_col]  # anti-sym
+            end
+        end
+    end # end for interval
+
+end # function unitary_constraints
+
+##################################################
+#  Evaluate Jacobian of the unitary constraints
+##################################################
+function unitary_jacobian(pcof0::Vector{Float64}, jac_e::Vector{Float64}, p::objparams, verbose::Bool = true)
+    if p.nTimeIntervals == 1
+        # No constraints
+        return true
+    end
+
+    nCons = (p.nTimeIntervals - 1) * p.Ntot^2 # Number of constraints
+#     jacobian = zeros(nCons, nCons*(2*p.Ntot - 1))
+#     column = zeros(Int64, nCons, nCons*(2*p.Ntot - 1))
+
+    # for interval = 1:p.nTimeIntervals-1
+    #     println("Interval # ", interval)
+    #     # get initial condition offset in pcof0 array
+    #     offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
+    #     nMat = p.Ntot^2
+    #     W_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+    #     offc += nMat
+    #     W_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+
+    #     # offset in e_con
+    #     eoff = (interval-1)*p.Ntot^2
+        
+    #     for q_col in 1:p.Ntot
+    #         p_row = q_col
+    #         eoff += 1
+    #         e_con[eoff] = W_r[:,p_row]' * W_r[:,q_col] + W_i[:,p_row]' * W_i[:,q_col] - 1.0 # diagonal
+    #         for p_row in q_col+1:p.Ntot
+    #             eoff += 1
+    #             e_con[eoff] = W_r[:,p_row]' * W_r[:,q_col] + W_i[:,p_row]' * W_i[:,q_col] # symmetric
+    #             eoff += 1
+    #             e_con[eoff] = W_r[:,p_row]' * W_i[:,q_col] - W_i[:,p_row]' * W_r[:,q_col]  # anti-sym
+    #         end
+    #     end
+    # end # end for interval
+
+
+     jac_e = vec(jacobian) # in-place return of results
+
+    return nothing
+end # function unitary_jacobian
 
 """
     change_target!(params, new_Utarget)

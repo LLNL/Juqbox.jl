@@ -44,9 +44,6 @@ params.kpar = 3 # 178 + 32 +16 + 8# 178, 178 + 16, 178 + 32 # test this componen
 
 println("Setup completed\n")
 
-# test
-pcof0 = pcof_ip
-
 println("Calling lagrange_objgrad for total objective and gradient")
 obj0, total_grad = lagrange_objgrad(pcof0, params, false, true)
 
