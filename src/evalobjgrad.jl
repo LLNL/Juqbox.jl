@@ -982,7 +982,7 @@ function get_Winit_index(p::objparams, kpar::Int64, verbose::Bool = false)
 end
 
 #########################################################
-function get_pcof_index(p::objparams, interv::Int64, real_imag0::Int64, row::Int64, col::Int64, verbose::Bool = false)
+function get_pcof_index(p::objparams, interval::Int64, real_imag0::Int64, row::Int64, col::Int64, verbose::Bool = false)
     # initial conditions from pcof0 (determined by optimization)
     offc_r = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the starting offset should be nAlpha
     # println("offset 1 = ", offc)
@@ -1522,10 +1522,11 @@ function unitary_constraints(pcof0::Vector{Float64}, e_con::Vector{Float64}, p::
         return
     end
 
+    nCons = length(e_con)
     e_con .= 0.0
 
     if verbose
-        println("unitary_constraints: # time intervals = ", p.nTimeIntervals, " length(pcof) =  ", length(pcof0), " nAlpha = ", p.nAlpha, " nWinit = ", p.nWinit)
+        println("unitary_constraints: # time intervals = ", p.nTimeIntervals, " length(pcof) =  ", length(pcof0), " nAlpha = ", p.nAlpha, " nWinit = ", p.nWinit, " # constraints = ", nCons)
         
         if p.nCoeff > p.nAlpha
             println("Objective depends on W-initial conditions, nIntervals = ", p.nTimeIntervals)
@@ -1534,30 +1535,33 @@ function unitary_constraints(pcof0::Vector{Float64}, e_con::Vector{Float64}, p::
         end
     end
 
+    cons_idx = 0 # row number in e_con
     for interval = 1:p.nTimeIntervals-1
-        println("Interval # ", interval)
+        if verbose
+            println("Interval # ", interval)
+        end
         # get initial condition offset in pcof0 array
         offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
         nMat = p.Ntot^2
         W_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
         offc += nMat
         W_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
-
-        # offset in e_con
-        eoff = (interval-1)*p.Ntot^2
         
-        for q_col in 1:p.Ntot
-            p_row = q_col
-            eoff += 1
-            e_con[eoff] = W_r[:,p_row]' * W_r[:,q_col] + W_i[:,p_row]' * W_i[:,q_col] - 1.0 # diagonal
-            for p_row in q_col+1:p.Ntot
-                eoff += 1
-                e_con[eoff] = W_r[:,p_row]' * W_r[:,q_col] + W_i[:,p_row]' * W_i[:,q_col] # symmetric
-                eoff += 1
-                e_con[eoff] = W_r[:,p_row]' * W_i[:,q_col] - W_i[:,p_row]' * W_r[:,q_col]  # anti-sym
+        for q_col in 1:p.Ntot # 1:1 # 1:p.Ntot
+            cons_idx += 1
+            e_con[cons_idx] = W_r[:, q_col]' * W_r[:,q_col] + W_i[:,q_col]' * W_i[:,q_col] - 1.0 # diagonal
+            for p_row in q_col+1:p.Ntot # q_col+1:q_col+1 # q_col+1:p.Ntot
+                cons_idx += 1
+                e_con[cons_idx] = W_r[:,p_row]' * W_r[:,q_col] + W_i[:,p_row]' * W_i[:,q_col] # symmetric
+                cons_idx += 1
+                e_con[cons_idx] = W_r[:,p_row]' * W_i[:,q_col] - W_i[:,p_row]' * W_r[:,q_col]  # anti-sym
             end
         end
     end # end for interval
+
+    if verbose
+        println("# assigned constraints = ", cons_idx, " length(e_con) = ", length(e_con))
+    end
 
 end # function unitary_constraints
 
@@ -1567,44 +1571,257 @@ end # function unitary_constraints
 function unitary_jacobian(pcof0::Vector{Float64}, jac_e::Vector{Float64}, p::objparams, verbose::Bool = true)
     if p.nTimeIntervals == 1
         # No constraints
-        return true
+        return nothing
     end
 
-    nCons = (p.nTimeIntervals - 1) * p.Ntot^2 # Number of constraints
-#     jacobian = zeros(nCons, nCons*(2*p.Ntot - 1))
-#     column = zeros(Int64, nCons, nCons*(2*p.Ntot - 1))
-
-    # for interval = 1:p.nTimeIntervals-1
-    #     println("Interval # ", interval)
-    #     # get initial condition offset in pcof0 array
-    #     offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
-    #     nMat = p.Ntot^2
-    #     W_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
-    #     offc += nMat
-    #     W_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
-
-    #     # offset in e_con
-    #     eoff = (interval-1)*p.Ntot^2
+    cons_idx = 0 # constraint number = row index in Jacobian
+    nJac = 0 # index in rows, cols, jac_e for one Jacobinan element
+    for interval = 1:p.nTimeIntervals-1
+        if verbose
+            println("Interval # ", interval)
+        end
+        # get initial condition offset in pcof0 array
+        offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
+        nMat = p.Ntot^2
+        W_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+        offc += nMat
+        W_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
         
-    #     for q_col in 1:p.Ntot
-    #         p_row = q_col
-    #         eoff += 1
-    #         e_con[eoff] = W_r[:,p_row]' * W_r[:,q_col] + W_i[:,p_row]' * W_i[:,q_col] - 1.0 # diagonal
-    #         for p_row in q_col+1:p.Ntot
-    #             eoff += 1
-    #             e_con[eoff] = W_r[:,p_row]' * W_r[:,q_col] + W_i[:,p_row]' * W_i[:,q_col] # symmetric
-    #             eoff += 1
-    #             e_con[eoff] = W_r[:,p_row]' * W_i[:,q_col] - W_i[:,p_row]' * W_r[:,q_col]  # anti-sym
-    #         end
-    #     end
-    # end # end for interval
+        for q_col in 1:p.Ntot # 1:1 # 1:p.Ntot
+            cons_idx += 1
+            # diagonal
+            # e_con[cons_idx] = W_r[:,q_col]' * W_r[:,q_col] + W_i[:,q_col]' * W_i[:,q_col] - 1.0 
+            nJac0 = nJac
+            # loop over all elements in W_r[:,q_col] and W_i[:,q_col]
+            for j in 1:p.Ntot
+                nJac += 1
+                #println("diag col real = ", nJac)
+                pcof_idx = get_pcof_index(p, interval, 0, j, q_col, verbose) # 0 for real part of W
+                # rows[nJac] = cons_idx
+                # cols[nJac] = pcof_idx
+                jac_e[nJac] = 2*W_r[j, q_col] # wrt W_r[j,q_col]
+                
+                nJac += 1
+                #println("diag col imag = ", nJac)
+                pcof_idx = get_pcof_index(p, interval, 1, j, q_col, verbose) # 1 for imag part of W
+                # rows[nJac] = cons_idx
+                # cols[nJac] = pcof_idx
+                jac_e[nJac] = 2*W_i[j, q_col] # wrt W_i[j,q_col]
+            end
+            # off-diagonals
+            for p_row in q_col+1:p.Ntot # q_col+1:q_col+1 # q_col+1:p.Ntot
+                cons_idx += 1
+                # symmetric
+                # e_con[cons_idx] = W_r[:,p_row]' * W_r[:,q_col] + W_i[:,p_row]' * W_i[:,q_col]
 
+                # loop over all elements in W_r[:,p_row], W_r[:,q_col], W_i[:,p_row] and W_i[:,q_col]
+                for j in 1:p.Ntot
+                    nJac += 1
+                    #println("sym col imag = ", nJac)
+                    pcof_idx = get_pcof_index(p, interval, 0, j, q_col, verbose) # 0 for real: wrt W_r[j,q_col] 
+                    # rows[nJac] = cons_idx
+                    # cols[nJac] = pcof_idx
+                    jac_e[nJac] = W_r[j, p_row]
 
-     jac_e = vec(jacobian) # in-place return of results
+                    nJac += 1
+                    #println("sym col imag = ", nJac)
+                    pcof_idx = get_pcof_index(p, interval, 0, j, p_row, verbose) # 0 for real: wrt W_r[j,p_row]
+                    # rows[nJac] = cons_idx
+                    # cols[nJac] = pcof_idx
+                    jac_e[nJac] = W_r[j, q_col]
+                    
+                    nJac += 1
+                    #println("sym col imag = ", nJac)
+                    pcof_idx = get_pcof_index(p, interval, 1, j, q_col, verbose) # 1 for imag: wrt W_i[j, q_col]
+                    # rows[nJac] = cons_idx
+                    # cols[nJac] = pcof_idx
+                    jac_e[nJac] = W_i[j, p_row]
+
+                    nJac += 1
+                    #println("sym col imag = ", nJac)
+                    pcof_idx = get_pcof_index(p, interval, 1, j, p_row, verbose) # 1 for imag: wrt W_i[j, p_row]
+                    # rows[nJac] = cons_idx
+                    # cols[nJac] = pcof_idx
+                    jac_e[nJac] = W_i[j, q_col]
+                end
+                cons_idx += 1
+                # anti-sym
+                # e_con[cons_idx] = W_r[:,p_row]' * W_i[:,q_col] - W_i[:,p_row]' * W_r[:,q_col] 
+
+                # loop over all elements in W_r[:,p_row], W_r[:,q_col], W_i[:,p_row] and W_i[:,q_col]
+                for j in 1:p.Ntot
+                    nJac += 1
+                    #println("anti col imag = ", nJac)
+                    pcof_idx = get_pcof_index(p, interval, 0, j, q_col, verbose) # 0 for real: wrt W_r[j,q_col] 
+                    # rows[nJac] = cons_idx
+                    # cols[nJac] = pcof_idx
+                    jac_e[nJac] = -W_i[j, p_row]
+
+                    nJac += 1
+                    #println("anti col imag = ", nJac)
+                    pcof_idx = get_pcof_index(p, interval, 0, j, p_row, verbose) # 0 for real: wrt W_r[j,p_row]
+                    # rows[nJac] = cons_idx
+                    # cols[nJac] = pcof_idx
+                    jac_e[nJac] = W_i[j, q_col]
+                    
+                    nJac += 1
+                    #println("anti col imag = ", nJac)
+                    pcof_idx = get_pcof_index(p, interval, 1, j, q_col, verbose) # 1 for imag: wrt W_i[j, q_col]
+                    # rows[nJac] = cons_idx
+                    # cols[nJac] = pcof_idx
+                    jac_e[nJac] = W_r[j, p_row]
+
+                    nJac += 1
+                    #println("anti col imag = ", nJac)
+                    pcof_idx = get_pcof_index(p, interval, 1, j, p_row, verbose) # 1 for imag: wrt W_i[j, p_row]
+                    # rows[nJac] = cons_idx
+                    # cols[nJac] = pcof_idx
+                    jac_e[nJac] = -W_r[j, q_col]
+                end
+            end
+            if verbose
+                println("q_col = ", q_col, " added ", nJac - nJac0, " elements to the Jacobian")
+            end
+        end # for q_col
+    end # end for interval
+
+    if verbose
+        nCons = (p.nTimeIntervals - 1) * p.Ntot^2 # Total number of constraints
+        println("# assigned constraints = ", cons_idx, " nCons = ", nCons)
+        println("# assigned Jacobian elements = ", nJac, " length(jac_e) = ", length(jac_e))
+    end
 
     return nothing
 end # function unitary_jacobian
 
+##################################################
+#  Get row/col indexing for the Jacobian of the unitary constraints
+##################################################
+function unitary_jacobian_idx(rows::Vector{Int32}, cols::Vector{Int32}, p::objparams, verbose::Bool = true)
+    if p.nTimeIntervals == 1
+        # No constraints
+        return nothing
+    end
+
+    cons_idx = 0 # constraint number = row index in Jacobian
+    nJac = 0 # index in rows, cols, jac_e for one Jacobinan element
+    for interval = 1:p.nTimeIntervals-1
+        if verbose
+            println("Interval # ", interval)
+        end
+        # get initial condition offset in pcof0 array
+        # offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
+        # nMat = p.Ntot^2
+        # W_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+        # offc += nMat
+        # W_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+        
+        for q_col in 1:p.Ntot # 1:1 # 1:p.Ntot
+            cons_idx += 1
+            # diagonal
+            # e_con[cons_idx] = W_r[:,q_col]' * W_r[:,q_col] + W_i[:,q_col]' * W_i[:,q_col] - 1.0 
+            nJac0 = nJac
+            # loop over all elements in W_r[:,q_col] and W_i[:,q_col]
+            for j in 1:p.Ntot
+                nJac += 1
+                #println("diag col real = ", nJac)
+                pcof_idx = get_pcof_index(p, interval, 0, j, q_col, verbose) # 0 for real part of W
+                rows[nJac] = cons_idx
+                cols[nJac] = pcof_idx
+                # jac_e[nJac] = 2*W_r[j, q_col] # wrt W_r[j,q_col]
+                
+                nJac += 1
+                #println("diag col imag = ", nJac)
+                pcof_idx = get_pcof_index(p, interval, 1, j, q_col, verbose) # 1 for imag part of W
+                rows[nJac] = cons_idx
+                cols[nJac] = pcof_idx
+                # jac_e[nJac] = 2*W_i[j, q_col] # wrt W_i[j,q_col]
+            end
+            # off-diagonals
+            for p_row in q_col+1:p.Ntot # q_col+1:q_col+1 # q_col+1:p.Ntot
+                cons_idx += 1
+                # symmetric
+                # e_con[cons_idx] = W_r[:,p_row]' * W_r[:,q_col] + W_i[:,p_row]' * W_i[:,q_col]
+
+                # loop over all elements in W_r[:,p_row], W_r[:,q_col], W_i[:,p_row] and W_i[:,q_col]
+                for j in 1:p.Ntot
+                    nJac += 1
+                    #println("sym col imag = ", nJac)
+                    pcof_idx = get_pcof_index(p, interval, 0, j, q_col, verbose) # 0 for real: wrt W_r[j,q_col] 
+                    rows[nJac] = cons_idx
+                    cols[nJac] = pcof_idx
+                    # jac_e[nJac] = W_r[j, p_row]
+
+                    nJac += 1
+                    #println("sym col imag = ", nJac)
+                    pcof_idx = get_pcof_index(p, interval, 0, j, p_row, verbose) # 0 for real: wrt W_r[j,p_row]
+                    rows[nJac] = cons_idx
+                    cols[nJac] = pcof_idx
+                    # jac_e[nJac] = W_r[j, q_col]
+                    
+                    nJac += 1
+                    #println("sym col imag = ", nJac)
+                    pcof_idx = get_pcof_index(p, interval, 1, j, q_col, verbose) # 1 for imag: wrt W_i[j, q_col]
+                    rows[nJac] = cons_idx
+                    cols[nJac] = pcof_idx
+                    # jac_e[nJac] = W_i[j, p_row]
+
+                    nJac += 1
+                    #println("sym col imag = ", nJac)
+                    pcof_idx = get_pcof_index(p, interval, 1, j, p_row, verbose) # 1 for imag: wrt W_i[j, p_row]
+                    rows[nJac] = cons_idx
+                    cols[nJac] = pcof_idx
+                    # jac_e[nJac] = W_i[j, q_col]
+                end
+                cons_idx += 1
+                # anti-sym
+                # e_con[cons_idx] = W_r[:,p_row]' * W_i[:,q_col] - W_i[:,p_row]' * W_r[:,q_col] 
+
+                # loop over all elements in W_r[:,p_row], W_r[:,q_col], W_i[:,p_row] and W_i[:,q_col]
+                for j in 1:p.Ntot
+                    nJac += 1
+                    #println("anti col imag = ", nJac)
+                    pcof_idx = get_pcof_index(p, interval, 0, j, q_col, verbose) # 0 for real: wrt W_r[j,q_col] 
+                    rows[nJac] = cons_idx
+                    cols[nJac] = pcof_idx
+                    # jac_e[nJac] = -W_i[j, p_row]
+
+                    nJac += 1
+                    #println("anti col imag = ", nJac)
+                    pcof_idx = get_pcof_index(p, interval, 0, j, p_row, verbose) # 0 for real: wrt W_r[j,p_row]
+                    rows[nJac] = cons_idx
+                    cols[nJac] = pcof_idx
+                    # jac_e[nJac] = W_i[j, q_col]
+                    
+                    nJac += 1
+                    #println("anti col imag = ", nJac)
+                    pcof_idx = get_pcof_index(p, interval, 1, j, q_col, verbose) # 1 for imag: wrt W_i[j, q_col]
+                    rows[nJac] = cons_idx
+                    cols[nJac] = pcof_idx
+                    # jac_e[nJac] = W_r[j, p_row]
+
+                    nJac += 1
+                    #println("anti col imag = ", nJac)
+                    pcof_idx = get_pcof_index(p, interval, 1, j, p_row, verbose) # 1 for imag: wrt W_i[j, p_row]
+                    rows[nJac] = cons_idx
+                    cols[nJac] = pcof_idx
+                    # jac_e[nJac] = -W_r[j, q_col]
+                end
+            end
+            if verbose
+                println("q_col = ", q_col, " added ", nJac - nJac0, " elements to the Jacobian")
+            end
+        end # for q_col
+    end # end for interval
+
+    if verbose
+        nCons = (p.nTimeIntervals - 1) * p.Ntot^2 # Total number of constraints
+        println("# assigned constraints = ", cons_idx, " nCons = ", nCons)
+        println("# assigned Jacobian elements = ", nJac, " length(rows) = ", length(rows))
+    end
+
+    return nothing
+end # function unitary_jacobian_idx
 """
     change_target!(params, new_Utarget)
 

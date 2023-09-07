@@ -38,8 +38,6 @@ end
 
 println("Setup completed\n")
 
-nCallLagrange = 0
-
 println("Calling run_optimizer for derivative check")
 pcof = run_optimizer(params, pcof0, maxAmp, maxIter=0, derivative_test=true)
 

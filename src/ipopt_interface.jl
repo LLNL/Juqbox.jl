@@ -319,42 +319,19 @@ end
 # IpOPT callback function for evaluating all unitary constraints
 ###########################################
 function eval_g_par2(pcof::Vector{Float64}, g::Vector{Float64}, params::objparams)
-    verbose = true
-    unitary_constraints(pcof, g, params, verbose)
+    unitary_constraints(pcof, g, params, false)
 end # function eval_g_par
 
 ###########################################
 # IpOPT callback function for evaluating the Jacobian of the unitary constraints
 ###########################################
 function eval_jac_g_par2(pcof::Vector{Float64}, rows::Vector{Int32}, cols::Vector{Int32}, jac_g::Union{Nothing,Vector{Float64}}, p:: Juqbox.objparams)
-    verbose = true
     
     if jac_g === nothing 
-        println("eval_jac_g_par2: initialization, length(pcof) = ", length(pcof), "length(rows) = ", length(rows), " length(cols) = ", length(cols))
-        # Jacobian has nConst = p.nCoeff - p.nAlpha rows and nConst * (2*p.Ntot - 1) non-zero elements
-        cons_idx = 0 # initializing
-        var_idx = 0
-        for interval in 1:p.nTimeIntervals-1
-            # get initial condition offset in pcof0 array
-            off_r = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
-            nMat = p.Ntot^2
-            off_i = off_r + nMat
-
-            # sort out the ordering later
-            for q in 1:p.Ntot
-                for p in 1:Ntot
-                    for a in 1:p.Ntot
-                        if a==p && a==q
-                            cons_idx += 1
-                            rows[cons_idx] = cons_idx
-                            cols[cons_idx] = var_idx # which elements in pcof does this constrant depend on?
-                        end
-                    end
-                end
-            end
-        end
+        #println("eval_jac_g_par2: initialization, length(rows) = ", length(rows), "length(cols) = ", length(cols), " length(cols) = ", length(cols))
+        unitary_jacobian_idx(rows, cols, p, false)
     else
-        unitary_jacobian(pcof, jac_g, p, verbose) # enter all elements of the Jacobian in vectorized form
+        unitary_jacobian(pcof, jac_g, p, false) # enter all elements of the Jacobian
     end        
     
     return               
@@ -507,8 +484,8 @@ function ipopt_setup(params:: Juqbox.objparams, nCoeff:: Int64, maxAmp:: Vector{
         else # minimize the augmented lagrangian: infidelity - LagrangeMult + 0.5*gammaJump|| Cjump ||^2_F, subject to
             # constraints enforcing the initial conditions to be unitary
             println("ipopt_setup: using eval_grad_f_par2, # timeIntervals = ", params.nTimeIntervals)
-            nConst = p.nCoeff - p.nAlpha
-            nEleJac = nConst * (2*p.Ntot - 1)
+            nConst = (params.nTimeIntervals - 1) * params.Ntot^2
+            nEleJac = (params.nTimeIntervals - 1) * (2*params.Ntot^2 + 8*params.Ntot * div(params.Ntot*(params.Ntot - 1),2))
             nEleHess = 0
             g_L = zeros(nConst); # Equality constraints
             g_U = zeros(nConst);
@@ -522,7 +499,7 @@ function ipopt_setup(params:: Juqbox.objparams, nCoeff:: Int64, maxAmp:: Vector{
             eval_jac_g2(pcof, rows, cols, jac_g) = eval_jac_g_par2(pcof, rows, cols, jac_g, params) 
         
             # setup the Ipopt data structure
-            prob = CreateIpoptProblem( nCoeff, minCoeff, maxCoeff, nconst, g_L, g_U, nEleJac, nEleHess, eval_f2, eval_g2, eval_grad_f2, eval_jac_g2, eval_h);
+            prob = CreateIpoptProblem( nCoeff, minCoeff, maxCoeff, nConst, g_L, g_U, nEleJac, nEleHess, eval_f2, eval_g2, eval_grad_f2, eval_jac_g2, eval_h);
         end
     end
 
@@ -639,7 +616,7 @@ function run_optimizer(params:: objparams, pcof0:: Vector{Float64}, maxAmp:: Vec
     #println("Ipopt initialization timing:")
     #@time 
 
-    println("run_optimizer: length(pcof0) = ", length(pcof0))
+    # println("run_optimizer: length(pcof0) = ", length(pcof0))
 
     prob = Juqbox.ipopt_setup(params, length(pcof0), maxAmp, maxIter=maxIter, lbfgsMax=lbfgsMax, coldStart=coldStart, ipTol=ipTol, acceptTol=acceptTol, acceptIter=acceptIter, nodes=nodes, weights=weights)
 

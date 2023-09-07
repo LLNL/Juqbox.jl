@@ -18,8 +18,8 @@ params = retval[1]
 pcof0 = retval[2]
 maxAmp = retval[3];
 
-params.traceInfidelityThreshold = 1e-3 # better than 99.9% fidelity
-
+params.traceInfidelityThreshold = -1.0 # 1e-3 # better than 99.9% fidelity
+params.objThreshold = -1.0
 Ntot = params.Ntot
 
 # Test non-zero Lagrange multipliers
@@ -31,9 +31,6 @@ if params.nTimeIntervals > 1
 end
 
 println("Setup completed\n")
-
-params.objThreshold = -9999.9
-params.traceInfidelityThreshold = -9999.9
 
 println("Calling run_optimizer for derivative check")
 pcof = run_optimizer(params, pcof0, maxAmp, maxIter=100, derivative_test=true)
