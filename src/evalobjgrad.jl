@@ -113,7 +113,10 @@ end
                         self_kerr::Vector{Float64} = Vector{Float64}[],
                         couple_coeff::Vector{Float64} = Vector{Float64}[],
                         couple_type::Int64 = 0,
-                        zeroCtrlBC::Bool = true)
+                        zeroCtrlBC::Bool = true,
+                        nTimeIntervals::Int64=1, 
+                        gammaJump::Float64=0.1,
+                        fidType::Int64 = 2)
 
 Constructor for the mutable struct objparams. The sizes of the arrays in the argument list are based on
 `Ntot = prod(Ne + Ng)`, `Ness = prod(Ne)`, `Nosc = length(Ne) = length(Ng)`.
@@ -288,8 +291,8 @@ mutable struct objparams
                        objFuncType:: Int64 = 1, leak_ubound:: Float64=1.0e-3,
                        use_sparse::Bool = false, use_custom_forbidden::Bool = false,
                        linear_solver::lsolver_object = lsolver_object(nrhs=prod(Ne)), msb_order::Bool = true,
-                       dVds::Array{ComplexF64,2}= Array{ComplexF64}(undef,0,0), freq01::Vector{Float64} = Vector{Float64}[], self_kerr::Vector{Float64} = Vector{Float64}[], couple_coeff::Vector{Float64} = Vector{Float64}[], couple_type::Int64 = 0, zeroCtrlBC::Bool = true, nTimeIntervals::Int64=1, gammaJump::Float64=0.1)
-        pFidType = 2 # Std gate infidelity
+                       dVds::Array{ComplexF64,2}= Array{ComplexF64}(undef,0,0), freq01::Vector{Float64} = Vector{Float64}[], self_kerr::Vector{Float64} = Vector{Float64}[], couple_coeff::Vector{Float64} = Vector{Float64}[], couple_type::Int64 = 0, zeroCtrlBC::Bool = true, nTimeIntervals::Int64=1, gammaJump::Float64=0.1, fidType::Int64 = 2)
+        pFidType = fidType # Std gate infidelity
         Nosc   = length(Ne) # number of subsystems
         N      = prod(Ne)
         Ntot   = prod(Ne+Ng)
@@ -1166,10 +1169,15 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
                 
                 grad_kpar += dCdW_kpar + dLdW_kpar
             else # last interval
-                # test infidelity gradient wrt control parameter p.kpar
-                salpha1 = tracefidcomplex(dUda_r, dUda_i, p.Utarget_r, p.Utarget_i) # scaled by 1/N
+                if p.pFidType == 1 # gradient of the Frobenius norm^2 of U - V_tg
+                    # finalDist = trace_operator(Uend_r - p.Utarget_r, Uend_r - p.Utarget_r) + trace_operator(Uend_i - p.Utarget_i, Uend_i - p.Utarget_i)
+                    dFda_kpar = 2*trace_operator(dUda_r, Uend_r - p.Utarget_r) + 2*trace_operator(dUda_i, Uend_i - p.Utarget_i)
+                elseif p.pFidType == 2 # infidelity
+                    # test gradient wrt control parameter p.kpar
+                    salpha1 = tracefidcomplex(dUda_r, dUda_i, p.Utarget_r, p.Utarget_i) # scaled by 1/N
 
-                dFda_kpar = -2*real(conj(scomplex0)*salpha1) # gradient of infidelity NOTE: minus sign
+                    dFda_kpar = -2*real(conj(scomplex0)*salpha1) # gradient of infidelity NOTE: minus sign
+                end
                 grad_kpar += dFda_kpar
 
                 dCda_kpar = 0.0 # there is no quadratic penalty or lagrange multiplier term from the last interval
@@ -1178,21 +1186,30 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
                 dLdW_kpar = 0.0
 
                 # tmp this one is a bit complicated...
-                if interval == interval_kp+1
+                if interval == interval_kp+1 # NOTE: interval = p.nTimeIntervals
                     # p = row_kp, q = col_kp
-                    v_rq = p.Utarget_r[:, col_kp]
-                    v_iq = p.Utarget_i[:, col_kp]
+                    if p.pFidType == 1
+                        v_rq = Uend_r[:, col_kp] - p.Utarget_r[:, col_kp]
+                        v_iq = Uend_i[:, col_kp] - p.Utarget_i[:, col_kp]
+                    elseif p.pFidType == 2
+                        v_rq = p.Utarget_r[:, col_kp]
+                        v_iq = p.Utarget_i[:, col_kp]
+                    end
                     # dependence through initial condition Cjump^{interval} = U^{interval}(W^{interval_kp}) - W^{interval}
                     if real_imag_kp == 0 # real part
                         s_rp = reInitOp[1][:, row_kp]
                         s_ip = reInitOp[2][:, row_kp]
-
                     else # imaginary part
                         s_rp = imInitOp[1][:, row_kp]
                         s_ip = imInitOp[2][:, row_kp]
                     end
-                    sW1 = (s_rp' * v_rq + s_ip' * v_iq) + im*( s_rp' * v_iq - s_ip' * v_rq )
-                    dFdW_kpar = -2*real( conj(scomplex0) * sW1 )/p.N # Note: scomplex0 is scaled by 1/N
+                    if p.pFidType == 1 # Frobenius norm^2 (U(T) - Vtg)
+                        sW1 = (s_rp' * v_rq + s_ip' * v_iq) # + im*( s_rp' * v_iq - s_ip' * v_rq )
+                        dFdW_kpar = 2*sW1
+                    elseif p.pFidType == 2 # infidelity
+                        sW1 = (s_rp' * v_rq + s_ip' * v_iq) + im*( s_rp' * v_iq - s_ip' * v_rq )
+                        dFdW_kpar = -2*real( conj(scomplex0) * sW1 )/p.N # Note: scomplex0 is scaled by 1/N
+                    end
                 else
                     dFdW_kpar = 0.0
                 end
@@ -1294,48 +1311,83 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
                 end
             end
         else # final time interval
-            traceInfid = (1.0-tracefidabs2(Uend_r, Uend_i, p.Utarget_r, p.Utarget_i))
-            
-            objf += traceInfid
+            if p.pFidType == 1 # Frobenius norm^2 of U - V_tg
+                finalDist = trace_operator(Uend_r - p.Utarget_r, Uend_r - p.Utarget_r) + trace_operator(Uend_i - p.Utarget_i, Uend_i - p.Utarget_i)
+            elseif p.pFidType == 2 # Infidelity
+                finalDist = (1.0-tracefidabs2(Uend_r, Uend_i, p.Utarget_r, p.Utarget_i))
+            end
+            objf += finalDist
             
             if verbose
-                println("Interval # ", interval, " Infidelity = ", traceInfid)
+                println("Interval # ", interval, " pFidType = ", p.pFidType, " finalDist = ", finalDist)
             end 
 
             if evaladjoint
                 # Gradient of infidelity
 
-                # Gradient wrt Winit^{interval -  1} through initial condition for Uend
-                offc_r = p.nAlpha + (interval-2)*p.nWinit # for interval = 2 the offset should be nAlpha
-                offc_i = offc_r + nMat
+                # no contribution if there is only 1 interval because the first initial condition is fixed
+                if p.nTimeIntervals > 1 
+                    # Gradient wrt Winit^{interval -  1} through initial condition for Uend
+                    offc_r = p.nAlpha + (interval-2)*p.nWinit # for interval = 2 the offset should be nAlpha
+                    offc_i = offc_r + nMat
 
-                # p = row, q = col
-                for col in 1:p.N
-                    v_rq = p.Utarget_r[:, col]
-                    v_iq = p.Utarget_i[:, col]
-                     
-                    # real part: vectorize over 'row'
-                    s_rp = reInitOp[1]
-                    s_ip = reInitOp[2]
-                    sW1 = (s_rp' * v_rq + s_ip' * v_iq) + im*( s_rp' * v_iq - s_ip' * v_rq )
-                        
-                    objf_grad[offc_r + 1: offc_r + p.N] += -2*real( conj(scomplex0) * sW1 )/p.N
-                    
-                    # imaginary part: vectorize over row
-                    s_rp = imInitOp[1]
-                    s_ip = imInitOp[2]
-                    sW1 = (s_rp' * v_rq + s_ip' * v_iq) + im*( s_rp' * v_iq - s_ip' * v_rq )
-                    
-                    objf_grad[offc_i + 1: offc_i + p.N] += -2*real( conj(scomplex0) * sW1 )/p.N
+                    # p = row, q = col
+                    if p.pFidType == 1 # Frobenius norm^2 of (Uend - Vtg)
+                        for col in 1:p.N
+                            v_rq = Uend_r[:, col] - p.Utarget_r[:, col]
+                            v_iq = Uend_i[:, col] - p.Utarget_i[:, col]
+                            
+                            # real part: vectorize over 'row'
+                            s_rp = reInitOp[1]
+                            s_ip = reInitOp[2]
+                            sW1 = (s_rp' * v_rq + s_ip' * v_iq) # + im*( s_rp' * v_iq - s_ip' * v_rq )
+                                
+                            objf_grad[offc_r + 1: offc_r + p.N] += 2*sW1
+                            
+                            # imaginary part: vectorize over row
+                            s_rp = imInitOp[1]
+                            s_ip = imInitOp[2]
+                            sW1 = (s_rp' * v_rq + s_ip' * v_iq) # + im*( s_rp' * v_iq - s_ip' * v_rq )
+                            
+                            objf_grad[offc_i + 1: offc_i + p.N] += 2*sW1
 
-                    offc_r += p.N
-                    offc_i += p.N
-                end # for col
+                            offc_r += p.N
+                            offc_i += p.N
+                        end # for col
+                    elseif p.pFidType == 2 # infidelity
+                        for col in 1:p.N
+                            v_rq = p.Utarget_r[:, col]
+                            v_iq = p.Utarget_i[:, col]
+                            
+                            # real part: vectorize over 'row'
+                            s_rp = reInitOp[1]
+                            s_ip = reInitOp[2]
+                            sW1 = (s_rp' * v_rq + s_ip' * v_iq) + im*( s_rp' * v_iq - s_ip' * v_rq )
+                                
+                            objf_grad[offc_r + 1: offc_r + p.N] += -2*real( conj(scomplex0) * sW1 )/p.N
+                            
+                            # imaginary part: vectorize over row
+                            s_rp = imInitOp[1]
+                            s_ip = imInitOp[2]
+                            sW1 = (s_rp' * v_rq + s_ip' * v_iq) + im*( s_rp' * v_iq - s_ip' * v_rq )
+                            
+                            objf_grad[offc_i + 1: offc_i + p.N] += -2*real( conj(scomplex0) * sW1 )/p.N
+
+                            offc_r += p.N
+                            offc_i += p.N
+                        end # for col
+                    end
+                end # if nTimeIntervals > 1
 
                 # gradient wrt alpha (B-spline coefficients)
-                Amat = -2*conj(scomplex0) * (p.Utarget_r + im*p.Utarget_i)/p.N # for infidelity gradient
-                # Calculate gradients
-                infidGrad = adjoint_gradient(p, splinepar, tEnd, p.Tsteps[interval], Uend_r, Uend_i, real(Amat), imag(Amat))
+                if p.pFidType == 1
+                    # dFda_kpar = 2*trace_operator(dUda_r, Uend_r - p.Utarget_r) + 2*trace_operator(dUda_i, Uend_i - p.Utarget_i)
+                    infidGrad = adjoint_gradient(p, splinepar, tEnd, p.Tsteps[interval], Uend_r, Uend_i, 2*(Uend_r - p.Utarget_r), 2*(Uend_i - p.Utarget_i))
+                elseif p.pFidType == 2
+                    Amat = -2*conj(scomplex0) * (p.Utarget_r + im*p.Utarget_i)/p.N # for infidelity gradient
+                    # Calculate gradients
+                    infidGrad = adjoint_gradient(p, splinepar, tEnd, p.Tsteps[interval], Uend_r, Uend_i, real(Amat), imag(Amat))
+                end
                 
                 objf_grad += infidGrad # accumulate gradient
 

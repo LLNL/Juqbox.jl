@@ -42,7 +42,9 @@ cw_prox_thres = 1e-2 # 1e-2 # 1e-3
 quandary_exec= "./main"   # set to "" for Juqbox, or "./main" for Quandary
 ncores = prod(Ne)
 
-retval = setup_std_model(Ne, Ng, f01, xi, xi12, couple_type, rot_freq, T, D1, target_gate, maxctrl_MHz=maxctrl_MHz, msb_order=msb_order, init_amp_frac=init_amp_frac, Pmin=Pmin, cw_prox_thres=cw_prox_thres, cw_amp_thres=cw_amp_thres) # use_eigenbasis=true is experimental
+verbose = true
+
+retval = setup_std_model(Ne, Ng, f01, xi, xi12, couple_type, rot_freq, T, D1, target_gate, maxctrl_MHz=maxctrl_MHz, msb_order=msb_order, init_amp_frac=init_amp_frac, Pmin=Pmin, cw_prox_thres=cw_prox_thres, cw_amp_thres=cw_amp_thres, verbose=verbose) # use_eigenbasis=true is experimental
 
 params = retval[1]
 pcof0 = retval[2]

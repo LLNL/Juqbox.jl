@@ -476,8 +476,11 @@ function ipopt_setup(params:: Juqbox.objparams, nCoeff:: Int64, maxAmp:: Vector{
             g_U = zeros(0);
 
             # callback functions need access to the params object
-            eval_f1(pcof) = eval_f_par1(pcof, params, nodes, weights)
-            eval_grad_f1(pcof, grad_f) = eval_grad_f_par1(pcof, grad_f, params, nodes, weights)
+            # eval_f1(pcof) = eval_f_par1(pcof, params, nodes, weights)
+            # eval_grad_f1(pcof, grad_f) = eval_grad_f_par1(pcof, grad_f, params, nodes, weights)
+            # to support fidType = 1, use lagrange_objgrad()
+            eval_f1(pcof) = eval_f_par2(pcof, params)
+            eval_grad_f1(pcof, grad_f) = eval_grad_f_par2(pcof, grad_f, params)
             
             # setup the Ipopt data structure
             prob = CreateIpoptProblem( nCoeff, minCoeff, maxCoeff, nConst, g_L, g_U, nEleJac, nEleHess, eval_f1, eval_g_empty, eval_grad_f1, eval_jac_g_empty, eval_h);

@@ -245,6 +245,28 @@ function eigen_and_reorder(H0::Union{Matrix{ComplexF64},Matrix{Float64}}, is_ess
         println("Ndup = ", Ndup)
     end
 
+    # for each row, record the column index for the largest element
+    max_col = zeros(Int64, Ntot)
+    for row in 1:Ntot
+        max_col[row] = argmax(abs.(H0_eigen.vectors[row,:]))
+    end
+
+    # loop over all columns and check max_col for duplicates
+    println()
+    Ndup_col = 0 
+    for row = 1:Ntot-1 
+        for k = row+1:Ntot
+            if max_col[row] == max_col[k]
+                Ndup_col += 1
+                println("Warning: detected identical max_col = ", max_col[row], " for row = ", row, " and k = ", k, " is_ess = (", is_ess[row], is_ess[k], ")")
+            end
+        end
+    end
+
+    if verbose
+        println("Ndup_col = ", Ndup_col)
+    end
+        
     if Ndup > 0
         println()
         println("eigen_and_reorder: Found ", Ndup, " duplicate maxrow entries, attempting a correction of maxrow")
@@ -378,7 +400,9 @@ function eigen_and_reorder(H0::Union{Matrix{ComplexF64},Matrix{Float64}}, is_ess
     s_perm = sortperm(maxrow)
 
     if verbose
-        println("s_perm = ", s_perm)
+        # println("s_perm = ", s_perm)
+        # println("max_col = ", max_col)
+        println("max|s_perm - max_col| = ", maximum(abs.(s_perm - max_col)))
     end
 
     Utrans = H0_eigen.vectors[:,s_perm[:]]
@@ -965,7 +989,9 @@ end
      splines_real_imag = true, 
      wmatScale::Float64 = 1.0, 
      use_carrier_waves::Bool = true,
-     nTimeIntervals::Int64 = 1)
+     nTimeIntervals::Int64 = 1,
+     fidType::Int64 = 2,
+     verbose::Bool = false)
 
 Setup a Hamiltonian model, parameters for numerical time stepping, a target unitary gate, carrier frequencies, boundary conditions for the control functions, amplitude bounds for the controls, and initialize the control vector for optimization.
 
@@ -997,6 +1023,7 @@ Setup a Hamiltonian model, parameters for numerical time stepping, a target unit
 - `wmatScale::Float64=1.0`: Scale factor for the leakage term in the objective function.
 - `use_carrier_waves::Bool=true`: Set to true (default) to use carrier waves, otherwise only use B-splines to parameterize the control pulses.
 - `nTimeIntervals::Int64=1`: Split time domain in this number of intervals.
+- `verbose::Bool=false`: Set to true for detailed information during the setup.
 
 # Return arguments 
 - `params::objparams`: Object specifying the quantum system and the optimization problem.
@@ -1004,7 +1031,7 @@ Setup a Hamiltonian model, parameters for numerical time stepping, a target unit
 - `maxAmp::Vector{Float64}`: Max amplitudes for each segement of the control vector. Here a segment corresponds to a control Hamiltonian
 """
   ################################
-  function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float64}, xi::Vector{Float64}, couple_coeff::Vector{Float64}, couple_type::Int64, rot_freq::Vector{Float64}, T::Float64, D1::Int64, gate_final::Matrix{ComplexF64}; maxctrl_MHz::Float64=10.0, msb_order::Bool = false, Pmin::Int64 = 40, init_amp_frac::Float64=0.0, randomize_init_ctrl::Bool = true, rand_seed::Int64=2345, pcofFileName::String="", zeroCtrlBC::Bool = true, use_eigenbasis::Bool = false, cw_amp_thres::Float64=5e-2, cw_prox_thres::Float64=2e-3, splines_real_imag::Bool=true, wmatScale::Float64=1.0, use_carrier_waves::Bool=true, nTimeIntervals::Int64=1, verbose::Bool=false)
+  function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float64}, xi::Vector{Float64}, couple_coeff::Vector{Float64}, couple_type::Int64, rot_freq::Vector{Float64}, T::Float64, D1::Int64, gate_final::Matrix{ComplexF64}; maxctrl_MHz::Float64=10.0, msb_order::Bool = false, Pmin::Int64 = 40, init_amp_frac::Float64=0.0, randomize_init_ctrl::Bool = true, rand_seed::Int64=2345, pcofFileName::String="", zeroCtrlBC::Bool = true, use_eigenbasis::Bool = false, cw_amp_thres::Float64=5e-2, cw_prox_thres::Float64=2e-3, splines_real_imag::Bool=true, wmatScale::Float64=1.0, use_carrier_waves::Bool=true, nTimeIntervals::Int64=1, gammaJump::Float64=0.1, fidType::Int64=2, verbose::Bool=false)
   
     # convert maxctrl_MHz to rad/ns per frequency
     # This is (approximately) the max amplitude of each control function (p & q)
@@ -1099,7 +1126,7 @@ Setup a Hamiltonian model, parameters for numerical time stepping, a target unit
     # println("differen: ", diag(w_diag_mat-w_diag_2))
 
     # Set up parameter struct
-    params = Juqbox.objparams(Ne, Ng, T, nsteps, Uinit=convert(Matrix{ComplexF64}, Ubasis), Utarget=Utarget, Cfreq=om, Rfreq=rot_freq, Hconst=Hsys, w_diag_mat=w_diag_mat, nCoeff=nCoeff, D1=D1, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, linear_solver=linear_solver, freq01=f01, self_kerr=xi, couple_coeff=couple_coeff, couple_type=couple_type, msb_order=msb_order, zeroCtrlBC=zeroCtrlBC, nTimeIntervals=nTimeIntervals)
+    params = Juqbox.objparams(Ne, Ng, T, nsteps, Uinit=convert(Matrix{ComplexF64}, Ubasis), Utarget=Utarget, Cfreq=om, Rfreq=rot_freq, Hconst=Hsys, w_diag_mat=w_diag_mat, nCoeff=nCoeff, D1=D1, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, linear_solver=linear_solver, freq01=f01, self_kerr=xi, couple_coeff=couple_coeff, couple_type=couple_type, msb_order=msb_order, zeroCtrlBC=zeroCtrlBC, nTimeIntervals=nTimeIntervals, gammaJump=gammaJump, fidType=fidType)
 
 
     println("*** Settings ***")
