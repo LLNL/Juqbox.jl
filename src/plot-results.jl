@@ -39,6 +39,12 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
     # evaluate fidelity and unitaryhistory
     objv, unitaryhistory, fidelity = Juqbox.traceobjgrad(pcof, params, true, false);
 
+    # evaluate finalDist, nrm2_Cjump
+    if params.nTimeIntervals > 1
+        ftot, nrm2_Cjump, finalDist = Juqbox.lagrange_obj(pcof, params, false)
+        println("Target type: ", params.pFidType, " final distance = ", finalDist, " norm^2(Cjump) = ", nrm2_Cjump)
+    end
+    
     # save convergence history
     convname = ""
     if savefiles

@@ -1010,17 +1010,19 @@ end
 #########################################################
 #
 # Augmented Lagrange method with multiple time intervals
-# Evaluate the infidelity, all continuity penalty terms
+# Evaluate the final distance to target, all continuity penalty terms,
 # and all Lagrange multiplier terms
 #
 #########################################################
-function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool = true, evaladjoint::Bool = false)
-    # shortcut to working_arrays object in p::objparams
-    w = p.wa
 
-    if evaladjoint
-        objf_grad = zeros(p.nCoeff) # allocate storage for the gradient
-    end
+function lagrange_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = true)
+    # shortcut to working_arrays object in p::objparams
+    
+    # TODO: cleanup this function by removing everything that has to do with evaluating the gradient
+    
+    w = p.wa
+    
+    evaladjoint = false
 
     if verbose
         println("lagrange_obj_grad: Vector dim Ntot =", p.Ntot , ", Guard levels Nguard = ", p.Nguard , ", Param dim, Psize = ", p.nCoeff, ", Spline coeffs per func, D1= ", p.D1, " Tikhonov coeff: ", p.tik0)
@@ -1063,8 +1065,159 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
     Uend_r = Matrix{Float64}(undef, p.Ntot, p.Ntot)
     Uend_i = Matrix{Float64}(undef, p.Ntot, p.Ntot)
 
+    # Storage for saving jump discontinuities across time intervals
+    nrm2_Cjump = zeros(p.nTimeIntervals-1)
+
     # Total objective
     objf = 0.0
+    finalDist = 0.0
+    grad_kpar = 0.0
+
+    eval1gradient = false # only for testing the adjoint gradient
+
+    # Split the time stepping into independent tasks in each time interval
+    for interval = 1:p.nTimeIntervals
+        tEnd = p.T0int[interval] + p.Tsteps[interval]*dt # terminal time for this time interval
+
+        if interval == 1
+            # initial conditions from Uinit (fixed)
+            Winit_r = p.Uinit_r
+            Winit_i = p.Uinit_i
+        else
+            # initial conditions from pcof0 (determined by optimization)
+            offc = p.nAlpha + (interval-2)*p.nWinit # for interval = 2 the offset should be nAlpha
+            # println("offset 1 = ", offc)
+            nMat = p.Ntot^2
+            Winit_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+            offc += nMat
+            # println("offset 2 = ", offc)
+            Winit_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+        end
+
+        # Evolve the state under Schroedinger's equation
+        # NOTE: the S-V scheme treats the real and imaginary parts with different time integrators
+        # First compute the solution operator for a basis of real initial conditions: I
+        reInitOp = evolve_schroedinger(p, splinepar, p.T0int[interval], p.Uinit_r, p.Uinit_i, p.Tsteps[interval], eval1gradient)
+        
+        # Then a basis for purely imaginary initial conditions: iI
+        imInitOp = evolve_schroedinger(p, splinepar, p.T0int[interval], p.Uinit_i, p.Uinit_r, p.Tsteps[interval], eval1gradient)
+        
+        # Now we can  account for the initial conditions for this time interval and easily calculate the gradient wrt Winit
+        # Uend = (reInitop[1] + i*reInitOp[2]) * Winit_r + (imInitOp[1] + i*imInitOp[2]) * Winit_i
+        Uend_r = (reInitOp[1] * Winit_r + imInitOp[1] * Winit_i) # real part of above expression
+        Uend_i = (reInitOp[2] * Winit_r + imInitOp[2] * Winit_i) # imaginary part
+
+        scomplex0 = tracefidcomplex(Uend_r, Uend_i, p.Utarget_r, p.Utarget_i) # scaled by 1/N
+
+        if interval < p.nTimeIntervals
+            offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
+            # println("offset 1 = ", offc)
+            nMat = p.Ntot^2
+            Wend_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+            offc += nMat
+            # println("offset 2 = ", offc)
+            Wend_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+
+            Cjump_r = Uend_r - Wend_r
+            Cjump_i = Uend_i - Wend_i
+
+            # Jump in state at the end of interval k equals C^k = Uend^k - Wend^k (Ntot x Ntot matrices)
+            # evaluate continuity constraint (Frobenius norm squared of mismatch)
+            nrm2_Cjump[interval] = norm( Cjump_r )^2 + norm( Cjump_i )^2
+
+            objf += 0.5*p.gammaJump * nrm2_Cjump[interval] # accumulate contributions to the augemnted Lagrangian
+
+            # println("Sizes: p.Lmult_r = ", size(p.Lmult_r[interval]), " Uend_r = ", size(Uend_r), " Wend_r = ", size(Wend_r))
+            Lmult_cont = -p.N*real(tracefidcomplex(p.Lmult_r[interval], p.Lmult_i[interval], Cjump_r, Cjump_i))
+            if verbose
+                println("Interval # ", interval, " Continuity jump (norm2) = ", nrm2_Cjump[interval], " (Lagrange multiplier) x (continuity jump) = ", Lmult_cont)
+            end
+            
+            objf += Lmult_cont # accumulate contributions to the augemnted Lagrangian
+
+        else # final time interval
+            if p.pFidType == 1 # Frobenius norm^2 of U - V_tg
+                finalDist = trace_operator(Uend_r - p.Utarget_r, Uend_r - p.Utarget_r) + trace_operator(Uend_i - p.Utarget_i, Uend_i - p.Utarget_i)
+            elseif p.pFidType == 2 # Infidelity
+                finalDist = (1.0-tracefidabs2(Uend_r, Uend_i, p.Utarget_r, p.Utarget_i))
+            end
+            objf += finalDist
+            
+            if verbose
+                println("Interval # ", interval, " pFidType = ", p.pFidType, " finalDist = ", finalDist)
+            end 
+               
+        end # if interval < p.nIntervals
+
+    end # for interval...
+
+    # tp = tikhonov_pen(alpha, p) # Tikhonov penalty
+    # objf += tp
+    # println("Tikhonov penalty = ", tp)
+
+    if verbose
+        println("lagrange_obj():, objf = ", objf)
+    end
+
+    return objf, nrm2_Cjump, finalDist
+
+end # function lagrange_obj
+
+function lagrange_grad(pcof0::Array{Float64,1},  p::objparams, objf_grad::Vector{Float64}, verbose::Bool = true)
+    # shortcut to working_arrays object in p::objparams
+    w = p.wa
+
+    evaladjoint = true
+    objf_grad[:] .= 0.0 # initialize the VALUES pointed to by 'objf_grad' to zero
+    # NOTE: objf .= 0.0 would create a new array of the same size as the input argument, but this change would not be visible to the calling function!
+
+    if verbose
+        println("lagrange_obj_grad: Vector dim Ntot =", p.Ntot , ", Guard levels Nguard = ", p.Nguard , ", Param dim, Psize = ", p.nCoeff, ", Spline coeffs per func, D1= ", p.D1, " Tikhonov coeff: ", p.tik0)
+        if evaladjoint
+            if p.nCoeff > p.nAlpha
+                println("Objective depends on W-initial conditions, nIntervals = ", p.nTimeIntervals)
+                if p.kpar <= p.nAlpha
+                    println("kpar = ", p.kpar, " corresponds to a B-spline coefficient")
+                else
+                    println("kpar = ", p.kpar, " corresponds to intermediate initial conditions")
+                end
+            else
+                println("Objective does NOT depend on W, nIntervals = ", p.nTimeIntervals)
+            end
+        end
+    end
+
+    # initializations start here
+    alpha = pcof0[1:p.nAlpha] # extract the B-spline-coefficients
+
+    # setup splinepar
+    if p.use_bcarrier
+        splinepar = bcparams(p.T, p.D1, p.Cfreq, alpha) # Assumes Nunc = 0
+    else
+        Nsig  = 2*(p.Ncoupled + p.Nunc) # Only uses for regular B-splines
+        splinepar = splineparams(p.T, p.D1, Nsig, alpha)
+    end
+
+    dt ::Float64 = p.T/p.nsteps # global time step
+
+    if verbose
+        println("Final time: ", p.T, ", total number of time steps: " , p.nsteps , ", time step: " , dt )
+        println("lagrange_objgrad: length(pcof) =  ", length(pcof0), " nAlpha = ", p.nAlpha, " nWinit = ", p.nWinit)
+    end
+    
+    # Zero out working arrays
+    initialize_working_arrays(w)
+
+    # Allocate storage for saving the unitary at the end of each time interval
+    Uend_r = Matrix{Float64}(undef, p.Ntot, p.Ntot)
+    Uend_i = Matrix{Float64}(undef, p.Ntot, p.Ntot)
+
+    # Storage for saving jump discontinuities across time intervals
+    nrm2_Cjump = zeros(p.nTimeIntervals-1)
+
+    # Total objective
+    objf = 0.0
+    finalDist = 0.0
     grad_kpar = 0.0
 
     eval1gradient = verbose && evaladjoint # for testing the adjoint gradient
@@ -1232,14 +1385,14 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
 
             # Jump in state at the end of interval k equals C^k = Uend^k - Wend^k (Ntot x Ntot matrices)
             # evaluate continuity constraint (Frobenius norm squared of mismatch)
-            cont_2 = 0.5*p.gammaJump * (norm( Cjump_r )^2 + norm( Cjump_i )^2)
+            nrm2_Cjump[interval] = norm( Cjump_r )^2 + norm( Cjump_i )^2
 
-            objf += cont_2 # accumulate contributions to the augemnted Lagrangian
+            objf += 0.5*p.gammaJump * nrm2_Cjump[interval] # accumulate contributions to the augemnted Lagrangian
 
             # println("Sizes: p.Lmult_r = ", size(p.Lmult_r[interval]), " Uend_r = ", size(Uend_r), " Wend_r = ", size(Wend_r))
             Lmult_cont = -p.N*real(tracefidcomplex(p.Lmult_r[interval], p.Lmult_i[interval], Cjump_r, Cjump_i))
             if verbose
-                println("Interval # ", interval, " Continuity jump (norm2) = ", cont_2, " (Lagrange multiplier) x (continuity jump) = ", Lmult_cont)
+                println("Interval # ", interval, " Continuity jump (norm2) = ", nrm2_Cjump[interval], " (Lagrange multiplier) x (continuity jump) = ", Lmult_cont)
             end
             
             objf += Lmult_cont # accumulate contributions to the augemnted Lagrangian
@@ -1253,7 +1406,7 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
                 offc += nMat
                 ws_grad[offc+1:offc+nMat] = vec(-p.gammaJump * Cjump_i + p.Lmult_i[interval]) # imaginary part
                 
-                objf_grad += ws_grad # accumulate total gradient
+                objf_grad[:] += ws_grad # accumulate total gradient
 
                 if interval >= 2 # gradient wrt Winit^{(interval - 1)} through initial condition for (Uend_r, Uend_i)
                     offc_r = p.nAlpha + (interval-2)*p.nWinit # for interval = 2 the offset should be nAlpha
@@ -1293,14 +1446,14 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
                 # Calculate gradients
                 quadGrad = adjoint_gradient(p, splinepar, tEnd, p.Tsteps[interval], Uend_r, Uend_i, Amat_r, Amat_i)
                 
-                objf_grad += quadGrad # accumulate gradient
+                objf_grad[:] += quadGrad # accumulate gradient
 
                 # adjoint gradient of Lagrange mult.
                 Amat_r = -p.Lmult_r[interval]
                 Amat_i = -p.Lmult_i[interval]
                 lagrangeGrad = adjoint_gradient(p, splinepar, tEnd, p.Tsteps[interval], Uend_r, Uend_i, Amat_r, Amat_i)
                 
-                objf_grad += lagrangeGrad # accumulate gradient
+                objf_grad[:] += lagrangeGrad # accumulate gradient
 
                 if eval1gradient
                     println("kpar = ", p.kpar, " dLda_kpar = ", dLda_kpar, " dLda_adj = ", lagrangeGrad[p.kpar]," diff = ", dLda_kpar - lagrangeGrad[p.kpar])
@@ -1389,7 +1542,7 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
                     infidGrad = adjoint_gradient(p, splinepar, tEnd, p.Tsteps[interval], Uend_r, Uend_i, real(Amat), imag(Amat))
                 end
                 
-                objf_grad += infidGrad # accumulate gradient
+                objf_grad[:] += infidGrad # accumulate gradient
 
                 if eval1gradient
                     println("kpar = ", p.kpar, " dFda_kpar = ", dFda_kpar)
@@ -1398,8 +1551,8 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
                     println("dCdW_kpar = ", dCdW_kpar, " dLdW_kpar = ", dLdW_kpar, " dFdW_kpar = ", dFdW_kpar)
                     println("Fwd grad_kpar = ", grad_kpar, " adjoint_grad_kpar = ", objf_grad[p.kpar], " diff = ", grad_kpar - objf_grad[p.kpar])
                 end
-            end
-        end
+            end # if evaladjoint
+        end # if interval < p.nIntervals
 
     end # for interval...
 
@@ -1415,12 +1568,14 @@ function lagrange_objgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool 
         if eval1gradient
             println("kpar = ", p.kpar, " adjointGrad[kpar] = ", objf_grad[p.kpar], " Fwd grad_kpar = ", grad_kpar, " diff = ", grad_kpar - objf_grad[p.kpar])
         end
-        return objf, copy(objf_grad) # ipopt interface requires a copy of objf_grad?
-    else
-        return objf
-    end
+        # Note: objf_grad is returned in-place
 
-end # function lagrange_objgrad
+        # return objf, copy(objf_grad) # ipopt interface requires a copy of objf_grad?
+    end
+    
+    return objf, nrm2_Cjump, finalDist
+
+end # function lagrange_grad
 
 ##################################################
 function evolve_schroedinger(p::objparams, splinepar::BsplineParams, tStart::Float64, Winit_r::Matrix{Float64}, Winit_i::Matrix{Float64}, N_time_steps::Int64, eval1gradient::Bool = false)
@@ -1579,12 +1734,6 @@ function unitary_constraints(pcof0::Vector{Float64}, e_con::Vector{Float64}, p::
 
     if verbose
         println("unitary_constraints: # time intervals = ", p.nTimeIntervals, " length(pcof) =  ", length(pcof0), " nAlpha = ", p.nAlpha, " nWinit = ", p.nWinit, " # constraints = ", nCons)
-        
-        if p.nCoeff > p.nAlpha
-            println("Objective depends on W-initial conditions, nIntervals = ", p.nTimeIntervals)
-        else
-            println("Objective does NOT depend on W, nIntervals = ", p.nTimeIntervals)
-        end
     end
 
     cons_idx = 0 # row number in e_con
@@ -1626,6 +1775,8 @@ function unitary_jacobian(pcof0::Vector{Float64}, jac_e::Vector{Float64}, p::obj
         return nothing
     end
 
+    # In-place assignment of an array only works with the syntax jac_e[:] = vector or jac_e[nJac] = element
+    # The statement jac_e = vector changes the pointer to jac_e within the function, but the result is not available in the calling function
     cons_idx = 0 # constraint number = row index in Jacobian
     nJac = 0 # index in rows, cols, jac_e for one Jacobinan element
     for interval = 1:p.nTimeIntervals-1

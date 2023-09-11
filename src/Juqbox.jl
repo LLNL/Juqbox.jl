@@ -30,7 +30,7 @@ export hamiltonians_four_sys, hamiltonians
 export setup_std_model, get_CNOT, get_CpNOT, get_Hd_gate, get_swap_1d_gate
 export get_ident_kron_swap23, get_swap12_kron_ident
 export run_Quandary
-export lagrange_objgrad, unitary_constraints, unitary_jacobian, unitary_jacobian_idx
+export lagrange_obj, lagrange_grad, unitary_constraints, unitary_jacobian, unitary_jacobian_idx
 
 # Julia versions prior to v"1.3.1" can't use LinearAlgebra's 5 argument mul!, routines
 # included here for backwards compatability

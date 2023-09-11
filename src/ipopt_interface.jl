@@ -272,9 +272,9 @@ end
 # for objFuncType == 1, intermediate initial conditions (no leak term and no qudrature)
 function eval_f_par2(pcof::Vector{Float64}, params:: Juqbox.objparams)
 
-    f = Juqbox.lagrange_objgrad(pcof, params, false, false)
+    f, _, finalDist = Juqbox.lagrange_obj(pcof, params, false)
 
-    params.lastTraceInfidelity = f
+    params.lastTraceInfidelity = finalDist
     params.lastLeakIntegral = 0.0
 
     # debugging
@@ -292,14 +292,23 @@ function eval_grad_f_par2(pcof::Vector{Float64}, grad_f::Vector{Float64}, params
 
     grad_f .= 0.0 # initialize gradient storage
     
-    f1, totalgrad = Juqbox.lagrange_objgrad(pcof, params, false, true)
-    axpy!(1.0, totalgrad, grad_f) # AP: why is this needed? By directly assigning grad_f, the calling function reports grad_f = 0 ????
+    #f1, totalgrad = Juqbox.lagrange_objgrad(pcof, params, false, true)
+    #axpy!(1.0, totalgrad, grad_f) # AP: why is this needed? By directly assigning grad_f, the calling function reports grad_f = 0 ????
+
+    # in-place grad_f
+    _, _, finalDist = Juqbox.lagrange_grad(pcof, params, grad_f, false)
+
+    # test
+    # println("eval_grad_f_par2: grad_f after calling lagrange_objgrad")
+    # println(grad_f)
+
+    # Note: the copying of the gradient can be avoided by passing grad_f as an argument to lagrange_objgrad, similar to how the constraints are handled, see the call to unitary_jacobian() below
 
     # debugging
     # println(pcof)
     # throw("Intentionally stopping here")
     
-    params.lastTraceInfidelity = f1
+    params.lastTraceInfidelity = finalDist
     params.lastLeakIntegral = 0.0
 
     # Add in Tikhonov regularization gradient term

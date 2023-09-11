@@ -420,7 +420,7 @@ the different terms in the objective function and the norm of the gradient.
 - `convname:: String`: Name of plot file to be generated
 """
 function plot_conv_hist(params:: Juqbox.objparams, convname:: String="")
-    pconv = Plots.plot(xlabel="Iteration", title="Convergence history", size=(400, 300))
+    pconv = Plots.plot(xlabel="Iteration", title="Convergence history", size=(600, 450))
     if params.saveConvHist && length(params.objHist)>0
         nIter = length(params.objHist)
         # note that primaryHist and secondaryHist have one additional elements corresponding to iter=0
