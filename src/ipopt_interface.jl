@@ -476,8 +476,8 @@ function ipopt_setup(params:: Juqbox.objparams, nCoeff:: Int64, maxAmp:: Vector{
         prob = CreateIpoptProblem( nCoeff, minCoeff, maxCoeff, nconst, g_L, g_U, nEleJac, nEleHess, eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h);
     else # params.objFuncType = 1 (add infidelity and leakage in the objective) 
         
-        if (params.nTimeIntervals == 1) # Minimize the infidelity + leakage; no intermediate initial conditions
-            println("ipopt_setup: using eval_grad_f_par1, # timeIntervals = ", params.nTimeIntervals)
+        if (!params.useUniCons || params.nTimeIntervals == 1) # Minimize the infidelity + leakage; no intermediate initial conditions
+            println("ipopt_setup: NOT imposing unitary constraints, # timeIntervals = ", params.nTimeIntervals)
             nConst = 0
             nEleJac = 0
             nEleHess = 0
@@ -495,7 +495,7 @@ function ipopt_setup(params:: Juqbox.objparams, nCoeff:: Int64, maxAmp:: Vector{
             prob = CreateIpoptProblem( nCoeff, minCoeff, maxCoeff, nConst, g_L, g_U, nEleJac, nEleHess, eval_f1, eval_g_empty, eval_grad_f1, eval_jac_g_empty, eval_h);
         else # minimize the augmented lagrangian: infidelity - LagrangeMult + 0.5*gammaJump|| Cjump ||^2_F, subject to
             # constraints enforcing the initial conditions to be unitary
-            println("ipopt_setup: using eval_grad_f_par2, # timeIntervals = ", params.nTimeIntervals)
+            println("ipopt_setup: imposing unitary constraints, # timeIntervals = ", params.nTimeIntervals)
             nConst = (params.nTimeIntervals - 1) * params.Ntot^2
             nEleJac = (params.nTimeIntervals - 1) * (2*params.Ntot^2 + 8*params.Ntot * div(params.Ntot*(params.Ntot - 1),2))
             nEleHess = 0

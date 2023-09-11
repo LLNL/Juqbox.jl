@@ -991,6 +991,7 @@ end
      use_carrier_waves::Bool = true,
      nTimeIntervals::Int64 = 1,
      fidType::Int64 = 2,
+     useUniCons::Bool = false,
      verbose::Bool = false)
 
 Setup a Hamiltonian model, parameters for numerical time stepping, a target unitary gate, carrier frequencies, boundary conditions for the control functions, amplitude bounds for the controls, and initialize the control vector for optimization.
@@ -1031,7 +1032,7 @@ Setup a Hamiltonian model, parameters for numerical time stepping, a target unit
 - `maxAmp::Vector{Float64}`: Max amplitudes for each segement of the control vector. Here a segment corresponds to a control Hamiltonian
 """
   ################################
-  function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float64}, xi::Vector{Float64}, couple_coeff::Vector{Float64}, couple_type::Int64, rot_freq::Vector{Float64}, T::Float64, D1::Int64, gate_final::Matrix{ComplexF64}; maxctrl_MHz::Float64=10.0, msb_order::Bool = false, Pmin::Int64 = 40, init_amp_frac::Float64=0.0, randomize_init_ctrl::Bool = true, rand_seed::Int64=2345, pcofFileName::String="", zeroCtrlBC::Bool = true, use_eigenbasis::Bool = false, cw_amp_thres::Float64=5e-2, cw_prox_thres::Float64=2e-3, splines_real_imag::Bool=true, wmatScale::Float64=1.0, use_carrier_waves::Bool=true, nTimeIntervals::Int64=1, gammaJump::Float64=0.1, fidType::Int64=2, verbose::Bool=false)
+  function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float64}, xi::Vector{Float64}, couple_coeff::Vector{Float64}, couple_type::Int64, rot_freq::Vector{Float64}, T::Float64, D1::Int64, gate_final::Matrix{ComplexF64}; maxctrl_MHz::Float64=10.0, msb_order::Bool = false, Pmin::Int64 = 40, init_amp_frac::Float64=0.0, randomize_init_ctrl::Bool = true, rand_seed::Int64=2345, pcofFileName::String="", zeroCtrlBC::Bool = true, use_eigenbasis::Bool = false, cw_amp_thres::Float64=5e-2, cw_prox_thres::Float64=2e-3, splines_real_imag::Bool=true, wmatScale::Float64=1.0, use_carrier_waves::Bool=true, nTimeIntervals::Int64=1, gammaJump::Float64=0.1, fidType::Int64=2, useUniCons::Bool=false, verbose::Bool=false)
   
     # convert maxctrl_MHz to rad/ns per frequency
     # This is (approximately) the max amplitude of each control function (p & q)
@@ -1126,7 +1127,7 @@ Setup a Hamiltonian model, parameters for numerical time stepping, a target unit
     # println("differen: ", diag(w_diag_mat-w_diag_2))
 
     # Set up parameter struct
-    params = Juqbox.objparams(Ne, Ng, T, nsteps, Uinit=convert(Matrix{ComplexF64}, Ubasis), Utarget=Utarget, Cfreq=om, Rfreq=rot_freq, Hconst=Hsys, w_diag_mat=w_diag_mat, nCoeff=nCoeff, D1=D1, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, linear_solver=linear_solver, freq01=f01, self_kerr=xi, couple_coeff=couple_coeff, couple_type=couple_type, msb_order=msb_order, zeroCtrlBC=zeroCtrlBC, nTimeIntervals=nTimeIntervals, gammaJump=gammaJump, fidType=fidType)
+    params = Juqbox.objparams(Ne, Ng, T, nsteps, Uinit=convert(Matrix{ComplexF64}, Ubasis), Utarget=Utarget, Cfreq=om, Rfreq=rot_freq, Hconst=Hsys, w_diag_mat=w_diag_mat, nCoeff=nCoeff, D1=D1, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, linear_solver=linear_solver, freq01=f01, self_kerr=xi, couple_coeff=couple_coeff, couple_type=couple_type, msb_order=msb_order, zeroCtrlBC=zeroCtrlBC, nTimeIntervals=nTimeIntervals, gammaJump=gammaJump, fidType=fidType, useUniCons=useUniCons)
 
 
     println("*** Settings ***")

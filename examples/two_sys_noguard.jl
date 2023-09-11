@@ -19,7 +19,7 @@ favg = sum(f01)/nSys
 rot_freq = favg * ones(nSys)
 
 # Set the initial duration
-T = 200.0
+T = 250.0
 # Number of coefficients per spline
 # D1 = 26
 dtau = 10.0 # 3.33
@@ -27,7 +27,7 @@ D1 = ceil(Int64,T/dtau) + 2
 D1 = max(D1,5)
 
 # Points per shortest period
-Pmin = 40 # 60 # 40 # 80
+Pmin = 80 # 60 # 40 # 80
 
 # bounds on the ctrl vector elements (rot frame)
 # This number is divided by Nfreq
@@ -43,7 +43,7 @@ ncores = 4 # prod(Ne)
 
 #Initialize first ctrl vector with random numbers, with amplitude rand_amp
 # Note: Not used by do_continuation_target(), but neeed by setup_std_model()
-init_amp_frac = 0.9/5 # Fraction of max ctrl amplitude for initial random guess
+init_amp_frac = 0.1 # Fraction of max ctrl amplitude for initial random guess
 rand_seed = 2345
 
 # Tikhonov coeff

@@ -461,7 +461,7 @@ Plot the essential levels of the solution operator at a fixed time and return a 
 function plot_unitary(params::objparams, final_unitary::Matrix{ComplexF64})
     Ness = params.N
     Ntot = Ness + params.Nguard
-    println("plot_unitary: Ntot = ", Ntot, " Ness = ", Ness)
+    #println("plot_unitary: Ntot = ", Ntot, " Ness = ", Ness)
     
     Ufinal = zeros(ComplexF64, Ness, Ness)
 

@@ -277,6 +277,7 @@ mutable struct objparams
     Lmult_i:: Vector{Matrix{Float64}} # Vector of size (nTimeIntervals-1) for the Lagrange multiplier coefficients (imag)
 
     gammaJump:: Float64 # Coefficient of the quadratic penalty term for jumps across time intervals
+    useUniCons:: Bool # set to true to impose unitary constraints on intermediate initial conditions
 
 # constructor for regular arrays (full matrices)
     function objparams(Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64;
@@ -291,7 +292,7 @@ mutable struct objparams
                        objFuncType:: Int64 = 1, leak_ubound:: Float64=1.0e-3,
                        use_sparse::Bool = false, use_custom_forbidden::Bool = false,
                        linear_solver::lsolver_object = lsolver_object(nrhs=prod(Ne)), msb_order::Bool = true,
-                       dVds::Array{ComplexF64,2}= Array{ComplexF64}(undef,0,0), freq01::Vector{Float64} = Vector{Float64}[], self_kerr::Vector{Float64} = Vector{Float64}[], couple_coeff::Vector{Float64} = Vector{Float64}[], couple_type::Int64 = 0, zeroCtrlBC::Bool = true, nTimeIntervals::Int64=1, gammaJump::Float64=0.1, fidType::Int64 = 2)
+                       dVds::Array{ComplexF64,2}= Array{ComplexF64}(undef,0,0), freq01::Vector{Float64} = Vector{Float64}[], self_kerr::Vector{Float64} = Vector{Float64}[], couple_coeff::Vector{Float64} = Vector{Float64}[], couple_type::Int64 = 0, zeroCtrlBC::Bool = true, nTimeIntervals::Int64=1, gammaJump::Float64=0.1, fidType::Int64 = 2, useUniCons::Bool = false)
         pFidType = fidType # Std gate infidelity
         Nosc   = length(Ne) # number of subsystems
         N      = prod(Ne)
@@ -512,7 +513,7 @@ mutable struct objparams
              usingPriorCoeffs, priorCoeffs, quiet, Rfreq, false, [],
              real(my_dVds), imag(my_dVds), my_sv_type, wa, nCoeff, D1, nAlpha, nWinit,
              freq01, self_kerr, couple_coeff, couple_type, # Add some checks for these ones!
-             msb_order, zeroCtrlBC, nTimeIntervals, T0int, Tsteps, Lmult_r, Lmult_i, gammaJump
+             msb_order, zeroCtrlBC, nTimeIntervals, T0int, Tsteps, Lmult_r, Lmult_i, gammaJump, useUniCons
             )
 
     end
@@ -1015,30 +1016,10 @@ end
 #
 #########################################################
 
-function lagrange_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = true)
-    # shortcut to working_arrays object in p::objparams
+function update_multipliers(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = false)
     
-    # TODO: cleanup this function by removing everything that has to do with evaluating the gradient
-    
+    # shortcut to working_arrays object in p::objparams  
     w = p.wa
-    
-    evaladjoint = false
-
-    if verbose
-        println("lagrange_obj_grad: Vector dim Ntot =", p.Ntot , ", Guard levels Nguard = ", p.Nguard , ", Param dim, Psize = ", p.nCoeff, ", Spline coeffs per func, D1= ", p.D1, " Tikhonov coeff: ", p.tik0)
-        if evaladjoint
-            if p.nCoeff > p.nAlpha
-                println("Objective depends on W-initial conditions, nIntervals = ", p.nTimeIntervals)
-                if p.kpar <= p.nAlpha
-                    println("kpar = ", p.kpar, " corresponds to a B-spline coefficient")
-                else
-                    println("kpar = ", p.kpar, " corresponds to intermediate initial conditions")
-                end
-            else
-                println("Objective does NOT depend on W, nIntervals = ", p.nTimeIntervals)
-            end
-        end
-    end
 
     # initializations start here
     alpha = pcof0[1:p.nAlpha] # extract the B-spline-coefficients
@@ -1054,6 +1035,107 @@ function lagrange_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = tru
     dt ::Float64 = p.T/p.nsteps # global time step
 
     if verbose
+        println("update_multipliers: Vector dim Ntot =", p.Ntot , ", Guard levels Nguard = ", p.Nguard , ", Param dim, Psize = ", p.nCoeff, ", Spline coeffs per func, D1= ", p.D1, " Tikhonov coeff: ", p.tik0)
+        println("Final time: ", p.T, ", total number of time steps: " , p.nsteps , ", time step: " , dt )
+        println("length(pcof) =  ", length(pcof0), " nAlpha = ", p.nAlpha, " nWinit = ", p.nWinit)
+    end
+    
+    # Zero out working arrays
+    initialize_working_arrays(w)
+
+    # Allocate storage for saving the unitary at the end of each time interval
+    Uend_r = Matrix{Float64}(undef, p.Ntot, p.Ntot)
+    Uend_i = Matrix{Float64}(undef, p.Ntot, p.Ntot)
+
+    eval1gradient = false # only for testing the adjoint gradient
+
+    # Split the time stepping into independent tasks in each time interval
+    for interval = 1:p.nTimeIntervals - 1 # Lagrange multipliers are only defined for the intermediate time levels
+
+        if interval == 1
+            # initial conditions from Uinit (fixed)
+            Winit_r = p.Uinit_r
+            Winit_i = p.Uinit_i
+        else
+            # initial conditions from pcof0 (determined by optimization)
+            offc = p.nAlpha + (interval-2)*p.nWinit # for interval = 2 the offset should be nAlpha
+            # println("offset 1 = ", offc)
+            nMat = p.Ntot^2
+            Winit_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+            offc += nMat
+            # println("offset 2 = ", offc)
+            Winit_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+        end
+
+        # Evolve the state under Schroedinger's equation
+        # NOTE: the S-V scheme treats the real and imaginary parts with different time integrators
+        # First compute the solution operator for a basis of real initial conditions: I
+        reInitOp = evolve_schroedinger(p, splinepar, p.T0int[interval], p.Uinit_r, p.Uinit_i, p.Tsteps[interval], eval1gradient)
+        
+        # Then a basis for purely imaginary initial conditions: iI
+        imInitOp = evolve_schroedinger(p, splinepar, p.T0int[interval], p.Uinit_i, p.Uinit_r, p.Tsteps[interval], eval1gradient)
+        
+        # Now we can  account for the initial conditions for this time interval and easily calculate the gradient wrt Winit
+        # Uend = (reInitop[1] + i*reInitOp[2]) * Winit_r + (imInitOp[1] + i*imInitOp[2]) * Winit_i
+        Uend_r[:,:] = (reInitOp[1] * Winit_r + imInitOp[1] * Winit_i) # real part of above expression
+        Uend_i[:,:] = (reInitOp[2] * Winit_r + imInitOp[2] * Winit_i) # imaginary part
+
+        offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
+        # println("offset 1 = ", offc)
+        nMat = p.Ntot^2
+        Wend_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+        offc += nMat
+        # println("offset 2 = ", offc)
+        Wend_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+
+        Cjump_r = Uend_r - Wend_r
+        Cjump_i = Uend_i - Wend_i
+
+        # Jump in state at the end of interval k equals C^k = Uend^k - Wend^k (Ntot x Ntot matrices)
+        # evaluate continuity constraint (Frobenius norm squared of mismatch)
+        # nrm2_Cjump[interval] = norm( Cjump_r )^2 + norm( Cjump_i )^2
+
+        # objf += 0.5*p.gammaJump * nrm2_Cjump[interval] # accumulate contributions to the augemnted Lagrangian
+
+        # println("Sizes: p.Lmult_r = ", size(p.Lmult_r[interval]), " Uend_r = ", size(Uend_r), " Cjump_r = ", size(Cjump_r))
+        # Lmult_cont = -p.N*real(tracefidcomplex(p.Lmult_r[interval], p.Lmult_i[interval], Cjump_r, Cjump_i))
+
+        p.Lmult_r[interval][:,:] -= p.gammaJump * Cjump_r # Should be a negative sign according to N&W
+        p.Lmult_i[interval][:,:] -= p.gammaJump * Cjump_i
+
+        if verbose
+            println("Interval # ", interval, " updating Lagrange multipliers")
+        end
+        
+        #objf += Lmult_cont # accumulate contributions to the augemnted Lagrangian
+
+    end # for interval...
+
+    return nothing
+
+end # function update_multipliers
+
+
+function lagrange_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = true)
+    
+    # shortcut to working_arrays object in p::objparams  
+    w = p.wa
+
+    # initializations start here
+    alpha = pcof0[1:p.nAlpha] # extract the B-spline-coefficients
+
+    # setup splinepar
+    if p.use_bcarrier
+        splinepar = bcparams(p.T, p.D1, p.Cfreq, alpha) # Assumes Nunc = 0
+    else
+        Nsig  = 2*(p.Ncoupled + p.Nunc) # Only uses for regular B-splines
+        splinepar = splineparams(p.T, p.D1, Nsig, alpha)
+    end
+
+    dt ::Float64 = p.T/p.nsteps # global time step
+
+    if verbose
+        println("lagrange_obj_grad: Vector dim Ntot =", p.Ntot , ", Guard levels Nguard = ", p.Nguard , ", Param dim, Psize = ", p.nCoeff, ", Spline coeffs per func, D1= ", p.D1, " Tikhonov coeff: ", p.tik0)
         println("Final time: ", p.T, ", total number of time steps: " , p.nsteps , ", time step: " , dt )
         println("lagrange_objgrad: length(pcof) =  ", length(pcof0), " nAlpha = ", p.nAlpha, " nWinit = ", p.nWinit)
     end
@@ -1071,13 +1153,11 @@ function lagrange_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = tru
     # Total objective
     objf = 0.0
     finalDist = 0.0
-    grad_kpar = 0.0
 
     eval1gradient = false # only for testing the adjoint gradient
 
     # Split the time stepping into independent tasks in each time interval
     for interval = 1:p.nTimeIntervals
-        tEnd = p.T0int[interval] + p.Tsteps[interval]*dt # terminal time for this time interval
 
         if interval == 1
             # initial conditions from Uinit (fixed)
@@ -1106,8 +1186,6 @@ function lagrange_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = tru
         # Uend = (reInitop[1] + i*reInitOp[2]) * Winit_r + (imInitOp[1] + i*imInitOp[2]) * Winit_i
         Uend_r = (reInitOp[1] * Winit_r + imInitOp[1] * Winit_i) # real part of above expression
         Uend_i = (reInitOp[2] * Winit_r + imInitOp[2] * Winit_i) # imaginary part
-
-        scomplex0 = tracefidcomplex(Uend_r, Uend_i, p.Utarget_r, p.Utarget_i) # scaled by 1/N
 
         if interval < p.nTimeIntervals
             offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
@@ -1151,12 +1229,11 @@ function lagrange_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = tru
 
     end # for interval...
 
-    # tp = tikhonov_pen(alpha, p) # Tikhonov penalty
-    # objf += tp
-    # println("Tikhonov penalty = ", tp)
+    tp = tikhonov_pen(alpha, p) # Tikhonov penalty
+    objf += tp
 
     if verbose
-        println("lagrange_obj():, objf = ", objf)
+        println("lagrange_obj():, objf = ", objf, " Tikhonov penalty = ", tp)
     end
 
     return objf, nrm2_Cjump, finalDist
@@ -1556,12 +1633,16 @@ function lagrange_grad(pcof0::Array{Float64,1},  p::objparams, objf_grad::Vector
 
     end # for interval...
 
-    # tp = tikhonov_pen(alpha, p) # Tikhonov penalty
-    # objf += tp
-    # println("Tikhonov penalty = ", tp)
+    tp = tikhonov_pen(alpha, p) # Tikhonov penalty
+    objf += tp
+
+    grad_no_tik = objf_grad[p.kpar]
+    tikhonov_grad!(alpha, p, objf_grad) # in-place addition of the
+    # note: grad_kpar also needs the Tikhonov gradient to be added
+    grad_kpar += (objf_grad[p.kpar] - grad_no_tik)
 
     if verbose
-        println("lagrange_objgrad():, objf = ", objf)
+        println("lagrange_objgrad():, objf = ", objf, " Tikhonov penalty = ", tp)
     end
 
     if evaladjoint
@@ -2630,7 +2711,9 @@ end
     iNpar = 1.0/Npar
 
     # Tikhonov regularization
-    pengrad[:] .= 0.0
+
+    # add to the gradient rather than initializing
+    # pengrad[:] .= 0.0
     
     # Nseg = (2*params.Ncoupled+params.Nunc)*params.Nfreq
     # D1 = div(Npar,Nseg)

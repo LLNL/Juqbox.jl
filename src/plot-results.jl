@@ -147,6 +147,7 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
     plotarray_fftlog = Array{Plots.Plot}(undef, params.Ncoupled+ params.Nunc) #empty array for separate plots
     plotarray_lab = Array{Plots.Plot}(undef, params.Ncoupled + params.Nunc) #empty array for separate plots
 
+    println()
     println("Rotational frequencies: ", params.Rfreq)
 
     for q=1:params.Ncoupled+params.Nunc

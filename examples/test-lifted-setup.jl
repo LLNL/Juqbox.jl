@@ -44,12 +44,13 @@ end
 # for 2 intervals with D1=22 try 5, 15
 # for 2 intervals and the grad wrt W, try kpar in [177, 208]
 # for 3 intervals, Winit^{(1)} has index [177, 208], for Winit^{(2)} add 32
-params.kpar = 178 + 16 + 32 # 177 # 3 # 178 + 32 +16 + 8# 178, 178 + 16, 178 + 32 # test this component of the gradient
+params.kpar = 3 # 178 + 16 + 32 # 177 # 3 # 178 + 32 +16 + 8# 178, 178 + 16, 178 + 32 # test this component of the gradient
 
 println("Setup completed\n")
 
+total_grad = zeros(params.nCoeff)
 println("Calling lagrange_objgrad for total objective and gradient")
-obj0, total_grad = lagrange_objgrad(pcof0, params, verbose, true)
+obj0, _, _ = lagrange_grad(pcof0, params, total_grad, verbose)
 
 println()
 println("FD estimate of the gradient based on objectives for perturbed pcof's\n")
@@ -57,11 +58,11 @@ println("FD estimate of the gradient based on objectives for perturbed pcof's\n"
 pert = 1e-7
 pcof_p = copy(pcof0)
 pcof_p[params.kpar] += pert
-obj_p = lagrange_objgrad(pcof_p, params, false, false)
+obj_p, _, _ = lagrange_obj(pcof_p, params, false)
 
 pcof_m = copy(pcof0)
 pcof_m[params.kpar] -= pert
-obj_m = lagrange_objgrad(pcof_m, params, false, false)
+obj_m, _, _ = lagrange_obj(pcof_m, params, false)
 
 println("kpar = ", params.kpar, " obj_p = ", obj_p, " obj_m = ", obj_m)
 obj_grad_fd = 0.5*(obj_p - obj_m)/pert
