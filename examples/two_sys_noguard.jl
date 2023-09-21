@@ -27,11 +27,11 @@ D1 = ceil(Int64,T/dtau) + 2
 D1 = max(D1,5)
 
 # Points per shortest period
-Pmin = 80 # 60 # 40 # 80
+Pmin = 40 # 60 # 40 # 80
 
 # bounds on the ctrl vector elements (rot frame)
 # This number is divided by Nfreq
-maxctrl_MHz = 30.0 # ?
+maxctrl_MHz = 100.0 # 30.0 # ?
 
 # Internal ordering of the basis for the state vector
 # msb_order = true # | i3, i2, i1> = |i3> \kron |i2> \kron |i1> 
@@ -42,8 +42,8 @@ quandary_exec= "./main"   # set to "" for Juqbox, or "./main" for Quandary
 ncores = 4 # prod(Ne)
 
 #Initialize first ctrl vector with random numbers, with amplitude rand_amp
-# Note: Not used by do_continuation_target(), but neeed by setup_std_model()
-init_amp_frac = 0.1 # Fraction of max ctrl amplitude for initial random guess
+# Note: neeed by setup_std_model()
+initctrl_MHz = 10.0 # amplitude for initial random guess of B-spline coeff's
 rand_seed = 2345
 
 # Tikhonov coeff

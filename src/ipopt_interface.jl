@@ -272,9 +272,10 @@ end
 # for objFuncType == 1, intermediate initial conditions (no leak term and no qudrature)
 function eval_f_par2(pcof::Vector{Float64}, params:: Juqbox.objparams)
 
-    f, _, finalDist = Juqbox.lagrange_obj(pcof, params, false)
+    f, _, finalDist, _ = Juqbox.lagrange_obj(pcof, params, false)
 
-    params.lastTraceInfidelity = finalDist
+    # NOTE: when the initial condition isn't unitary, the trace infidelity may be negative
+    params.lastTraceInfidelity = max(1e-10, finalDist) 
     params.lastLeakIntegral = 0.0
 
     # debugging
@@ -296,7 +297,7 @@ function eval_grad_f_par2(pcof::Vector{Float64}, grad_f::Vector{Float64}, params
     #axpy!(1.0, totalgrad, grad_f) # AP: why is this needed? By directly assigning grad_f, the calling function reports grad_f = 0 ????
 
     # in-place grad_f
-    _, _, finalDist = Juqbox.lagrange_grad(pcof, params, grad_f, false)
+    _, _, finalDist, _ = Juqbox.lagrange_grad(pcof, params, grad_f, false)
 
     # test
     # println("eval_grad_f_par2: grad_f after calling lagrange_objgrad")
@@ -308,7 +309,8 @@ function eval_grad_f_par2(pcof::Vector{Float64}, grad_f::Vector{Float64}, params
     # println(pcof)
     # throw("Intentionally stopping here")
     
-    params.lastTraceInfidelity = finalDist
+    # NOTE: when the initial condition isn't unitary, the trace infidelity may be negative
+    params.lastTraceInfidelity = max(1e-10, finalDist) 
     params.lastLeakIntegral = 0.0
 
     # Add in Tikhonov regularization gradient term
@@ -396,7 +398,7 @@ function intermediate_par(
     params:: Juqbox.objparams)
   # ...
     if params.saveConvHist 
-        push!(params.objHist, obj_value)
+        push!(params.objHist, max(1e-10,obj_value))
         push!(params.dualInfidelityHist, inf_du)
         push!(params.primaryHist, params.lastTraceInfidelity)
         push!(params.secondaryHist,  params.lastLeakIntegral)

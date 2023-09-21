@@ -659,11 +659,13 @@ function traceobjgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool = fa
         end
     end # end forward time stepping loop
 
-    if p.pFidType == 1
+    if p.pFidType == 1 # Froebenius norm^2 (?)
         scomplex1 = tracefidcomplex(w.vr, -w.vi, p.Utarget_r, p.Utarget_i)
         primaryobjf = 1+tracefidabs2(w.vr, -w.vi, p.Utarget_r, p.Utarget_i) - 2*real(scomplex1*exp(-1im*p.globalPhase)) # global phase angle 
-    elseif p.pFidType == 2
+    elseif p.pFidType == 2 # infidelity
         primaryobjf = (1.0-tracefidabs2(w.vr, -w.vi, p.Utarget_r, p.Utarget_i)) # insensitive to global phase angle
+    elseif p.pFidType == 3 # infidelity-squared
+        primaryobjf = (1.0-tracefidabs2(w.vr, -w.vi, p.Utarget_r, p.Utarget_i))^2 # insensitive to global phase angle
     elseif p.pFidType == 4
         rotTarg = exp(1im*p.globalPhase)*(p.Utarget_r + im*p.Utarget_i)
         primaryobjf = (1.0 - tracefidreal(w.vr, -w.vi, real(rotTarg), imag(rotTarg)) )
@@ -1218,6 +1220,8 @@ function lagrange_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = tru
                 finalDist = trace_operator(Uend_r - p.Utarget_r, Uend_r - p.Utarget_r) + trace_operator(Uend_i - p.Utarget_i, Uend_i - p.Utarget_i)
             elseif p.pFidType == 2 # Infidelity
                 finalDist = (1.0-tracefidabs2(Uend_r, Uend_i, p.Utarget_r, p.Utarget_i))
+            elseif p.pFidType == 3 # Infidelity-squared
+                finalDist = (1.0-tracefidabs2(Uend_r, Uend_i, p.Utarget_r, p.Utarget_i))^2
             end
             objf += finalDist
             
@@ -1236,7 +1240,7 @@ function lagrange_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = tru
         println("lagrange_obj():, objf = ", objf, " Tikhonov penalty = ", tp)
     end
 
-    return objf, nrm2_Cjump, finalDist
+    return objf, nrm2_Cjump, finalDist, tp
 
 end # function lagrange_obj
 
@@ -1331,7 +1335,9 @@ function lagrange_grad(pcof0::Array{Float64,1},  p::objparams, objf_grad::Vector
         Uend_r = (reInitOp[1] * Winit_r + imInitOp[1] * Winit_i) # real part of above expression
         Uend_i = (reInitOp[2] * Winit_r + imInitOp[2] * Winit_i) # imaginary part
 
+        # only makes sense for the last time interval
         scomplex0 = tracefidcomplex(Uend_r, Uend_i, p.Utarget_r, p.Utarget_i) # scaled by 1/N
+        infid = (1.0-tracefidabs2(Uend_r, Uend_i, p.Utarget_r, p.Utarget_i))
 
         if eval1gradient # test 1 component of the gradient
             # figure out if kpar corresponds to a B-spl coeff or a Winit matrix
@@ -1399,6 +1405,7 @@ function lagrange_grad(pcof0::Array{Float64,1},  p::objparams, objf_grad::Vector
                 
                 grad_kpar += dCdW_kpar + dLdW_kpar
             else # last interval
+
                 if p.pFidType == 1 # gradient of the Frobenius norm^2 of U - V_tg
                     # finalDist = trace_operator(Uend_r - p.Utarget_r, Uend_r - p.Utarget_r) + trace_operator(Uend_i - p.Utarget_i, Uend_i - p.Utarget_i)
                     dFda_kpar = 2*trace_operator(dUda_r, Uend_r - p.Utarget_r) + 2*trace_operator(dUda_i, Uend_i - p.Utarget_i)
@@ -1407,6 +1414,11 @@ function lagrange_grad(pcof0::Array{Float64,1},  p::objparams, objf_grad::Vector
                     salpha1 = tracefidcomplex(dUda_r, dUda_i, p.Utarget_r, p.Utarget_i) # scaled by 1/N
 
                     dFda_kpar = -2*real(conj(scomplex0)*salpha1) # gradient of infidelity NOTE: minus sign
+                elseif p.pFidType == 3 # infidelity-squared
+                    # test gradient wrt control parameter p.kpar
+                    salpha1 = tracefidcomplex(dUda_r, dUda_i, p.Utarget_r, p.Utarget_i) # scaled by 1/N
+
+                    dFda_kpar = -4*infid*real(conj(scomplex0)*salpha1) # gradient of infidelity-squared
                 end
                 grad_kpar += dFda_kpar
 
@@ -1421,7 +1433,7 @@ function lagrange_grad(pcof0::Array{Float64,1},  p::objparams, objf_grad::Vector
                     if p.pFidType == 1
                         v_rq = Uend_r[:, col_kp] - p.Utarget_r[:, col_kp]
                         v_iq = Uend_i[:, col_kp] - p.Utarget_i[:, col_kp]
-                    elseif p.pFidType == 2
+                    elseif p.pFidType == 2 || p.pFidType == 3
                         v_rq = p.Utarget_r[:, col_kp]
                         v_iq = p.Utarget_i[:, col_kp]
                     end
@@ -1439,6 +1451,9 @@ function lagrange_grad(pcof0::Array{Float64,1},  p::objparams, objf_grad::Vector
                     elseif p.pFidType == 2 # infidelity
                         sW1 = (s_rp' * v_rq + s_ip' * v_iq) + im*( s_rp' * v_iq - s_ip' * v_rq )
                         dFdW_kpar = -2*real( conj(scomplex0) * sW1 )/p.N # Note: scomplex0 is scaled by 1/N
+                    elseif p.pFidType == 3 # infidelity-squared
+                        sW1 = (s_rp' * v_rq + s_ip' * v_iq) + im*( s_rp' * v_iq - s_ip' * v_rq )
+                        dFdW_kpar = -4*infid*real( conj(scomplex0) * sW1 )/p.N # Note: scomplex0 is scaled by 1/N
                     end
                 else
                     dFdW_kpar = 0.0
@@ -1472,7 +1487,7 @@ function lagrange_grad(pcof0::Array{Float64,1},  p::objparams, objf_grad::Vector
                 println("Interval # ", interval, " Continuity jump (norm2) = ", nrm2_Cjump[interval], " (Lagrange multiplier) x (continuity jump) = ", Lmult_cont)
             end
             
-            objf += Lmult_cont # accumulate contributions to the augemnted Lagrangian
+            objf += Lmult_cont # accumulate contributions to the augmented Lagrangian
 
             if evaladjoint            
                 # gradient wrt Winit^{(interval)} through Cjump = Uend - Winit
@@ -1545,6 +1560,8 @@ function lagrange_grad(pcof0::Array{Float64,1},  p::objparams, objf_grad::Vector
                 finalDist = trace_operator(Uend_r - p.Utarget_r, Uend_r - p.Utarget_r) + trace_operator(Uend_i - p.Utarget_i, Uend_i - p.Utarget_i)
             elseif p.pFidType == 2 # Infidelity
                 finalDist = (1.0-tracefidabs2(Uend_r, Uend_i, p.Utarget_r, p.Utarget_i))
+            elseif p.pFidType == 3 # Infidelity-squarred
+                finalDist = (1.0-tracefidabs2(Uend_r, Uend_i, p.Utarget_r, p.Utarget_i))^2
             end
             objf += finalDist
             
@@ -1606,6 +1623,28 @@ function lagrange_grad(pcof0::Array{Float64,1},  p::objparams, objf_grad::Vector
                             offc_r += p.N
                             offc_i += p.N
                         end # for col
+                    elseif p.pFidType == 3 # infidelity-squared
+                        for col in 1:p.N
+                            v_rq = p.Utarget_r[:, col]
+                            v_iq = p.Utarget_i[:, col]
+                            
+                            # real part: vectorize over 'row'
+                            s_rp = reInitOp[1]
+                            s_ip = reInitOp[2]
+                            sW1 = (s_rp' * v_rq + s_ip' * v_iq) + im*( s_rp' * v_iq - s_ip' * v_rq )
+                                
+                            objf_grad[offc_r + 1: offc_r + p.N] += -4*infid*real( conj(scomplex0) * sW1 )/p.N
+                            
+                            # imaginary part: vectorize over row
+                            s_rp = imInitOp[1]
+                            s_ip = imInitOp[2]
+                            sW1 = (s_rp' * v_rq + s_ip' * v_iq) + im*( s_rp' * v_iq - s_ip' * v_rq )
+                            
+                            objf_grad[offc_i + 1: offc_i + p.N] += -4*infid*real( conj(scomplex0) * sW1 )/p.N
+
+                            offc_r += p.N
+                            offc_i += p.N
+                        end # for col
                     end
                 end # if nTimeIntervals > 1
 
@@ -1615,6 +1654,10 @@ function lagrange_grad(pcof0::Array{Float64,1},  p::objparams, objf_grad::Vector
                     infidGrad = adjoint_gradient(p, splinepar, tEnd, p.Tsteps[interval], Uend_r, Uend_i, 2*(Uend_r - p.Utarget_r), 2*(Uend_i - p.Utarget_i))
                 elseif p.pFidType == 2
                     Amat = -2*conj(scomplex0) * (p.Utarget_r + im*p.Utarget_i)/p.N # for infidelity gradient
+                    # Calculate gradients
+                    infidGrad = adjoint_gradient(p, splinepar, tEnd, p.Tsteps[interval], Uend_r, Uend_i, real(Amat), imag(Amat))
+                elseif p.pFidType == 3
+                    Amat = -4*infid*conj(scomplex0) * (p.Utarget_r + im*p.Utarget_i)/p.N # for infidelity-squared gradient
                     # Calculate gradients
                     infidGrad = adjoint_gradient(p, splinepar, tEnd, p.Tsteps[interval], Uend_r, Uend_i, real(Amat), imag(Amat))
                 end
@@ -1654,7 +1697,7 @@ function lagrange_grad(pcof0::Array{Float64,1},  p::objparams, objf_grad::Vector
         # return objf, copy(objf_grad) # ipopt interface requires a copy of objf_grad?
     end
     
-    return objf, nrm2_Cjump, finalDist
+    return objf, nrm2_Cjump, finalDist, tp
 
 end # function lagrange_grad
 

@@ -8,11 +8,15 @@ include("two_sys_noguard.jl")
 
 # assign the target gate, sqrt(Swap12)
 Vtg = get_swap_1d_gate(2)
-target_gate = sqrt(Vtg)
-fidType = 1 # Frobenius norm^2
+target_gate = Vtg # sqrt(Vtg)
+
 nTimeIntervals = 3 # 3 # 2 # 1
 
-retval = setup_std_model(Ne, Ng, f01, xi, xi12, couple_type, rot_freq, T, D1, target_gate, maxctrl_MHz=maxctrl_MHz, msb_order=msb_order, init_amp_frac=init_amp_frac, rand_seed=rand_seed, Pmin=Pmin, cw_prox_thres=cw_prox_thres, cw_amp_thres=cw_amp_thres, use_carrier_waves=use_carrier_waves, nTimeIntervals=nTimeIntervals, zeroCtrlBC=zeroCtrlBC, fidType=fidType)
+fidType = 3 # 2 # fidType = 1 for Frobenius norm^2, or fidType = 2 for Infidelity
+useUniConstraints = false # set to true for fidType = 2
+    
+
+retval = setup_std_model(Ne, Ng, f01, xi, xi12, couple_type, rot_freq, T, D1, target_gate, maxctrl_MHz=maxctrl_MHz, msb_order=msb_order, initctrl_MHz=initctrl_MHz, rand_seed=rand_seed, Pmin=Pmin, cw_prox_thres=cw_prox_thres, cw_amp_thres=cw_amp_thres, use_carrier_waves=use_carrier_waves, nTimeIntervals=nTimeIntervals, zeroCtrlBC=zeroCtrlBC, fidType=fidType, useUniCons=useUniConstraints)
 
 params = retval[1]
 pcof0 = retval[2]

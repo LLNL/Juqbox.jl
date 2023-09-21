@@ -94,7 +94,7 @@ function hamiltonians(;Nsys::Int64, Ness::Vector{Int64}, Nguard::Vector{Int64}, 
 end
 
 # initial control guess
-function init_control(; amp_frac::Float64, maxAmp::Vector{Float64}, D1::Int64, Nfreq::Vector{Int64}, startFile::String = "", seed::Int64 = -1, randomize::Bool = true, growth_rate::Vector{Vector{Float64}} = Vector{Vector{Float64}}(undef,0), nTimeIntervals::Int64=1, U0::Matrix{ComplexF64}=Matrix{ComplexF64}(undef,0,0), Utarget::Matrix{ComplexF64}=Matrix{ComplexF64}(undef,0,0))
+function init_control(; initAmp::Vector{Float64}, D1::Int64, Nfreq::Vector{Int64}, startFile::String = "", seed::Int64 = -1, randomize::Bool = true, growth_rate::Vector{Vector{Float64}} = Vector{Vector{Float64}}(undef,0), nTimeIntervals::Int64=1, U0::Matrix{ComplexF64}=Matrix{ComplexF64}(undef,0,0), Utarget::Matrix{ComplexF64}=Matrix{ComplexF64}(undef,0,0))
 
     Nosc = length(Nfreq)
     nAlpha = 2*D1*sum(Nfreq)
@@ -130,13 +130,13 @@ function init_control(; amp_frac::Float64, maxAmp::Vector{Float64}, D1::Int64, N
         if randomize
             for q=1:Nosc
                 if Nfreq[q] > 0
-                    maxrand = amp_frac*maxAmp[q]/sqrt(2)/Nfreq[q]
+                    maxrand = initAmp[q]/sqrt(2)/Nfreq[q]
                     Nq = 2*D1*Nfreq[q]
                     pcof0[offc+1:offc+Nq] = maxrand * 2 * (rand(Nq) .- 0.5)
                     offc += Nq
                 end
             end
-            println("*** Starting from RANDOM control vector with amp_frac = ", amp_frac)
+            println("*** Starting from RANDOM control vector with initAmp = ", initAmp)
         else # picewise constant with amplitude depending on scaled growth rate
             max_rate = 0.0
             for q = 1:Nosc
@@ -145,7 +145,7 @@ function init_control(; amp_frac::Float64, maxAmp::Vector{Float64}, D1::Int64, N
             println("max_rate = ", max_rate)
             for q = 1:Nosc
                 for k = 1:Nfreq[q]
-                    const_amp = amp_frac * maxAmp[q]/sqrt(2)/Nfreq[q] * max_rate/(growth_rate[q][k])
+                    const_amp = initAmp[q]/sqrt(2)/Nfreq[q] * max_rate/(growth_rate[q][k])
                     pcof0[offc+1:offc+2*D1] .= const_amp
         
                     # randomizing p/q knocks out any Rabi-style oscillation
@@ -154,7 +154,7 @@ function init_control(; amp_frac::Float64, maxAmp::Vector{Float64}, D1::Int64, N
                     offc += 2*D1
                 end
             end
-            println("*** Starting from PIECEWISE CONSTANT control vector with amp_frac = ", amp_frac)
+            println("*** Starting from PIECEWISE CONSTANT control vector")
         end
 
     end
@@ -975,10 +975,10 @@ end
 
 """
     params, pcof0, maxAmp = setup_std_model(Ne, Ng, f01, xi, couple_coeff, couple_type, rot_freq, T, D1, gate_final;
-     maxctrl_MHz = 10.0, 
+     maxctrl_MHz::Float64 = 10.0, 
      msb_order::Bool = false, 
      Pmin::Int64 = 40, 
-     init_amp_frac::Float64 = 0.0, 
+     initctrlMHz::Float64 = 1.0, 
      randomize_init_ctrl::Bool = true, 
      rand_seed = 2345, 
      pcofFileName="", 
@@ -1009,10 +1009,10 @@ Setup a Hamiltonian model, parameters for numerical time stepping, a target unit
 - `gate_final::Matrix{ComplexF64}`: Target unitary gate of size N x N, where N=prod(Ne).
 
 # Optional key-word arguments
-- `maxctrl_MHz::Float64 = 10.0`: Approximate max control amplitude [MHz].
+- `maxctrl_MHz::Float64 = 10.0`: Enforce box constraints on B-spline coefficients to approximately satisfy this bound [MHz].
 - `msb_order::Bool = false`: Ordering of subsystems in the state vector. Should be 'false' when using the Quandary backend.
 - `Pmin::Int64 = 40`
-- `init_amp_frac::Float64 = 0.0`
+- `initctrl_MHz::Float64 = 1.0`
 - `randomize_init_ctrl::Bool = true`
 - `rand_seed::Int64 = 2345`
 - `pcofFileName = ""`: Read initial control vector from a `jld2` formatted file.
@@ -1032,7 +1032,7 @@ Setup a Hamiltonian model, parameters for numerical time stepping, a target unit
 - `maxAmp::Vector{Float64}`: Max amplitudes for each segement of the control vector. Here a segment corresponds to a control Hamiltonian
 """
   ################################
-  function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float64}, xi::Vector{Float64}, couple_coeff::Vector{Float64}, couple_type::Int64, rot_freq::Vector{Float64}, T::Float64, D1::Int64, gate_final::Matrix{ComplexF64}; maxctrl_MHz::Float64=10.0, msb_order::Bool = false, Pmin::Int64 = 40, init_amp_frac::Float64=0.0, randomize_init_ctrl::Bool = true, rand_seed::Int64=2345, pcofFileName::String="", zeroCtrlBC::Bool = true, use_eigenbasis::Bool = false, cw_amp_thres::Float64=5e-2, cw_prox_thres::Float64=2e-3, splines_real_imag::Bool=true, wmatScale::Float64=1.0, use_carrier_waves::Bool=true, nTimeIntervals::Int64=1, gammaJump::Float64=0.1, fidType::Int64=2, useUniCons::Bool=false, verbose::Bool=false)
+  function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float64}, xi::Vector{Float64}, couple_coeff::Vector{Float64}, couple_type::Int64, rot_freq::Vector{Float64}, T::Float64, D1::Int64, gate_final::Matrix{ComplexF64}; maxctrl_MHz::Float64=10.0, msb_order::Bool = false, Pmin::Int64 = 40, initctrl_MHz::Float64=0.0, randomize_init_ctrl::Bool = true, rand_seed::Int64=2345, pcofFileName::String="", zeroCtrlBC::Bool = true, use_eigenbasis::Bool = false, cw_amp_thres::Float64=5e-2, cw_prox_thres::Float64=2e-3, splines_real_imag::Bool=true, wmatScale::Float64=1.0, use_carrier_waves::Bool=true, nTimeIntervals::Int64=1, gammaJump::Float64=0.1, fidType::Int64=2, useUniCons::Bool=false, verbose::Bool=false)
   
     # convert maxctrl_MHz to rad/ns per frequency
     # This is (approximately) the max amplitude of each control function (p & q)
@@ -1056,7 +1056,7 @@ Setup a Hamiltonian model, parameters for numerical time stepping, a target unit
     Ntot = prod(Ne + Ng)
 
     if (nTimeIntervals > 1 && Ness != Ntot)
-        throw("The lifted approach with intermediate targets is only implemented for square unitaries")
+        throw("The lifted approach with intermediate time intervals is only implemented for square target matrices")
     end
 
     if use_carrier_waves
@@ -1083,6 +1083,8 @@ Setup a Hamiltonian model, parameters for numerical time stepping, a target unit
   
     # Amplitude bounds to be imposed during optimization
     maxAmp = maxctrl_radns * ones(Nosc) # internally scaled by 1/(sqrt(2)*Nfreq[q]) in setup_ipopt() and Quandary
+    # For initializing the B-spline coefficients
+    initAmp = initctrl_MHz * 2*pi * 1e-3 * ones(Nosc)
 
     Nfreq, om, growth_rate = sort_and_cull_carrier_freqs(Nosc, Nfreq, om, growth_rate, rot_freq)
   
@@ -1105,7 +1107,7 @@ Setup a Hamiltonian model, parameters for numerical time stepping, a target unit
     # end
     
     # Set up the initial control parameter (holding alpha and Winit)
-    pcof0 = init_control(amp_frac = init_amp_frac, maxAmp=maxAmp, D1=D1, Nfreq=Nfreq, startFile=pcofFileName, seed=rand_seed, randomize=randomize_init_ctrl, growth_rate=growth_rate, nTimeIntervals=nTimeIntervals, U0=convert(Matrix{ComplexF64}, Ubasis), Utarget=Utarget)
+    pcof0 = init_control(initAmp=initAmp, D1=D1, Nfreq=Nfreq, startFile=pcofFileName, seed=rand_seed, randomize=randomize_init_ctrl, growth_rate=growth_rate, nTimeIntervals=nTimeIntervals, U0=convert(Matrix{ComplexF64}, Ubasis), Utarget=Utarget)
 
     nCoeff = length(pcof0)
 
