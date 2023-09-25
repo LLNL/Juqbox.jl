@@ -1154,6 +1154,7 @@ function lagrange_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = tru
 
     # Total objective
     objf = 0.0
+    infid = 0.0
     finalDist = 0.0
 
     eval1gradient = false # only for testing the adjoint gradient
@@ -1216,6 +1217,7 @@ function lagrange_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = tru
             objf += Lmult_cont # accumulate contributions to the augemnted Lagrangian
 
         else # final time interval
+            infid = abs(1.0-tracefidabs2(Uend_r, Uend_i, p.Utarget_r, p.Utarget_i))
             if p.pFidType == 1 # Frobenius norm^2 of U - V_tg
                 finalDist = trace_operator(Uend_r - p.Utarget_r, Uend_r - p.Utarget_r) + trace_operator(Uend_i - p.Utarget_i, Uend_i - p.Utarget_i)
             elseif p.pFidType == 2 # Infidelity
@@ -1226,7 +1228,7 @@ function lagrange_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = tru
             objf += finalDist
             
             if verbose
-                println("Interval # ", interval, " pFidType = ", p.pFidType, " finalDist = ", finalDist)
+                println("Interval # ", interval, " pFidType = ", p.pFidType, " finalDist = ", finalDist, " infid = ", infid)
             end 
                
         end # if interval < p.nIntervals
@@ -1240,7 +1242,7 @@ function lagrange_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = tru
         println("lagrange_obj():, objf = ", objf, " Tikhonov penalty = ", tp)
     end
 
-    return objf, nrm2_Cjump, finalDist, tp
+    return objf, nrm2_Cjump, infid, tp
 
 end # function lagrange_obj
 
@@ -1298,6 +1300,7 @@ function lagrange_grad(pcof0::Array{Float64,1},  p::objparams, objf_grad::Vector
 
     # Total objective
     objf = 0.0
+    infid = 0.0
     finalDist = 0.0
     grad_kpar = 0.0
 
@@ -1556,6 +1559,7 @@ function lagrange_grad(pcof0::Array{Float64,1},  p::objparams, objf_grad::Vector
                 end
             end
         else # final time interval
+
             if p.pFidType == 1 # Frobenius norm^2 of U - V_tg
                 finalDist = trace_operator(Uend_r - p.Utarget_r, Uend_r - p.Utarget_r) + trace_operator(Uend_i - p.Utarget_i, Uend_i - p.Utarget_i)
             elseif p.pFidType == 2 # Infidelity
@@ -1566,7 +1570,7 @@ function lagrange_grad(pcof0::Array{Float64,1},  p::objparams, objf_grad::Vector
             objf += finalDist
             
             if verbose
-                println("Interval # ", interval, " pFidType = ", p.pFidType, " finalDist = ", finalDist)
+                println("Interval # ", interval, " pFidType = ", p.pFidType, " finalDist = ", finalDist, " infid = ", infid)
             end 
 
             if evaladjoint
@@ -1697,7 +1701,7 @@ function lagrange_grad(pcof0::Array{Float64,1},  p::objparams, objf_grad::Vector
         # return objf, copy(objf_grad) # ipopt interface requires a copy of objf_grad?
     end
     
-    return objf, nrm2_Cjump, finalDist, tp
+    return objf, nrm2_Cjump, abs(infid), tp
 
 end # function lagrange_grad
 
