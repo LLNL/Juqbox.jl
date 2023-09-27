@@ -18,7 +18,7 @@ nOuter = 5 #
 use_multipliers = true # Lagrange multipliers
 gammaJump = 5e-3 # initial value
 gammaMax = 100.0
-gammaFactor = 2.0
+gammaFactor = 1.5 # 2.0
 derivative_test = false
 
 nTimeIntervals = 6 # 4 # 3 # 3 # 2 # 1
