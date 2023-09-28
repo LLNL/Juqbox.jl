@@ -277,7 +277,7 @@ mutable struct objparams
     Lmult_i:: Vector{Matrix{Float64}} # Vector of size (nTimeIntervals-1) for the Lagrange multiplier coefficients (imag)
 
     gammaJump:: Float64 # Coefficient of the quadratic penalty term for jumps across time intervals
-    useUniCons:: Bool # set to true to impose unitary constraints on intermediate initial conditions
+    constraintType:: Int64 # set to true to impose unitary constraints on intermediate initial conditions
 
 # constructor for regular arrays (full matrices)
     function objparams(Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64;
@@ -292,7 +292,7 @@ mutable struct objparams
                        objFuncType:: Int64 = 1, leak_ubound:: Float64=1.0e-3,
                        use_sparse::Bool = false, use_custom_forbidden::Bool = false,
                        linear_solver::lsolver_object = lsolver_object(nrhs=prod(Ne)), msb_order::Bool = true,
-                       dVds::Array{ComplexF64,2}= Array{ComplexF64}(undef,0,0), freq01::Vector{Float64} = Vector{Float64}[], self_kerr::Vector{Float64} = Vector{Float64}[], couple_coeff::Vector{Float64} = Vector{Float64}[], couple_type::Int64 = 0, zeroCtrlBC::Bool = true, nTimeIntervals::Int64=1, gammaJump::Float64=0.1, fidType::Int64 = 2, useUniCons::Bool = false)
+                       dVds::Array{ComplexF64,2}= Array{ComplexF64}(undef,0,0), freq01::Vector{Float64} = Vector{Float64}[], self_kerr::Vector{Float64} = Vector{Float64}[], couple_coeff::Vector{Float64} = Vector{Float64}[], couple_type::Int64 = 0, zeroCtrlBC::Bool = true, nTimeIntervals::Int64=1, gammaJump::Float64=0.1, fidType::Int64 = 2, constraintType::Int64 = 0)
         pFidType = fidType # Std gate infidelity
         Nosc   = length(Ne) # number of subsystems
         N      = prod(Ne)
@@ -513,7 +513,7 @@ mutable struct objparams
              usingPriorCoeffs, priorCoeffs, quiet, Rfreq, false, [],
              real(my_dVds), imag(my_dVds), my_sv_type, wa, nCoeff, D1, nAlpha, nWinit,
              freq01, self_kerr, couple_coeff, couple_type, # Add some checks for these ones!
-             msb_order, zeroCtrlBC, nTimeIntervals, T0int, Tsteps, Lmult_r, Lmult_i, gammaJump, useUniCons
+             msb_order, zeroCtrlBC, nTimeIntervals, T0int, Tsteps, Lmult_r, Lmult_i, gammaJump, constraintType
             )
 
     end
@@ -1705,6 +1705,388 @@ function lagrange_grad(pcof0::Array{Float64,1},  p::objparams, objf_grad::Vector
 
 end # function lagrange_grad
 
+#######################################################
+function final_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = true)
+    
+    # shortcut to working_arrays object in p::objparams  
+    w = p.wa
+
+    # initializations start here
+    alpha = pcof0[1:p.nAlpha] # extract the B-spline-coefficients
+
+    # setup splinepar
+    if p.use_bcarrier
+        splinepar = bcparams(p.T, p.D1, p.Cfreq, alpha) # Assumes Nunc = 0
+    else
+        Nsig  = 2*(p.Ncoupled + p.Nunc) # Only uses for regular B-splines
+        splinepar = splineparams(p.T, p.D1, Nsig, alpha)
+    end
+
+    dt ::Float64 = p.T/p.nsteps # global time step
+
+    if verbose
+        println("final_obj: Vector dim Ntot =", p.Ntot , ", Guard levels Nguard = ", p.Nguard , ", Param dim, Psize = ", p.nCoeff, ", Spline coeffs per func, D1= ", p.D1, " Tikhonov coeff: ", p.tik0)
+        println("Final time: ", p.T, ", total number of time steps: " , p.nsteps , ", time step: " , dt )
+        println("final_obj: length(pcof) =  ", length(pcof0), " nAlpha = ", p.nAlpha, " nWinit = ", p.nWinit)
+    end
+    
+    # Zero out working arrays
+    initialize_working_arrays(w)
+
+    # Allocate storage for saving the unitary at the end of each time interval
+    Uend_r = Matrix{Float64}(undef, p.Ntot, p.Ntot)
+    Uend_i = Matrix{Float64}(undef, p.Ntot, p.Ntot)
+
+    # Storage for saving jump discontinuities across time intervals
+    nrm2_Cjump = zeros(p.nTimeIntervals-1)
+
+    # Total objective
+    objf = 0.0
+    infid = 0.0
+    finalDist = 0.0
+
+    eval1gradient = false # only for testing the adjoint gradient
+
+    # only consider the final time interval
+    interval = p.nTimeIntervals
+
+    if interval == 1
+        # initial conditions from Uinit (fixed)
+        Winit_r = p.Uinit_r
+        Winit_i = p.Uinit_i
+    else
+        # initial conditions from pcof0 (determined by optimization)
+        offc = p.nAlpha + (interval-2)*p.nWinit # for interval = 2 the offset should be nAlpha
+        # println("offset 1 = ", offc)
+        nMat = p.Ntot^2
+        Winit_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+        offc += nMat
+        # println("offset 2 = ", offc)
+        Winit_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+    end
+
+    # Evolve the state under Schroedinger's equation
+    # NOTE: the S-V scheme treats the real and imaginary parts with different time integrators
+    # First compute the solution operator for a basis of real initial conditions: I
+    reInitOp = evolve_schroedinger(p, splinepar, p.T0int[interval], p.Uinit_r, p.Uinit_i, p.Tsteps[interval], eval1gradient)
+    
+    # Then a basis for purely imaginary initial conditions: iI
+    imInitOp = evolve_schroedinger(p, splinepar, p.T0int[interval], p.Uinit_i, p.Uinit_r, p.Tsteps[interval], eval1gradient)
+    
+    # Now we can  account for the initial conditions for this time interval and easily calculate the gradient wrt Winit
+    # Uend = (reInitop[1] + i*reInitOp[2]) * Winit_r + (imInitOp[1] + i*imInitOp[2]) * Winit_i
+    Uend_r = (reInitOp[1] * Winit_r + imInitOp[1] * Winit_i) # real part of above expression
+    Uend_i = (reInitOp[2] * Winit_r + imInitOp[2] * Winit_i) # imaginary part
+
+    # final time interval
+    infid = abs(1.0-tracefidabs2(Uend_r, Uend_i, p.Utarget_r, p.Utarget_i))
+    if p.pFidType == 1 # Frobenius norm^2 of U - V_tg
+        finalDist = trace_operator(Uend_r - p.Utarget_r, Uend_r - p.Utarget_r) + trace_operator(Uend_i - p.Utarget_i, Uend_i - p.Utarget_i)
+    elseif p.pFidType == 2 # Infidelity
+        finalDist = (1.0-tracefidabs2(Uend_r, Uend_i, p.Utarget_r, p.Utarget_i))
+    elseif p.pFidType == 3 # Infidelity-squared
+        finalDist = (1.0-tracefidabs2(Uend_r, Uend_i, p.Utarget_r, p.Utarget_i))^2
+    end
+    objf += finalDist
+
+    tp = tikhonov_pen(alpha, p) # Tikhonov penalty
+    objf += tp
+
+    if verbose
+        println("Interval # ", interval, " pFidType = ", p.pFidType, " finalDist = ", finalDist, " infid = ", infid)
+        println("final_obj():, objf = ", objf, " Tikhonov penalty = ", tp)
+    end
+
+    return objf, nrm2_Cjump, infid, tp
+
+end # function final_obj
+
+################################################
+function final_grad(pcof0::Array{Float64,1},  p::objparams, objf_grad::Vector{Float64}, eval1gradient::Bool = true)
+    # shortcut to working_arrays object in p::objparams
+    w = p.wa
+
+    objf_grad[:] .= 0.0 # initialize the VALUES pointed to by 'objf_grad' to zero
+    # NOTE: objf .= 0.0 would create a new array of the same size as the input argument, but this change would not be visible to the calling function!
+
+    if eval1gradient
+        println("final_grad: Vector dim Ntot =", p.Ntot , ", Guard levels Nguard = ", p.Nguard , ", Param dim, Psize = ", p.nCoeff, ", Spline coeffs per func, D1= ", p.D1, " Tikhonov coeff: ", p.tik0)
+        
+        if p.nCoeff > p.nAlpha
+            println("Objective depends on W-initial conditions, nIntervals = ", p.nTimeIntervals)
+            if p.kpar <= p.nAlpha
+                println("kpar = ", p.kpar, " corresponds to a B-spline coefficient")
+            else
+                println("kpar = ", p.kpar, " corresponds to intermediate initial conditions")
+            end
+        else
+            println("Objective does NOT depend on W, nIntervals = ", p.nTimeIntervals)
+        end
+        
+    end
+
+    # initializations start here
+    alpha = pcof0[1:p.nAlpha] # extract the B-spline-coefficients
+
+    # setup splinepar
+    if p.use_bcarrier
+        splinepar = bcparams(p.T, p.D1, p.Cfreq, alpha) # Assumes Nunc = 0
+    else
+        Nsig  = 2*(p.Ncoupled + p.Nunc) # Only uses for regular B-splines
+        splinepar = splineparams(p.T, p.D1, Nsig, alpha)
+    end
+
+    dt ::Float64 = p.T/p.nsteps # global time step
+
+    if eval1gradient
+        println("Final time: ", p.T, ", total number of time steps: " , p.nsteps , ", time step: " , dt )
+        println("final_grad: length(pcof) =  ", length(pcof0), " nAlpha = ", p.nAlpha, " nWinit = ", p.nWinit)
+    end
+    
+    # Zero out working arrays
+    initialize_working_arrays(w)
+
+    # Allocate storage for saving the unitary at the end of each time interval
+    Uend_r = Matrix{Float64}(undef, p.Ntot, p.Ntot)
+    Uend_i = Matrix{Float64}(undef, p.Ntot, p.Ntot)
+
+    # Total objective
+    objf = 0.0
+    infid = 0.0
+    finalDist = 0.0
+    grad_kpar = 0.0
+
+    # This objective only considers the final time interval
+    interval = p.nTimeIntervals
+    tEnd = p.T0int[interval] + p.Tsteps[interval]*dt # terminal time for this time interval
+
+    if interval == 1
+        # initial conditions from Uinit (fixed)
+        Winit_r = p.Uinit_r
+        Winit_i = p.Uinit_i
+    else
+        # initial conditions from pcof0 (determined by optimization)
+        offc = p.nAlpha + (interval-2)*p.nWinit # for interval = 2 the offset should be nAlpha
+        # println("offset 1 = ", offc)
+        nMat = p.Ntot^2
+        Winit_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+        offc += nMat
+        # println("offset 2 = ", offc)
+        Winit_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+    end
+
+    # Evolve the state under Schroedinger's equation
+    # NOTE: the S-V scheme treats the real and imaginary parts with different time integrators
+    # First compute the solution operator for a basis of real initial conditions: I
+    reInitOp = evolve_schroedinger(p, splinepar, p.T0int[interval], p.Uinit_r, p.Uinit_i, p.Tsteps[interval], eval1gradient)
+    
+    # Then a basis for purely imaginary initial conditions: iI
+    imInitOp = evolve_schroedinger(p, splinepar, p.T0int[interval], p.Uinit_i, p.Uinit_r, p.Tsteps[interval], eval1gradient)
+    
+    # Now we can  account for the initial conditions for this time interval and easily calculate the gradient wrt Winit
+    # Uend = (reInitop[1] + i*reInitOp[2]) * Winit_r + (imInitOp[1] + i*imInitOp[2]) * Winit_i
+    Uend_r = (reInitOp[1] * Winit_r + imInitOp[1] * Winit_i) # real part of above expression
+    Uend_i = (reInitOp[2] * Winit_r + imInitOp[2] * Winit_i) # imaginary part
+
+    # only makes sense for the last time interval
+    scomplex0 = tracefidcomplex(Uend_r, Uend_i, p.Utarget_r, p.Utarget_i) # scaled by 1/N
+    infid = (1.0-tracefidabs2(Uend_r, Uend_i, p.Utarget_r, p.Utarget_i))
+
+    if eval1gradient # test 1 component of the gradient
+        # figure out if kpar corresponds to a B-spl coeff or a Winit matrix
+        interval_kp, real_imag_kp, row_kp, col_kp = get_Winit_index(p, p.kpar, true)
+
+        # Then account for the initial conditions for this time interval
+        dUda_r = (reInitOp[3] * Winit_r + imInitOp[3] * Winit_i)
+        dUda_i = (reInitOp[4] * Winit_r + imInitOp[4] * Winit_i)
+
+        if p.pFidType == 1 # gradient of the Frobenius norm^2 of U - V_tg
+            # finalDist = trace_operator(Uend_r - p.Utarget_r, Uend_r - p.Utarget_r) + trace_operator(Uend_i - p.Utarget_i, Uend_i - p.Utarget_i)
+            dFda_kpar = 2*trace_operator(dUda_r, Uend_r - p.Utarget_r) + 2*trace_operator(dUda_i, Uend_i - p.Utarget_i)
+        elseif p.pFidType == 2 # infidelity
+            # test gradient wrt control parameter p.kpar
+            salpha1 = tracefidcomplex(dUda_r, dUda_i, p.Utarget_r, p.Utarget_i) # scaled by 1/N
+
+            dFda_kpar = -2*real(conj(scomplex0)*salpha1) # gradient of infidelity NOTE: minus sign
+        elseif p.pFidType == 3 # infidelity-squared
+            # test gradient wrt control parameter p.kpar
+            salpha1 = tracefidcomplex(dUda_r, dUda_i, p.Utarget_r, p.Utarget_i) # scaled by 1/N
+
+            dFda_kpar = -4*infid*real(conj(scomplex0)*salpha1) # gradient of infidelity-squared
+        end
+        grad_kpar += dFda_kpar
+
+        # tmp this one is a bit complicated...
+        if interval == interval_kp+1 # NOTE: interval = p.nTimeIntervals
+            # p = row_kp, q = col_kp
+            if p.pFidType == 1
+                v_rq = Uend_r[:, col_kp] - p.Utarget_r[:, col_kp]
+                v_iq = Uend_i[:, col_kp] - p.Utarget_i[:, col_kp]
+            elseif p.pFidType == 2 || p.pFidType == 3
+                v_rq = p.Utarget_r[:, col_kp]
+                v_iq = p.Utarget_i[:, col_kp]
+            end
+            # dependence through initial condition Cjump^{interval} = U^{interval}(W^{interval_kp}) - W^{interval}
+            if real_imag_kp == 0 # real part
+                s_rp = reInitOp[1][:, row_kp]
+                s_ip = reInitOp[2][:, row_kp]
+            else # imaginary part
+                s_rp = imInitOp[1][:, row_kp]
+                s_ip = imInitOp[2][:, row_kp]
+            end
+            if p.pFidType == 1 # Frobenius norm^2 (U(T) - Vtg)
+                sW1 = (s_rp' * v_rq + s_ip' * v_iq) # + im*( s_rp' * v_iq - s_ip' * v_rq )
+                dFdW_kpar = 2*sW1
+            elseif p.pFidType == 2 # infidelity
+                sW1 = (s_rp' * v_rq + s_ip' * v_iq) + im*( s_rp' * v_iq - s_ip' * v_rq )
+                dFdW_kpar = -2*real( conj(scomplex0) * sW1 )/p.N # Note: scomplex0 is scaled by 1/N
+            elseif p.pFidType == 3 # infidelity-squared
+                sW1 = (s_rp' * v_rq + s_ip' * v_iq) + im*( s_rp' * v_iq - s_ip' * v_rq )
+                dFdW_kpar = -4*infid*real( conj(scomplex0) * sW1 )/p.N # Note: scomplex0 is scaled by 1/N
+            end
+        else
+            dFdW_kpar = 0.0
+        end
+        
+        grad_kpar += dFdW_kpar
+    end # if eval1gradient
+
+    # final distance
+    if p.pFidType == 1 # Frobenius norm^2 of U - V_tg
+        finalDist = trace_operator(Uend_r - p.Utarget_r, Uend_r - p.Utarget_r) + trace_operator(Uend_i - p.Utarget_i, Uend_i - p.Utarget_i)
+    elseif p.pFidType == 2 # Infidelity
+        finalDist = (1.0-tracefidabs2(Uend_r, Uend_i, p.Utarget_r, p.Utarget_i))
+    elseif p.pFidType == 3 # Infidelity-squarred
+        finalDist = (1.0-tracefidabs2(Uend_r, Uend_i, p.Utarget_r, p.Utarget_i))^2
+    end
+    objf += finalDist
+    
+    if eval1gradient
+        println("Interval # ", interval, " pFidType = ", p.pFidType, " finalDist = ", finalDist, " infid = ", infid)
+    end 
+
+    # Gradient of infidelity
+    # no contribution if there is only 1 interval because the first initial condition is fixed
+    if p.nTimeIntervals > 1 
+        # Gradient wrt Winit^{interval -  1} through initial condition for Uend
+        offc_r = p.nAlpha + (interval-2)*p.nWinit # for interval = 2 the offset should be nAlpha
+        offc_i = offc_r + nMat
+
+        # p = row, q = col
+        if p.pFidType == 1 # Frobenius norm^2 of (Uend - Vtg)
+            for col in 1:p.N
+                v_rq = Uend_r[:, col] - p.Utarget_r[:, col]
+                v_iq = Uend_i[:, col] - p.Utarget_i[:, col]
+                
+                # real part: vectorize over 'row'
+                s_rp = reInitOp[1]
+                s_ip = reInitOp[2]
+                sW1 = (s_rp' * v_rq + s_ip' * v_iq) # + im*( s_rp' * v_iq - s_ip' * v_rq )
+                    
+                objf_grad[offc_r + 1: offc_r + p.N] += 2*sW1
+                
+                # imaginary part: vectorize over row
+                s_rp = imInitOp[1]
+                s_ip = imInitOp[2]
+                sW1 = (s_rp' * v_rq + s_ip' * v_iq) # + im*( s_rp' * v_iq - s_ip' * v_rq )
+                
+                objf_grad[offc_i + 1: offc_i + p.N] += 2*sW1
+
+                offc_r += p.N
+                offc_i += p.N
+            end # for col
+        elseif p.pFidType == 2 # infidelity
+            for col in 1:p.N
+                v_rq = p.Utarget_r[:, col]
+                v_iq = p.Utarget_i[:, col]
+                
+                # real part: vectorize over 'row'
+                s_rp = reInitOp[1]
+                s_ip = reInitOp[2]
+                sW1 = (s_rp' * v_rq + s_ip' * v_iq) + im*( s_rp' * v_iq - s_ip' * v_rq )
+                    
+                objf_grad[offc_r + 1: offc_r + p.N] += -2*real( conj(scomplex0) * sW1 )/p.N
+                
+                # imaginary part: vectorize over row
+                s_rp = imInitOp[1]
+                s_ip = imInitOp[2]
+                sW1 = (s_rp' * v_rq + s_ip' * v_iq) + im*( s_rp' * v_iq - s_ip' * v_rq )
+                
+                objf_grad[offc_i + 1: offc_i + p.N] += -2*real( conj(scomplex0) * sW1 )/p.N
+
+                offc_r += p.N
+                offc_i += p.N
+            end # for col
+        elseif p.pFidType == 3 # infidelity-squared
+            for col in 1:p.N
+                v_rq = p.Utarget_r[:, col]
+                v_iq = p.Utarget_i[:, col]
+                
+                # real part: vectorize over 'row'
+                s_rp = reInitOp[1]
+                s_ip = reInitOp[2]
+                sW1 = (s_rp' * v_rq + s_ip' * v_iq) + im*( s_rp' * v_iq - s_ip' * v_rq )
+                    
+                objf_grad[offc_r + 1: offc_r + p.N] += -4*infid*real( conj(scomplex0) * sW1 )/p.N
+                
+                # imaginary part: vectorize over row
+                s_rp = imInitOp[1]
+                s_ip = imInitOp[2]
+                sW1 = (s_rp' * v_rq + s_ip' * v_iq) + im*( s_rp' * v_iq - s_ip' * v_rq )
+                
+                objf_grad[offc_i + 1: offc_i + p.N] += -4*infid*real( conj(scomplex0) * sW1 )/p.N
+
+                offc_r += p.N
+                offc_i += p.N
+            end # for col
+        end
+    end # if nTimeIntervals > 1
+
+    # gradient wrt alpha (B-spline coefficients)
+    if p.pFidType == 1
+        # dFda_kpar = 2*trace_operator(dUda_r, Uend_r - p.Utarget_r) + 2*trace_operator(dUda_i, Uend_i - p.Utarget_i)
+        infidGrad = adjoint_gradient(p, splinepar, tEnd, p.Tsteps[interval], Uend_r, Uend_i, 2*(Uend_r - p.Utarget_r), 2*(Uend_i - p.Utarget_i))
+    elseif p.pFidType == 2
+        Amat = -2*conj(scomplex0) * (p.Utarget_r + im*p.Utarget_i)/p.N # for infidelity gradient
+        # Calculate gradients
+        infidGrad = adjoint_gradient(p, splinepar, tEnd, p.Tsteps[interval], Uend_r, Uend_i, real(Amat), imag(Amat))
+    elseif p.pFidType == 3
+        Amat = -4*infid*conj(scomplex0) * (p.Utarget_r + im*p.Utarget_i)/p.N # for infidelity-squared gradient
+        # Calculate gradients
+        infidGrad = adjoint_gradient(p, splinepar, tEnd, p.Tsteps[interval], Uend_r, Uend_i, real(Amat), imag(Amat))
+    end
+    
+    objf_grad[:] += infidGrad # accumulate gradient
+
+    if eval1gradient
+        println("kpar = ", p.kpar, " dFda_kpar = ", dFda_kpar)
+        println("kpar = ", p.kpar, " dFda_adj = ", infidGrad[p.kpar]," diff = ", dFda_kpar - infidGrad[p.kpar])
+
+        println("dFdW_kpar = ", dFdW_kpar)
+        println("Fwd grad_kpar = ", grad_kpar, " adjoint_grad_kpar = ", objf_grad[p.kpar], " diff = ", grad_kpar - objf_grad[p.kpar])
+    end
+
+    tp = tikhonov_pen(alpha, p) # Tikhonov penalty
+    objf += tp
+
+    grad_no_tik = objf_grad[p.kpar]
+    tikhonov_grad!(alpha, p, objf_grad) # in-place addition of the
+    # note: the Tikhonov gradient also needs to be added to grad_kpar
+    grad_kpar += (objf_grad[p.kpar] - grad_no_tik)
+
+    if eval1gradient
+        println("final_obj():, objf = ", objf, " Tikhonov penalty = ", tp)
+    end
+
+    if eval1gradient
+        println("kpar = ", p.kpar, " adjointGrad[kpar] = ", objf_grad[p.kpar], " Fwd grad_kpar = ", grad_kpar, " diff = ", grad_kpar - objf_grad[p.kpar])
+    end
+        
+    # Note: objf_grad is returned in-place
+    return objf, abs(infid), tp
+
+end # function final_grad
+
 ##################################################
 function evolve_schroedinger(p::objparams, splinepar::BsplineParams, tStart::Float64, Winit_r::Matrix{Float64}, Winit_i::Matrix{Float64}, N_time_steps::Int64, eval1gradient::Bool = false)
     
@@ -2158,7 +2540,7 @@ end # function unitary_jacobian_idx
 # Evaluate non-linear constraints for the norm-squared of jumps in the state
 # across intermediate timr intervals
 ##################################################
-function c2norm_constraints(pcof0::Vector{Float64}, e_con::Vector{Float64}, p::objparams, verbose::Bool = true)
+function c2norm_constraints(pcof0::Vector{Float64}, e_con::Vector{Float64}, p::objparams, verbose::Bool = false)
         # shortcut to working_arrays object in p::objparams  
     w = p.wa
     
@@ -2254,7 +2636,7 @@ end # function c2norm_constraints
 ##################################################
 #  Evaluate Jacobian of the unitary constraints
 ##################################################
-function c2norm_jacobian(pcof0::Vector{Float64}, jac_e::Vector{Float64}, rows::Vector{Int32}, cols::Vector{Int32}, p::objparams, verbose::Bool = true)
+function c2norm_jacobian(pcof0::Vector{Float64}, jac_e::Vector{Float64}, p::objparams, verbose::Bool = false)
     if p.nTimeIntervals == 1
         # No constraints
         return nothing
@@ -2291,13 +2673,6 @@ function c2norm_jacobian(pcof0::Vector{Float64}, jac_e::Vector{Float64}, rows::V
             println("Interval # ", interval)
         end
         cons_idx += 1
-
-        # get initial condition offset in pcof0 array
-        # offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
-        # nMat = p.Ntot^2
-        # W_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
-        # offc += nMat
-        # W_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
         
         if interval == 1
             # initial conditions from Uinit (fixed)
@@ -2347,9 +2722,11 @@ function c2norm_jacobian(pcof0::Vector{Float64}, jac_e::Vector{Float64}, rows::V
         nJac0 = nJac
 
         idxr = nJac .+ (1:p.nAlpha) # index range to assign
-        println("Cons # ", cons_idx, " Assigning jac wrt alpha, index range = ", idxr, " cols = ", 1:p.nAlpha)
-        rows[idxr] .= cons_idx 
-        cols[idxr] = 1:p.nAlpha
+        if verbose
+            println("Cons # ", cons_idx, " Assigning jac wrt alpha, index range = ", idxr, " cols = ", 1:p.nAlpha)
+        end
+        # rows[idxr] .= cons_idx 
+        # cols[idxr] = 1:p.nAlpha
         jac_e[idxr] = quadGrad[1:p.nAlpha]
         nJac += p.nAlpha
         
@@ -2381,9 +2758,11 @@ function c2norm_jacobian(pcof0::Vector{Float64}, jac_e::Vector{Float64}, rows::V
 
             idxr = nJac .+ (1:p.nWinit) # index range to assign in jac_e, rows, cols
             #println("length(jac_e)= ", length(jac_e)," idxr= ", idxr)
-            println("Cons # ", cons_idx, " Assigning jac wrt Winit[interval-1], index range = ", idxr, " cols = ", p.nAlpha .+ (interval-2)*p.nWinit .+ (1:p.nWinit))
-            rows[idxr] .= cons_idx 
-            cols[idxr] = p.nAlpha .+ (interval-2)*p.nWinit .+ (1:p.nWinit)
+            if verbose
+                println("Cons # ", cons_idx, " Assigning jac wrt Winit[interval-1], index range = ", idxr, " cols = ", p.nAlpha .+ (interval-2)*p.nWinit .+ (1:p.nWinit))
+            end
+            # rows[idxr] .= cons_idx 
+            # cols[idxr] = p.nAlpha .+ (interval-2)*p.nWinit .+ (1:p.nWinit)
             jac_e[idxr] = ws_grad
             nJac += p.nWinit
         end # if interval >= 2
@@ -2395,9 +2774,11 @@ function c2norm_jacobian(pcof0::Vector{Float64}, jac_e::Vector{Float64}, rows::V
         
         idxr = nJac .+ (1:p.nWinit) # index range to assign in jac_e, rows, cols
         #println("length(jac_e)= ", length(jac_e)," idxr= ", idxr)
-        println("Cons # ", cons_idx, " Assigning jac wrt Winit[interval], index range = ", idxr, " cols = ", p.nAlpha .+ (interval-1)*p.nWinit .+ (1:p.nWinit))
-        rows[idxr] .= cons_idx 
-        cols[idxr] = p.nAlpha .+ (interval-1)*p.nWinit .+ (1:p.nWinit)
+        if verbose
+            println("Cons # ", cons_idx, " Assigning jac wrt Winit[interval], index range = ", idxr, " cols = ", p.nAlpha .+ (interval-1)*p.nWinit .+ (1:p.nWinit))
+        end
+        # rows[idxr] .= cons_idx 
+        # cols[idxr] = p.nAlpha .+ (interval-1)*p.nWinit .+ (1:p.nWinit)
         jac_e[idxr] = ws_grad
         nJac += p.nWinit
 
@@ -2418,125 +2799,82 @@ end # function c2norm_jacobian
 ##################################################
 #  Get row/col indexing for the Jacobian of the unitary constraints
 ##################################################
-function c2norm_jacobian_idx(rows::Vector{Int32}, cols::Vector{Int32}, p::objparams, verbose::Bool = true)
+function c2norm_jacobian_idx(rows::Vector{Int32}, cols::Vector{Int32}, p::objparams, verbose::Bool = false)
     if p.nTimeIntervals == 1
         # No constraints
         return nothing
     end
 
+    if verbose
+        println("In c2norm_jacobian_idx()")
+    end
+    # shortcut to working_arrays object in p::objparams  
+    w = p.wa
+
+    nMat = p.Ntot^2
+    
+    # NOTE: In-place assignment of an array only works with the syntax jac_e[:] = vector or jac_e[nJac] = element
+    # The statement jac_e = vector changes the pointer to jac_e within the function, but the result will not be
+    # available in the calling function
+
     cons_idx = 0 # constraint number = row index in Jacobian
     nJac = 0 # index in rows, cols, jac_e for one Jacobinan element
+
     for interval = 1:p.nTimeIntervals-1
         if verbose
             println("Interval # ", interval)
         end
+        cons_idx += 1
+
+        nJac0 = nJac
+
+        idxr = nJac .+ (1:p.nAlpha) # index range to assign
+        if verbose
+            ("Cons # ", cons_idx, " Assigning jac wrt alpha, index range = ", idxr, " cols = ", 1:p.nAlpha)
+        end
+        rows[idxr] .= cons_idx 
+        cols[idxr] = 1:p.nAlpha
+        #jac_e[idxr] = quadGrad[1:p.nAlpha]
+        nJac += p.nAlpha
         
-        for q_col in 1:p.Ntot # 1:1 # 1:p.Ntot
-            cons_idx += 1
-            # diagonal
-            # e_con[cons_idx] = W_r[:,q_col]' * W_r[:,q_col] + W_i[:,q_col]' * W_i[:,q_col] - 1.0 
-            nJac0 = nJac
-            # loop over all elements in W_r[:,q_col] and W_i[:,q_col]
-            for j in 1:p.Ntot
-                nJac += 1
-                #println("diag col real = ", nJac)
-                pcof_idx = get_pcof_index(p, interval, 0, j, q_col, verbose) # 0 for real part of W
-                rows[nJac] = cons_idx
-                cols[nJac] = pcof_idx
-                # jac_e[nJac] = 2*W_r[j, q_col] # wrt W_r[j,q_col]
-                
-                nJac += 1
-                #println("diag col imag = ", nJac)
-                pcof_idx = get_pcof_index(p, interval, 1, j, q_col, verbose) # 1 for imag part of W
-                rows[nJac] = cons_idx
-                cols[nJac] = pcof_idx
-                # jac_e[nJac] = 2*W_i[j, q_col] # wrt W_i[j,q_col]
-            end
-            # off-diagonals
-            for p_row in q_col+1:p.Ntot # q_col+1:q_col+1 # q_col+1:p.Ntot
-                cons_idx += 1
-                # symmetric
-                # e_con[cons_idx] = W_r[:,p_row]' * W_r[:,q_col] + W_i[:,p_row]' * W_i[:,q_col]
-
-                # loop over all elements in W_r[:,p_row], W_r[:,q_col], W_i[:,p_row] and W_i[:,q_col]
-                for j in 1:p.Ntot
-                    nJac += 1
-                    #println("sym col imag = ", nJac)
-                    pcof_idx = get_pcof_index(p, interval, 0, j, q_col, verbose) # 0 for real: wrt W_r[j,q_col] 
-                    rows[nJac] = cons_idx
-                    cols[nJac] = pcof_idx
-                    # jac_e[nJac] = W_r[j, p_row]
-
-                    nJac += 1
-                    #println("sym col imag = ", nJac)
-                    pcof_idx = get_pcof_index(p, interval, 0, j, p_row, verbose) # 0 for real: wrt W_r[j,p_row]
-                    rows[nJac] = cons_idx
-                    cols[nJac] = pcof_idx
-                    # jac_e[nJac] = W_r[j, q_col]
-                    
-                    nJac += 1
-                    #println("sym col imag = ", nJac)
-                    pcof_idx = get_pcof_index(p, interval, 1, j, q_col, verbose) # 1 for imag: wrt W_i[j, q_col]
-                    rows[nJac] = cons_idx
-                    cols[nJac] = pcof_idx
-                    # jac_e[nJac] = W_i[j, p_row]
-
-                    nJac += 1
-                    #println("sym col imag = ", nJac)
-                    pcof_idx = get_pcof_index(p, interval, 1, j, p_row, verbose) # 1 for imag: wrt W_i[j, p_row]
-                    rows[nJac] = cons_idx
-                    cols[nJac] = pcof_idx
-                    # jac_e[nJac] = W_i[j, q_col]
-                end
-                cons_idx += 1
-                # anti-sym
-                # e_con[cons_idx] = W_r[:,p_row]' * W_i[:,q_col] - W_i[:,p_row]' * W_r[:,q_col] 
-
-                # loop over all elements in W_r[:,p_row], W_r[:,q_col], W_i[:,p_row] and W_i[:,q_col]
-                for j in 1:p.Ntot
-                    nJac += 1
-                    #println("anti col imag = ", nJac)
-                    pcof_idx = get_pcof_index(p, interval, 0, j, q_col, verbose) # 0 for real: wrt W_r[j,q_col] 
-                    rows[nJac] = cons_idx
-                    cols[nJac] = pcof_idx
-                    # jac_e[nJac] = -W_i[j, p_row]
-
-                    nJac += 1
-                    #println("anti col imag = ", nJac)
-                    pcof_idx = get_pcof_index(p, interval, 0, j, p_row, verbose) # 0 for real: wrt W_r[j,p_row]
-                    rows[nJac] = cons_idx
-                    cols[nJac] = pcof_idx
-                    # jac_e[nJac] = W_i[j, q_col]
-                    
-                    nJac += 1
-                    #println("anti col imag = ", nJac)
-                    pcof_idx = get_pcof_index(p, interval, 1, j, q_col, verbose) # 1 for imag: wrt W_i[j, q_col]
-                    rows[nJac] = cons_idx
-                    cols[nJac] = pcof_idx
-                    # jac_e[nJac] = W_r[j, p_row]
-
-                    nJac += 1
-                    #println("anti col imag = ", nJac)
-                    pcof_idx = get_pcof_index(p, interval, 1, j, p_row, verbose) # 1 for imag: wrt W_i[j, p_row]
-                    rows[nJac] = cons_idx
-                    cols[nJac] = pcof_idx
-                    # jac_e[nJac] = -W_r[j, q_col]
-                end
-            end
+        if interval >= 2 # jacobian wrt Winit^{(interval - 1)} through initial condition for (Uend_r, Uend_i)
+            idxr = nJac .+ (1:p.nWinit) # index range to assign in jac_e, rows, cols
+            #println("length(jac_e)= ", length(jac_e)," idxr= ", idxr)
             if verbose
-                println("q_col = ", q_col, " added ", nJac - nJac0, " elements to the Jacobian")
+                println("Cons # ", cons_idx, " Assigning jac wrt Winit[interval-1], index range = ", idxr, " cols = ", p.nAlpha .+ (interval-2)*p.nWinit .+ (1:p.nWinit))
             end
-        end # for q_col
+            rows[idxr] .= cons_idx 
+            cols[idxr] = p.nAlpha .+ (interval-2)*p.nWinit .+ (1:p.nWinit)
+            #jac_e[idxr] = ws_grad
+            nJac += p.nWinit
+        end # if interval >= 2
+
+        # contribution to gradient wrt Wnext = Winit^{(interval)} from Wnext in Cjump = Uend - Wnext
+        
+        idxr = nJac .+ (1:p.nWinit) # index range to assign in jac_e, rows, cols
+        #println("length(jac_e)= ", length(jac_e)," idxr= ", idxr)
+        if verbose
+            println("Cons # ", cons_idx, " Assigning jac wrt Winit[interval], index range = ", idxr, " cols = ", p.nAlpha .+ (interval-1)*p.nWinit .+ (1:p.nWinit))
+        end
+        rows[idxr] .= cons_idx 
+        cols[idxr] = p.nAlpha .+ (interval-1)*p.nWinit .+ (1:p.nWinit)
+        # jac_e[idxr] = ws_grad
+        nJac += p.nWinit
+
+        if verbose
+            println("interval = ", interval, " added ", nJac - nJac0, " elements to the Jacobian")
+        end
     end # end for interval
 
     if verbose
-        nCons = (p.nTimeIntervals - 1) * p.Ntot^2 # Total number of constraints
-        println("# assigned constraints = ", cons_idx, " nCons = ", nCons)
-        println("# assigned Jacobian elements = ", nJac, " length(rows) = ", length(rows))
+        nCons = (p.nTimeIntervals - 1) # Total number of constraints
+        println("Number of assigned constraints = ", cons_idx, " nCons = ", nCons)
+        println("Number of assigned Jacobian elements = ", nJac, " length(rows) = ", length(rows))
     end
 
     return nothing
 end # function c2norm_jacobian_idx
+
 
 """
     change_target!(params, new_Utarget)

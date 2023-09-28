@@ -26,7 +26,7 @@ Ntot = p.Ntot
 # for 2 intervals with D1=22 try 5, 15
 # for 2 intervals and the grad wrt W, try kpar in [177, 208]
 # for 3 intervals, Winit^{(1)} has index [177, 208], for Winit^{(2)} add 32
-p.kpar = 280 # 280 # 248 # 198 # 248 # 3 # 234 # 217 # 190 # 38 # 3 # 178 # 178, 178 + 16, 178 + 32 # test this component of the gradient
+p.kpar = 172 # 280 # 248 # 198 # 248 # 3 # 234 # 217 # 198 # 38 # 3 # 178 # 178, 178 + 16, 178 + 32 # test this component of the gradient
 
 println("Setup completed\n")
 
@@ -59,27 +59,13 @@ jac_ele = zeros(nEleJac)
 jac_rows = zeros(Int32,nEleJac)
 jac_cols = zeros(Int32,nEleJac)
 println("Calling c2norm_jacobian to evaluate the Jacobian of all constraints")
-# c2norm_jacobian_idx(jac_rows, jac_cols, p, true)
-c2norm_jacobian(pcof0, jac_ele, jac_rows, jac_cols, p, true)
+c2norm_jacobian(pcof0, jac_ele, p, true)
+c2norm_jacobian_idx(jac_rows, jac_cols, p, true)
+
 println("row, col, jac")
 for j in 1:nEleJac
     println(jac_rows[j], ", ", jac_cols[j], ", ", jac_ele[j])
 end
-
-# modify Winit to deviate from unitary
-# for interval = 1:p.nTimeIntervals-1
-#     println("Interval # ", interval)
-#     # get initial condition offset in pcof0 array
-#     offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
-#     nMat = p.Ntot^2
-#     W_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
-#     W_r += 0.01*rand(p.Ntot, p.Ntot) # Perturb real part
-#     pcof0[offc+1:offc+nMat] = vec(W_r)
-#     offc += nMat
-#     W_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
-#     W_i += 0.01*rand(p.Ntot, p.Ntot) # Perturb imaginary part
-#     pcof0[offc+1:offc+nMat] = vec(W_i) # Leave the imaginary part
-# end
 
 println()
 pert = 1e-7
