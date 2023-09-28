@@ -2353,6 +2353,41 @@ function c2norm_jacobian(pcof0::Vector{Float64}, jac_e::Vector{Float64}, rows::V
         jac_e[idxr] = quadGrad[1:p.nAlpha]
         nJac += p.nAlpha
         
+        if interval >= 2 # jacobian wrt Winit^{(interval - 1)} through initial condition for (Uend_r, Uend_i)
+            offc_r = 0
+            offc_i = nMat
+
+            # p = row, q = col
+            for col in 1:p.N
+                c_rq = Cjump_r[:, col]
+                c_iq = Cjump_i[:, col]
+
+                # dependence through initial condition 
+                # Cjump^{interval} = U^{interval}(W^{interval - 1}) - W^{interval}
+                 
+                # real part: vectorize over 'row'
+                s_rp = reInitOp[1]
+                s_ip = reInitOp[2]
+                ws_grad[offc_r + 1: offc_r + p.N] = 2.0*( s_rp' * c_rq + s_ip' * c_iq)
+                
+                # imaginary part: vectorize over row
+                s_rp = imInitOp[1]
+                s_ip = imInitOp[2]
+                ws_grad[offc_i + 1: offc_i + p.N] = 2.0*( s_rp' * c_rq + s_ip' * c_iq)
+
+                offc_r += p.N
+                offc_i += p.N
+            end # for col
+
+            idxr = nJac .+ (1:p.nWinit) # index range to assign in jac_e, rows, cols
+            #println("length(jac_e)= ", length(jac_e)," idxr= ", idxr)
+            println("Cons # ", cons_idx, " Assigning jac wrt Winit[interval-1], index range = ", idxr, " cols = ", p.nAlpha .+ (interval-2)*p.nWinit .+ (1:p.nWinit))
+            rows[idxr] .= cons_idx 
+            cols[idxr] = p.nAlpha .+ (interval-2)*p.nWinit .+ (1:p.nWinit)
+            jac_e[idxr] = ws_grad
+            nJac += p.nWinit
+        end # if interval >= 2
+
         # contribution to gradient wrt Wnext = Winit^{(interval)} from Wnext in Cjump = Uend - Wnext
         # factor of 2 comes from norm(Cjump)^2
         ws_grad[1:nMat] = -2.0*vec(Cjump_r) # real part
@@ -2360,7 +2395,7 @@ function c2norm_jacobian(pcof0::Vector{Float64}, jac_e::Vector{Float64}, rows::V
         
         idxr = nJac .+ (1:p.nWinit) # index range to assign in jac_e, rows, cols
         #println("length(jac_e)= ", length(jac_e)," idxr= ", idxr)
-        println("Cons # ", cons_idx, " Assigning jac wrt Winit, index range = ", idxr, " cols = ", p.nAlpha .+ (interval-1)*p.nWinit .+ (1:p.nWinit))
+        println("Cons # ", cons_idx, " Assigning jac wrt Winit[interval], index range = ", idxr, " cols = ", p.nAlpha .+ (interval-1)*p.nWinit .+ (1:p.nWinit))
         rows[idxr] .= cons_idx 
         cols[idxr] = p.nAlpha .+ (interval-1)*p.nWinit .+ (1:p.nWinit)
         jac_e[idxr] = ws_grad
@@ -2395,12 +2430,6 @@ function c2norm_jacobian_idx(rows::Vector{Int32}, cols::Vector{Int32}, p::objpar
         if verbose
             println("Interval # ", interval)
         end
-        # get initial condition offset in pcof0 array
-        # offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
-        # nMat = p.Ntot^2
-        # W_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
-        # offc += nMat
-        # W_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
         
         for q_col in 1:p.Ntot # 1:1 # 1:p.Ntot
             cons_idx += 1

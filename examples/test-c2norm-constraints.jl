@@ -26,9 +26,19 @@ Ntot = p.Ntot
 # for 2 intervals with D1=22 try 5, 15
 # for 2 intervals and the grad wrt W, try kpar in [177, 208]
 # for 3 intervals, Winit^{(1)} has index [177, 208], for Winit^{(2)} add 32
-p.kpar = 198 # 248 # 3 # 234 # 217 # 190 # 38 # 3 # 178 # 178, 178 + 16, 178 + 32 # test this component of the gradient
+p.kpar = 280 # 280 # 248 # 198 # 248 # 3 # 234 # 217 # 190 # 38 # 3 # 178 # 178, 178 + 16, 178 + 32 # test this component of the gradient
 
 println("Setup completed\n")
+
+function find_elem(row::Int64, col::Int64, jac_rows::Vector{Int32}, jac_cols::Vector{Int32})
+    nEleJac = length(jac_rows)
+    for j in 1:nEleJac
+        if row == jac_rows[j] && col == jac_cols[j]
+            return j
+        end
+    end
+    return -1
+end
 
 # allocate storage for the constraints
 nCons = (p.nTimeIntervals - 1) # one constraint per intermediate initial condition
@@ -41,6 +51,9 @@ println(c2norm_cons)
 
 println()
 nEleJac = (p.nTimeIntervals - 1) * (p.nAlpha + p.nWinit) # begin with the Jacobian wrt B-spline coeffs, and wrt Winit_next)
+if p.nTimeIntervals > 2
+    nEleJac += (p.nTimeIntervals - 2) * p.nWinit 
+end
 println("# non-zero elements in Jac: ", nEleJac)
 jac_ele = zeros(nEleJac)
 jac_rows = zeros(Int32,nEleJac)
@@ -69,11 +82,19 @@ end
 # end
 
 println()
-println("FD estimate of the constraints wrt element kpar (col) = ", p.kpar)
-
 pert = 1e-7
-one_cons = 2 # constraint number to be tested
-offc = (one_cons - 1)*(p.nAlpha + p.nWinit) # offset in the 1-D jacobian vector
+one_cons = 2 # 1 # 2 # constraint number to be tested
+println("FD estimate of the jacobian of constraint = ", one_cons, ", wrt element kpar (col) = ", p.kpar)
+
+jac_idx = find_elem(one_cons, p.kpar, jac_rows, jac_cols)
+
+if jac_idx < 0
+    println("Warning: no entry in the jacobian matches row, col = ", one_cons, ", ", p.kpar)
+    one_jac_ele = 0.0
+else
+    println("(row, col) = ", one_cons, ", ", p.kpar, " has index = ", jac_idx) 
+    one_jac_ele = jac_ele[jac_idx]
+end
 
 pcof_p = copy(pcof0)
 pcof_p[p.kpar] += pert
@@ -87,6 +108,6 @@ obj_m = c2norm_cons[one_cons]
 
 obj_grad_fd = 0.5*(obj_p - obj_m)/pert
 println("FD testing of the Jacobian")
-println("row # = ", one_cons, " col # = ", p.kpar, " cons_jac_fd = ", obj_grad_fd, " cons_jac_adj = ", jac_ele[offc + p.kpar], " diff = ", obj_grad_fd - jac_ele[offc + p.kpar])
+println("row # = ", one_cons, " col # = ", p.kpar, " cons_jac_fd = ", obj_grad_fd, " cons_jac_adj = ", one_jac_ele, " diff = ", obj_grad_fd - one_jac_ele)
 
 println("Constraints test complete")
