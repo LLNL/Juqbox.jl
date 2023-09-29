@@ -1737,9 +1737,6 @@ function final_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = true)
     Uend_r = Matrix{Float64}(undef, p.Ntot, p.Ntot)
     Uend_i = Matrix{Float64}(undef, p.Ntot, p.Ntot)
 
-    # Storage for saving jump discontinuities across time intervals
-    nrm2_Cjump = zeros(p.nTimeIntervals-1)
-
     # Total objective
     objf = 0.0
     infid = 0.0
@@ -1797,7 +1794,7 @@ function final_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = true)
         println("final_obj():, objf = ", objf, " Tikhonov penalty = ", tp)
     end
 
-    return objf, nrm2_Cjump, infid, tp
+    return objf, infid, tp
 
 end # function final_obj
 

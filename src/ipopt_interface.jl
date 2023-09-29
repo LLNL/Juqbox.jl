@@ -350,7 +350,7 @@ end
 
 function eval_f_par3(pcof::Vector{Float64}, params:: Juqbox.objparams)
 
-    f, _, absInfid, _ = Juqbox.final_obj(pcof, params, false)
+    f, absInfid, _ = Juqbox.final_obj(pcof, params, false)
 
     # NOTE: when the initial condition isn't unitary, the trace infidelity may be negative
     params.lastTraceInfidelity = absInfid 
@@ -577,8 +577,10 @@ function ipopt_setup(params:: Juqbox.objparams, nCoeff:: Int64, maxAmp:: Vector{
                 g_U = zeros(nConst);
 
                 # callback functions need access to the params object
-                eval_f3(pcof) = eval_f_par3(pcof, params)
-                eval_grad_f3(pcof, grad_f) = eval_grad_f_par3(pcof, grad_f, params)
+                # testing the finalDist + gamma*norm^2(jump) objective
+                # combined with equality constraints for norm^2(jump)=0
+                eval_f3(pcof) = eval_f_par2(pcof, params) # eval_f_par3(pcof, params)
+                eval_grad_f3(pcof, grad_f) = eval_grad_f_par2(pcof, grad_f, params) # eval_grad_f_par3(pcof, grad_f, params)
                 
                 # callbacks for evaluating the constraints and their Jacobian
                 eval_g3(pcof, g) = eval_g_par3(pcof, g, params) 

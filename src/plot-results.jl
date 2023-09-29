@@ -37,12 +37,22 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
     println("Number of time steps: ", params.nsteps)
 
     # evaluate fidelity and unitaryhistory
-    objv, unitaryhistory, fidelity = Juqbox.traceobjgrad(pcof, params, true, false);
+    alpha = pcof[1:params.nAlpha] # extract the B-spline coefficients
+    objv, unitaryhistory, fidelity = Juqbox.traceobjgrad(alpha, params, true, false);
 
     # evaluate finalDist, nrm2_Cjump
     if params.nTimeIntervals > 1
-        ftot, nrm2_Cjump, finalDist, tp = Juqbox.lagrange_obj(pcof, params, false)
-        println("Target type: ", params.pFidType, " total obj = ", ftot, " final distance = ", finalDist, " Tikhonov = ", tp, " norm^2(Cjump) = ", nrm2_Cjump)
+        if params.constraintType == 0 || params.constraintType == 1
+            ftot, nrm2_Cjump, finalDist, tp = Juqbox.lagrange_obj(pcof, params, false)
+            println("Target type: ", params.pFidType, " total obj = ", ftot, " final distance = ", finalDist, " Tikhonov = ", tp, " norm^2(Cjump) = ", nrm2_Cjump)
+        elseif params.constraintType == 2
+            ftot, finalDist, tp = Juqbox.final_obj(pcof, params, false)
+            nCons = (params.nTimeIntervals - 1) # one constraint per intermediate initial condition
+            nrm2_Cjump = zeros(nCons)
+            c2norm_constraints(pcof, nrm2_Cjump, params, false)
+            println("Target type: ", params.pFidType, " total obj = ", ftot, " final distance = ", finalDist, " Tikhonov = ", tp, " norm^2(Cjump) = ", nrm2_Cjump)
+        end
+        
     end
     
     # save convergence history
@@ -52,7 +62,6 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
     end
     pconv = Juqbox.plot_conv_hist(params, convname)
 
-    alpha = pcof[1:params.nAlpha] # extract the B-spline coefficients
     # scatter plot of control parameters
     tstring = casename * "-control-vector"
     plcof = scatter(alpha, lab="", title=tstring, xlabel="Index", ylabel="rad/ns")
