@@ -7,7 +7,7 @@ f01 = [5.18, 5.12, 5.06] # 0-1 transition freq's
 
 xi = [-0.34, -0.34, -0.34] # anharmonicity = f12 - f01
 
-couple_type = 2 # Jaynes-Cummings coupling coefficients
+couple_type = 2 # Dipole-dipole coupling coefficients
 xi12 = 5e-3 * [1.0, 0.0, 1.0] # order: x12, x13, x23
 
 # Setup frequency of rotations in computational frame

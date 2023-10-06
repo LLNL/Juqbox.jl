@@ -579,11 +579,19 @@ function ipopt_setup(params:: Juqbox.objparams, nCoeff:: Int64, maxAmp:: Vector{
                 # callback functions need access to the params object
                 # testing the finalDist + gamma*norm^2(jump) objective
                 # combined with equality constraints for norm^2(jump)=0
-                eval_f3(pcof) = eval_f_par2(pcof, params) # eval_f_par3(pcof, params)
-                eval_grad_f3(pcof, grad_f) = eval_grad_f_par2(pcof, grad_f, params) # eval_grad_f_par3(pcof, grad_f, params)
+                
+                # call lagrange_obj/grad, penalizes the c2norm and includes lagrange multipliers
+                #eval_f3(pcof) = eval_f_par2(pcof, params)
+                #eval_grad_f3(pcof, grad_f) = eval_grad_f_par2(pcof, grad_f, params)
+                
+                # call final_obj/grad
+                eval_f3(pcof) = eval_f_par3(pcof, params)
+                eval_grad_f3(pcof, grad_f) = eval_grad_f_par3(pcof, grad_f, params)
                 
                 # callbacks for evaluating the constraints and their Jacobian
+                # call c2norm_constraint
                 eval_g3(pcof, g) = eval_g_par3(pcof, g, params) 
+                # call c2norm_jacobian or c2norm_jacobian_idx
                 eval_jac_g3(pcof, rows, cols, jac_g) = eval_jac_g_par3(pcof, rows, cols, jac_g, params)
 
                 # setup the Ipopt data structure

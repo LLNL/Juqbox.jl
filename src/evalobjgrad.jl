@@ -116,6 +116,7 @@ end
                         zeroCtrlBC::Bool = true,
                         nTimeIntervals::Int64=1, 
                         gammaJump::Float64=0.1,
+                        gammaUnitary::Float64=0.1,
                         fidType::Int64 = 2)
 
 Constructor for the mutable struct objparams. The sizes of the arrays in the argument list are based on
@@ -277,6 +278,7 @@ mutable struct objparams
     Lmult_i:: Vector{Matrix{Float64}} # Vector of size (nTimeIntervals-1) for the Lagrange multiplier coefficients (imag)
 
     gammaJump:: Float64 # Coefficient of the quadratic penalty term for jumps across time intervals
+    gammaUnitary:: Float64 # Coefficient of the penalty term that suppresses non-unitary initial conditions
     constraintType:: Int64 # set to true to impose unitary constraints on intermediate initial conditions
 
 # constructor for regular arrays (full matrices)
@@ -292,7 +294,7 @@ mutable struct objparams
                        objFuncType:: Int64 = 1, leak_ubound:: Float64=1.0e-3,
                        use_sparse::Bool = false, use_custom_forbidden::Bool = false,
                        linear_solver::lsolver_object = lsolver_object(nrhs=prod(Ne)), msb_order::Bool = true,
-                       dVds::Array{ComplexF64,2}= Array{ComplexF64}(undef,0,0), freq01::Vector{Float64} = Vector{Float64}[], self_kerr::Vector{Float64} = Vector{Float64}[], couple_coeff::Vector{Float64} = Vector{Float64}[], couple_type::Int64 = 0, zeroCtrlBC::Bool = true, nTimeIntervals::Int64=1, gammaJump::Float64=0.1, fidType::Int64 = 2, constraintType::Int64 = 0)
+                       dVds::Array{ComplexF64,2}= Array{ComplexF64}(undef,0,0), freq01::Vector{Float64} = Vector{Float64}[], self_kerr::Vector{Float64} = Vector{Float64}[], couple_coeff::Vector{Float64} = Vector{Float64}[], couple_type::Int64 = 0, zeroCtrlBC::Bool = true, nTimeIntervals::Int64=1, gammaJump::Float64=0.1, gammaUnitary::Float64=0.1,fidType::Int64 = 2, constraintType::Int64 = 0)
         pFidType = fidType # Std gate infidelity
         Nosc   = length(Ne) # number of subsystems
         N      = prod(Ne)
@@ -513,7 +515,7 @@ mutable struct objparams
              usingPriorCoeffs, priorCoeffs, quiet, Rfreq, false, [],
              real(my_dVds), imag(my_dVds), my_sv_type, wa, nCoeff, D1, nAlpha, nWinit,
              freq01, self_kerr, couple_coeff, couple_type, # Add some checks for these ones!
-             msb_order, zeroCtrlBC, nTimeIntervals, T0int, Tsteps, Lmult_r, Lmult_i, gammaJump, constraintType
+             msb_order, zeroCtrlBC, nTimeIntervals, T0int, Tsteps, Lmult_r, Lmult_i, gammaJump, gammaUnitary, constraintType
             )
 
     end
@@ -549,7 +551,7 @@ function traceobjgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool = fa
     w = p.wa
 
     if verbose
-        println("traceobjgrad: Vector dim Ntot =", p.Ntot , ", Guard levels Nguard = ", p.Nguard , ", Param dim, Psize = ", p.nAlpha, ", Spline coeffs per func, D1= ", p.D1, ", Nsteps = ", p.nsteps, " Tikhonov coeff: ", p.tik0)
+        println("traceobjgrad: Vector dim Ntot =", p.Ntot , ", Guard levels Nguard = ", p.Nguard , ", Param dim, Psize = ", p.nAlpha, ", Spline coeffs per func, D1= ", p.D1, ", Nsteps = ", p.nsteps, " Tikhonov coeff: ", p.tik0, " fidType = ", p.pFidType)
     end
 
     # initializations start here
@@ -1742,8 +1744,6 @@ function final_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = true)
     infid = 0.0
     finalDist = 0.0
 
-    eval1gradient = false # only for testing the adjoint gradient
-
     # only consider the final time interval
     interval = p.nTimeIntervals
 
@@ -1765,10 +1765,10 @@ function final_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = true)
     # Evolve the state under Schroedinger's equation
     # NOTE: the S-V scheme treats the real and imaginary parts with different time integrators
     # First compute the solution operator for a basis of real initial conditions: I
-    reInitOp = evolve_schroedinger(p, splinepar, p.T0int[interval], p.Uinit_r, p.Uinit_i, p.Tsteps[interval], eval1gradient)
+    reInitOp = evolve_schroedinger(p, splinepar, p.T0int[interval], p.Uinit_r, p.Uinit_i, p.Tsteps[interval], false)
     
     # Then a basis for purely imaginary initial conditions: iI
-    imInitOp = evolve_schroedinger(p, splinepar, p.T0int[interval], p.Uinit_i, p.Uinit_r, p.Tsteps[interval], eval1gradient)
+    imInitOp = evolve_schroedinger(p, splinepar, p.T0int[interval], p.Uinit_i, p.Uinit_r, p.Tsteps[interval], false)
     
     # Now we can  account for the initial conditions for this time interval and easily calculate the gradient wrt Winit
     # Uend = (reInitop[1] + i*reInitOp[2]) * Winit_r + (imInitOp[1] + i*imInitOp[2]) * Winit_i
@@ -1786,12 +1786,42 @@ function final_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = true)
     end
     objf += finalDist
 
-    tp = tikhonov_pen(alpha, p) # Tikhonov penalty
+    # Add penalty terms to drive intermediate initial conditions towards being unitary
+    unit_pen = 0.0
+    if p.nTimeIntervals>1
+        for interval in 2:p.nTimeIntervals
+            # initial conditions from pcof0 (determined by optimization)
+            offc = p.nAlpha + (interval-2)*p.nWinit # for interval = 2 the offset should be nAlpha
+            # println("offset 1 = ", offc)
+            nMat = p.Ntot^2
+            W_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+            offc += nMat
+            # println("offset 2 = ", offc)
+            W_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+
+            # penalize norm(W^dagger W - I)^2
+            for q_col in 1:p.Ntot
+                # diagonal 
+                unit_pen += p.gammaUnitary * (W_r[:, q_col]' * W_r[:,q_col] + W_i[:,q_col]' * W_i[:,q_col] - 1.0)^2 
+                for p_row in q_col+1:p.Ntot # q_col+1:q_col+1 # q_col+1:p.Ntot
+                    # symmetric part
+                    unit_pen += p.gammaUnitary * (W_r[:,p_row]' * W_r[:,q_col] + W_i[:,p_row]' * W_i[:,q_col])^2
+                    # anti-sym part
+                    unit_pen += p.gammaUnitary * (W_r[:,p_row]' * W_i[:,q_col] - W_i[:,p_row]' * W_r[:,q_col])^2 
+                end # for p_row
+            end # for q_col
+        end #for interval
+        objf += unit_pen
+    end # if
+
+    # Tikhonov penalty
+    tp = tikhonov_pen(alpha, p) 
     objf += tp
 
     if verbose
         println("Interval # ", interval, " pFidType = ", p.pFidType, " finalDist = ", finalDist, " infid = ", infid)
-        println("final_obj():, objf = ", objf, " Tikhonov penalty = ", tp)
+        println("final_obj():, objf = ", objf, " Tikhonov penalty = ", tp, " Total non-unitary penalty term = ", unit_pen) 
+        println()
     end
 
     return objf, infid, tp
@@ -1853,7 +1883,7 @@ function final_grad(pcof0::Array{Float64,1},  p::objparams, objf_grad::Vector{Fl
     finalDist = 0.0
     grad_kpar = 0.0
 
-    # This objective only considers the final time interval
+    # The main part of this objective only considers the final time interval
     interval = p.nTimeIntervals
     tEnd = p.T0int[interval] + p.Tsteps[interval]*dt # terminal time for this time interval
 
@@ -2062,6 +2092,10 @@ function final_grad(pcof0::Array{Float64,1},  p::objparams, objf_grad::Vector{Fl
         println("dFdW_kpar = ", dFdW_kpar)
         println("Fwd grad_kpar = ", grad_kpar, " adjoint_grad_kpar = ", objf_grad[p.kpar], " diff = ", grad_kpar - objf_grad[p.kpar])
     end
+
+    #
+    # 2 to: add in gradient of the penalty term 
+    #
 
     tp = tikhonov_pen(alpha, p) # Tikhonov penalty
     objf += tp

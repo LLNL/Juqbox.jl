@@ -4,10 +4,11 @@ using Juqbox
 using Printf
 using Plots
 
-include("two_sys_noguard.jl")
+#include("two_sys_noguard.jl")
+include("three_sys_noguard.jl")
 
 # assign the target gate, sqrt(Swap12)
-Vtg = get_swap_1d_gate(2)
+Vtg = get_swap_1d_gate(3)
 target_gate = Vtg # sqrt(Vtg)
 
 nTimeIntervals = 3 # 3 # 2 # 1

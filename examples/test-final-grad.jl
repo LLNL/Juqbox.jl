@@ -8,13 +8,15 @@ include("two_sys_noguard.jl")
 # assign the target gate
 Vtg = get_swap_1d_gate(2)
 target_gate = sqrt(Vtg)
-fidType = 3 # 2 # 1: Frobenius norm^2, 2: infidelity, 3: infidelity-squared
+fidType = 1 # 2 # 1: Frobenius norm^2, 2: infidelity, 3: infidelity-squared
+
+constraintType = 2 # Not really needed here b/c we are not using the ipopt interface 
 
 verbose = true
 
 nTimeIntervals = 3 # 3 # 2 # 1
 
-retval = setup_std_model(Ne, Ng, f01, xi, xi12, couple_type, rot_freq, T, D1, target_gate, maxctrl_MHz=maxctrl_MHz, msb_order=msb_order, initctrl_MHz=initctrl_MHz, rand_seed=rand_seed, Pmin=Pmin, cw_prox_thres=cw_prox_thres, cw_amp_thres=cw_amp_thres, use_carrier_waves=use_carrier_waves, nTimeIntervals=nTimeIntervals, fidType=fidType, zeroCtrlBC=zeroCtrlBC, verbose=verbose)
+retval = setup_std_model(Ne, Ng, f01, xi, xi12, couple_type, rot_freq, T, D1, target_gate, maxctrl_MHz=maxctrl_MHz, msb_order=msb_order, initctrl_MHz=initctrl_MHz, rand_seed=rand_seed, Pmin=Pmin, cw_prox_thres=cw_prox_thres, cw_amp_thres=cw_amp_thres, use_carrier_waves=use_carrier_waves, nTimeIntervals=nTimeIntervals, fidType=fidType, zeroCtrlBC=zeroCtrlBC, verbose=verbose, constraintType=constraintType)
 
 params = retval[1]
 pcof0 = retval[2]
@@ -24,7 +26,10 @@ params.traceInfidelityThreshold = 1e-3 # better than 99.9% fidelity
 
 Ntot = params.Ntot
 
-# Test non-zero Lagrange multipliers
+# randomize intermediate initial conditions
+pcof0[params.nAlpha+1: params.nCoeff] = rand(params.nCoeff - params.nAlpha)
+
+# Test Lagrange multipliers (not used by final_obj/grad)
 if params.nTimeIntervals > 1
     for q = 1:params.nTimeIntervals-1
         params.Lmult_r[q] = zeros(Ntot, Ntot) # rand(Ntot, Ntot)
@@ -57,11 +62,11 @@ println("FD estimate of the gradient based on objectives for perturbed pcof's\n"
 pert = 1e-7
 pcof_p = copy(pcof0)
 pcof_p[params.kpar] += pert
-obj_p, _, _ = final_obj(pcof_p, params, false)
+obj_p, _, _ = final_obj(pcof_p, params, verbose)
 
 pcof_m = copy(pcof0)
 pcof_m[params.kpar] -= pert
-obj_m, _, _ = final_obj(pcof_m, params, false)
+obj_m, _, _ = final_obj(pcof_m, params, verbose)
 
 println("kpar = ", params.kpar, " obj_p = ", obj_p, " obj_m = ", obj_m)
 obj_grad_fd = 0.5*(obj_p - obj_m)/pert
