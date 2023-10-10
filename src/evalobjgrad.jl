@@ -281,6 +281,9 @@ mutable struct objparams
     gammaUnitary:: Float64 # Coefficient of the penalty term that suppresses non-unitary initial conditions
     constraintType:: Int64 # set to true to impose unitary constraints on intermediate initial conditions
 
+    nConstUnitary:: Int64 # number of unitary constraints
+    nEleJacUnitary:: Int64 # number of Jacobian elements for the unitary constraints
+
 # constructor for regular arrays (full matrices)
     function objparams(Ne::Array{Int64,1}, Ng::Array{Int64,1}, T::Float64, nsteps::Int64;
                        Uinit::Array{ComplexF64,2}, Utarget::Array{Complex{Float64},2}, # keyword args w/o default values (must be assigned)
@@ -515,7 +518,7 @@ mutable struct objparams
              usingPriorCoeffs, priorCoeffs, quiet, Rfreq, false, [],
              real(my_dVds), imag(my_dVds), my_sv_type, wa, nCoeff, D1, nAlpha, nWinit,
              freq01, self_kerr, couple_coeff, couple_type, # Add some checks for these ones!
-             msb_order, zeroCtrlBC, nTimeIntervals, T0int, Tsteps, Lmult_r, Lmult_i, gammaJump, gammaUnitary, constraintType
+             msb_order, zeroCtrlBC, nTimeIntervals, T0int, Tsteps, Lmult_r, Lmult_i, gammaJump, gammaUnitary, constraintType, 0, 0
             )
 
     end
@@ -1787,32 +1790,32 @@ function final_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = true)
     objf += finalDist
 
     # Add penalty terms to drive intermediate initial conditions towards being unitary
-    unit_pen = 0.0
-    if p.nTimeIntervals>1
-        for interval in 2:p.nTimeIntervals
-            # initial conditions from pcof0 (determined by optimization)
-            offc = p.nAlpha + (interval-2)*p.nWinit # for interval = 2 the offset should be nAlpha
-            # println("offset 1 = ", offc)
-            nMat = p.Ntot^2
-            W_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
-            offc += nMat
-            # println("offset 2 = ", offc)
-            W_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+    # unit_pen = 0.0
+    # if p.nTimeIntervals>1
+    #     for interval in 2:p.nTimeIntervals
+    #         # initial conditions from pcof0 (determined by optimization)
+    #         offc = p.nAlpha + (interval-2)*p.nWinit # for interval = 2 the offset should be nAlpha
+    #         # println("offset 1 = ", offc)
+    #         nMat = p.Ntot^2
+    #         W_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+    #         offc += nMat
+    #         # println("offset 2 = ", offc)
+    #         W_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
 
-            # penalize norm(W^dagger W - I)^2
-            for q_col in 1:p.Ntot
-                # diagonal 
-                unit_pen += p.gammaUnitary * (W_r[:, q_col]' * W_r[:,q_col] + W_i[:,q_col]' * W_i[:,q_col] - 1.0)^2 
-                for p_row in q_col+1:p.Ntot # q_col+1:q_col+1 # q_col+1:p.Ntot
-                    # symmetric part
-                    unit_pen += p.gammaUnitary * (W_r[:,p_row]' * W_r[:,q_col] + W_i[:,p_row]' * W_i[:,q_col])^2
-                    # anti-sym part
-                    unit_pen += p.gammaUnitary * (W_r[:,p_row]' * W_i[:,q_col] - W_i[:,p_row]' * W_r[:,q_col])^2 
-                end # for p_row
-            end # for q_col
-        end #for interval
-        objf += unit_pen
-    end # if
+    #         # penalize norm(W^dagger W - I)^2
+    #         for q_col in 1:p.Ntot
+    #             # diagonal 
+    #             unit_pen += p.gammaUnitary * (W_r[:, q_col]' * W_r[:,q_col] + W_i[:,q_col]' * W_i[:,q_col] - 1.0)^2 
+    #             for p_row in q_col+1:p.Ntot # q_col+1:q_col+1 # q_col+1:p.Ntot
+    #                 # symmetric part
+    #                 unit_pen += p.gammaUnitary * (W_r[:,p_row]' * W_r[:,q_col] + W_i[:,p_row]' * W_i[:,q_col])^2
+    #                 # anti-sym part
+    #                 unit_pen += p.gammaUnitary * (W_r[:,p_row]' * W_i[:,q_col] - W_i[:,p_row]' * W_r[:,q_col])^2 
+    #             end # for p_row
+    #         end # for q_col
+    #     end #for interval
+    #     objf += unit_pen
+    # end # if
 
     # Tikhonov penalty
     tp = tikhonov_pen(alpha, p) 
@@ -1820,7 +1823,7 @@ function final_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = true)
 
     if verbose
         println("Interval # ", interval, " pFidType = ", p.pFidType, " finalDist = ", finalDist, " infid = ", infid)
-        println("final_obj():, objf = ", objf, " Tikhonov penalty = ", tp, " Total non-unitary penalty term = ", unit_pen) 
+        println("final_obj():, objf = ", objf, " Tikhonov penalty = ", tp) #, " Total non-unitary penalty term = ", unit_pen) 
         println()
     end
 
@@ -2094,8 +2097,38 @@ function final_grad(pcof0::Array{Float64,1},  p::objparams, objf_grad::Vector{Fl
     end
 
     #
-    # 2 to: add in gradient of the penalty term 
+    # 2 do: add in gradient of the penalty term 
     #
+    # Add penalty terms to drive intermediate initial conditions towards being unitary
+    # unit_pen = 0.0
+    # unit_grad = zeros(p.nCoeff) # storage for gradient wrt penalty terms
+    # if p.nTimeIntervals>1
+    #     for interval in 2:p.nTimeIntervals
+    #         # initial conditions from pcof0 (determined by optimization)
+    #         offc_r = p.nAlpha + (interval-2)*p.nWinit # for interval = 2 the offset should be nAlpha
+    #         # println("offset 1 = ", offc_r)
+    #         nMat = p.Ntot^2
+    #         W_r = reshape(pcof0[offc_r+1:offc_r+nMat], p.Ntot, p.Ntot)
+    #         offc_i = offc_r + nMat
+    #         # println("offset 2 = ", offc)
+    #         W_i = reshape(pcof0[offc_i+1:offc_i+nMat], p.Ntot, p.Ntot)
+
+    #         # 2do: Implement gradient wrt W_r and W_i
+
+    #         # penalize norm(W^dagger W - I)^2
+    #         for q_col in 1:p.Ntot
+    #             # diagonal 
+    #             unit_pen += p.gammaUnitary * (W_r[:, q_col]' * W_r[:,q_col] + W_i[:,q_col]' * W_i[:,q_col] - 1.0)^2 
+    #             for p_row in q_col+1:p.Ntot # q_col+1:q_col+1 # q_col+1:p.Ntot
+    #                 # symmetric part
+    #                 unit_pen += p.gammaUnitary * (W_r[:,p_row]' * W_r[:,q_col] + W_i[:,p_row]' * W_i[:,q_col])^2
+    #                 # anti-sym part
+    #                 unit_pen += p.gammaUnitary * (W_r[:,p_row]' * W_i[:,q_col] - W_i[:,p_row]' * W_r[:,q_col])^2 
+    #             end # for p_row
+    #         end # for q_col
+    #     end #for interval
+    #     objf += unit_pen
+    # end # if
 
     tp = tikhonov_pen(alpha, p) # Tikhonov penalty
     objf += tp
@@ -2447,6 +2480,10 @@ function unitary_jacobian_idx(rows::Vector{Int32}, cols::Vector{Int32}, p::objpa
         return nothing
     end
 
+    if verbose
+        println("unitary_jacobian_idx: length(rows) = ", length(rows))
+    end
+
     cons_idx = 0 # constraint number = row index in Jacobian
     nJac = 0 # index in rows, cols, jac_e for one Jacobinan element
     for interval = 1:p.nTimeIntervals-1
@@ -2560,7 +2597,7 @@ function unitary_jacobian_idx(rows::Vector{Int32}, cols::Vector{Int32}, p::objpa
 
     if verbose
         nCons = (p.nTimeIntervals - 1) * p.Ntot^2 # Total number of constraints
-        println("# assigned constraints = ", cons_idx, " nCons = ", nCons)
+        println("unitary_jacobian_idx: # assigned constraints = ", cons_idx, " nCons = ", nCons)
         println("# assigned Jacobian elements = ", nJac, " length(rows) = ", length(rows))
     end
 
@@ -2593,14 +2630,14 @@ function c2norm_constraints(pcof0::Vector{Float64}, e_con::Vector{Float64}, p::o
         return
     end
 
-    nCons = length(e_con)
-    e_con[:] .= 0.0
+    nCons = length(e_con) - p.nConstUnitary # offset wrt unitary constraints
+    # e_con[:] .= 0.0 # not needed?
 
     if verbose
         println("c2norm_constraints: # time intervals = ", p.nTimeIntervals, " length(pcof) =  ", length(pcof0), " nAlpha = ", p.nAlpha, " nWinit = ", p.nWinit, " # constraints = ", nCons)
     end
 
-    cons_idx = 0 # row number in e_con
+    cons_idx = p.nConstUnitary # row number in e_con, updated with offset
     for interval = 1:p.nTimeIntervals-1 # constraints only at interior time intervals
         if verbose
             println("Interval # ", interval)
@@ -2696,8 +2733,8 @@ function c2norm_jacobian(pcof0::Vector{Float64}, jac_e::Vector{Float64}, p::objp
     # The statement jac_e = vector changes the pointer to jac_e within the function, but the result will not be
     # available in the calling function
 
-    cons_idx = 0 # constraint number = row index in Jacobian
-    nJac = 0 # index in rows, cols, jac_e for one Jacobinan element
+    cons_idx = p.nConstUnitary # constraint number = row index in Jacobian, updated with offset
+    nJac = p.nEleJacUnitary # index in rows, cols, jac_e for one Jacobinan element, update with offset
 
     for interval = 1:p.nTimeIntervals-1
         if verbose
@@ -2820,8 +2857,8 @@ function c2norm_jacobian(pcof0::Vector{Float64}, jac_e::Vector{Float64}, p::objp
 
     if verbose
         nCons = (p.nTimeIntervals - 1) # Total number of constraints
-        println("Number of assigned constraints = ", cons_idx, " nCons = ", nCons)
-        println("Number of assigned Jacobian elements = ", nJac, " length(jac_e) = ", length(jac_e))
+        println("Total number of assigned constraints = ", cons_idx, " nCons = ", nCons)
+        println("Total number of assigned Jacobian elements = ", nJac, " length(jac_e) = ", length(jac_e))
     end
 
     return nothing
@@ -2848,8 +2885,14 @@ function c2norm_jacobian_idx(rows::Vector{Int32}, cols::Vector{Int32}, p::objpar
     # The statement jac_e = vector changes the pointer to jac_e within the function, but the result will not be
     # available in the calling function
 
-    cons_idx = 0 # constraint number = row index in Jacobian
-    nJac = 0 # index in rows, cols, jac_e for one Jacobinan element
+    cons_idx = p.nConstUnitary # constraint number = row index in Jacobian, updated with offset
+    nJac = p.nEleJacUnitary # index in rows, cols, jac_e for each Jacobinan element, updated with offset
+
+    if verbose
+        nCons = (p.nTimeIntervals - 1) # Total number of constraints
+        println("c2norm_jacobian_idx, cons_idx (offset) = ", p.nConstUnitary, " nJac (offset) = ", p.nEleJacUnitary)
+        println("Length(rows) = ", length(rows))
+    end
 
     for interval = 1:p.nTimeIntervals-1
         if verbose
@@ -2899,8 +2942,8 @@ function c2norm_jacobian_idx(rows::Vector{Int32}, cols::Vector{Int32}, p::objpar
 
     if verbose
         nCons = (p.nTimeIntervals - 1) # Total number of constraints
-        println("Number of assigned constraints = ", cons_idx, " nCons = ", nCons)
-        println("Number of assigned Jacobian elements = ", nJac, " length(rows) = ", length(rows))
+        println("Total number of assigned constraints = ", cons_idx - p.nConstUnitary, " nCons = ", nCons)
+        println("Total number of assigned Jacobian elements = ", nJac, " length(rows) = ", length(rows))
     end
 
     return nothing

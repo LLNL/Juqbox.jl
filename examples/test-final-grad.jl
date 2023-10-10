@@ -10,7 +10,7 @@ Vtg = get_swap_1d_gate(2)
 target_gate = sqrt(Vtg)
 fidType = 1 # 2 # 1: Frobenius norm^2, 2: infidelity, 3: infidelity-squared
 
-constraintType = 2 # Not really needed here b/c we are not using the ipopt interface 
+constraintType = 1 # Not really needed here b/c we are not using the ipopt interface 
 
 verbose = true
 
@@ -48,7 +48,7 @@ end
 # for 2 intervals with D1=22 try 5, 15
 # for 2 intervals and the grad wrt W, try kpar in [177, 208]
 # for 3 intervals, Winit^{(1)} has index [177, 208], for Winit^{(2)} add 32
-params.kpar = 280 # 249 #25 # 178 + 16 + 32 # 177 # 3 # 178 + 32 +16 + 8# 178, 178 + 16, 178 + 32 # test this component of the gradient
+params.kpar = 3 # 280 # 249 #25 # 178 + 16 + 32 # 177 # 3 # 178 + 32 +16 + 8# 178, 178 + 16, 178 + 32 # test this component of the gradient
 
 println("Setup completed\n")
 
