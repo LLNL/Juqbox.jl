@@ -1,3 +1,5 @@
+using Printf
+
 # The working_arrays struct holds all of the working arrays needed to call traceobjgrad. Preallocated for efficiency
 """
     wa = working_arrays(N:: Int64, Ntot:: Int64, Hconst::MyRealMatrix, Hsym_ops::Vector{MyRealMatrix}, Hanti_ops::Vector{MyRealMatrix}, Hunc_ops::Vector{MyRealMatrix}, isSymm::BitArray{1}, nCoeff::Int64)
@@ -1163,6 +1165,19 @@ function lagrange_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = tru
     finalDist = 0.0
 
     eval1gradient = false # only for testing the adjoint gradient
+    Wr_arr = Array{Union{Nothing, Matrix{Float64}}}(nothing, p.nTimeIntervals-1)
+    Wi_arr = Array{Union{Nothing, Matrix{Float64}}}(nothing, p.nTimeIntervals-1)
+    for interval = 1:p.nTimeIntervals-1
+        # initial conditions from pcof0 (determined by optimization)
+        offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 2 the offset should be nAlpha
+        # println("offset 1 = ", offc)
+        nMat = p.Ntot^2
+        Winit_r_tmp = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+        offc += nMat
+        # println("offset 2 = ", offc)
+        Winit_i_tmp = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+        Wr_arr[interval], Wi_arr[interval] = unitarize(Winit_r_tmp, Winit_i_tmp, false)
+    end
 
     # Split the time stepping into independent tasks in each time interval
     for interval = 1:p.nTimeIntervals
@@ -1172,14 +1187,16 @@ function lagrange_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = tru
             Winit_r = p.Uinit_r
             Winit_i = p.Uinit_i
         else
-            # initial conditions from pcof0 (determined by optimization)
-            offc = p.nAlpha + (interval-2)*p.nWinit # for interval = 2 the offset should be nAlpha
-            # println("offset 1 = ", offc)
-            nMat = p.Ntot^2
-            Winit_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
-            offc += nMat
-            # println("offset 2 = ", offc)
-            Winit_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+            # # initial conditions from pcof0 (determined by optimization)
+            # offc = p.nAlpha + (interval-2)*p.nWinit # for interval = 2 the offset should be nAlpha
+            # # println("offset 1 = ", offc)
+            # nMat = p.Ntot^2
+            # Winit_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+            # offc += nMat
+            # # println("offset 2 = ", offc)
+            # Winit_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+
+            Winit_r, Winit_i = Wr_arr[interval-1], Wi_arr[interval-1]
         end
 
         # Evolve the state under Schroedinger's equation
@@ -1195,14 +1212,18 @@ function lagrange_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = tru
         Uend_r = (reInitOp[1] * Winit_r + imInitOp[1] * Winit_i) # real part of above expression
         Uend_i = (reInitOp[2] * Winit_r + imInitOp[2] * Winit_i) # imaginary part
 
+        check_unitarity(Uend_r, Uend_i)
+
         if interval < p.nTimeIntervals
-            offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
-            # println("offset 1 = ", offc)
-            nMat = p.Ntot^2
-            Wend_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
-            offc += nMat
-            # println("offset 2 = ", offc)
-            Wend_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+            # offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
+            # # println("offset 1 = ", offc)
+            # nMat = p.Ntot^2
+            # Wend_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+            # offc += nMat
+            # # println("offset 2 = ", offc)
+            # Wend_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+            Wend_r = Wr_arr[interval]
+            Wend_i = Wi_arr[interval]
 
             Cjump_r = Uend_r - Wend_r
             Cjump_i = Uend_i - Wend_i
@@ -1311,6 +1332,22 @@ function lagrange_grad(pcof0::Array{Float64,1},  p::objparams, objf_grad::Vector
 
     eval1gradient = verbose && evaladjoint # for testing the adjoint gradient
 
+    Wr_arr = Array{Union{Nothing, Matrix{Float64}}}(nothing, p.nTimeIntervals-1)
+    Wi_arr = Array{Union{Nothing, Matrix{Float64}}}(nothing, p.nTimeIntervals-1)
+    Vr_arr = Array{Union{Nothing, Matrix{Float64}}}(nothing, p.nTimeIntervals-1)
+    Vi_arr = Array{Union{Nothing, Matrix{Float64}}}(nothing, p.nTimeIntervals-1)
+    for interval = 1:p.nTimeIntervals-1
+        # initial conditions from pcof0 (determined by optimization)
+        offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 2 the offset should be nAlpha
+        # println("offset 1 = ", offc)
+        nMat = p.Ntot^2
+        Winit_r_tmp = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+        offc += nMat
+        # println("offset 2 = ", offc)
+        Winit_i_tmp = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+        Wr_arr[interval], Wi_arr[interval], Vr_arr[interval], Vi_arr[interval] = unitarize(Winit_r_tmp, Winit_i_tmp, true)
+    end
+
     # Split the time stepping into independent tasks in each time interval
     for interval = 1:p.nTimeIntervals
         tEnd = p.T0int[interval] + p.Tsteps[interval]*dt # terminal time for this time interval
@@ -1320,14 +1357,16 @@ function lagrange_grad(pcof0::Array{Float64,1},  p::objparams, objf_grad::Vector
             Winit_r = p.Uinit_r
             Winit_i = p.Uinit_i
         else
-            # initial conditions from pcof0 (determined by optimization)
-            offc = p.nAlpha + (interval-2)*p.nWinit # for interval = 2 the offset should be nAlpha
-            # println("offset 1 = ", offc)
+            # # initial conditions from pcof0 (determined by optimization)
+            # offc = p.nAlpha + (interval-2)*p.nWinit # for interval = 2 the offset should be nAlpha
+            # # println("offset 1 = ", offc)
             nMat = p.Ntot^2
-            Winit_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
-            offc += nMat
-            # println("offset 2 = ", offc)
-            Winit_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+            # Winit_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+            # offc += nMat
+            # # println("offset 2 = ", offc)
+            # Winit_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+
+            Winit_r, Winit_i = Wr_arr[interval-1], Wi_arr[interval-1]
         end
 
         # Evolve the state under Schroedinger's equation
@@ -1358,12 +1397,14 @@ function lagrange_grad(pcof0::Array{Float64,1},  p::objparams, objf_grad::Vector
             if interval < p.nTimeIntervals
                 # gradient wrt alpha (B-spline coefficients)
 
-                # get initial condition offset in pcof0 array
-                offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
+                # # get initial condition offset in pcof0 array
+                # offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
                 nMat = p.Ntot^2
-                Wend_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
-                offc += nMat
-                Wend_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+                # Wend_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+                # offc += nMat
+                # Wend_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+                Wend_r = Wr_arr[interval]
+                Wend_i = Wi_arr[interval]
 
                 # test quadratic jump gradient
                 Cjump_r = Uend_r - Wend_r
@@ -1472,13 +1513,15 @@ function lagrange_grad(pcof0::Array{Float64,1},  p::objparams, objf_grad::Vector
         end # if eval1gradient
 
         if interval < p.nTimeIntervals
-            offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
-            # println("offset 1 = ", offc)
+            # offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
+            # # println("offset 1 = ", offc)
             nMat = p.Ntot^2
-            Wend_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
-            offc += nMat
-            # println("offset 2 = ", offc)
-            Wend_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+            # Wend_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+            # offc += nMat
+            # # println("offset 2 = ", offc)
+            # Wend_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+            Wend_r = Wr_arr[interval]
+            Wend_i = Wi_arr[interval]
 
             Cjump_r = Uend_r - Wend_r
             Cjump_i = Uend_i - Wend_i
@@ -1684,6 +1727,28 @@ function lagrange_grad(pcof0::Array{Float64,1},  p::objparams, objf_grad::Vector
         end # if interval < p.nIntervals
 
     end # for interval...
+
+    # another adjoint pass for gram-schmidt unitarization
+    for interval = 1:p.nTimeIntervals-1
+        # initial conditions from pcof0 (determined by optimization)
+        offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 2 the offset should be nAlpha
+        nMat = p.Ntot^2
+        pWr = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+        pWgrad_r = reshape(objf_grad[offc+1:offc+nMat], p.Ntot, p.Ntot)
+        offc += nMat
+        pWi = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+        pWgrad_i = reshape(objf_grad[offc+1:offc+nMat], p.Ntot, p.Ntot)
+        Vr = Vr_arr[interval]
+        Vi = Vi_arr[interval]
+        Wr = Wr_arr[interval]
+        Wi = Wi_arr[interval]
+
+        pWgrad_r, pWgrad_i = unitarize_adjoint(pWr, pWi, Vr, Vi, Wr, Wi, pWgrad_r, pWgrad_i)
+        offc = p.nAlpha + (interval-1)*p.nWinit
+        objf_grad[offc+1:offc+nMat] = vec(pWgrad_r)
+        offc += nMat
+        objf_grad[offc+1:offc+nMat] = vec(pWgrad_i)
+    end
 
     tp = tikhonov_pen(alpha, p) # Tikhonov penalty
     objf += tp

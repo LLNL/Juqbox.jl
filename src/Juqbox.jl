@@ -33,6 +33,7 @@ export run_Quandary
 export lagrange_obj, lagrange_grad, unitary_constraints, unitary_jacobian, unitary_jacobian_idx
 export update_multipliers
 export c2norm_constraints, c2norm_jacobian, c2norm_jacobian_idx, final_obj, final_grad
+export unitarize, unitarize_adjoint, check_unitarity
 
 # Julia versions prior to v"1.3.1" can't use LinearAlgebra's 5 argument mul!, routines
 # included here for backwards compatability
@@ -68,5 +69,7 @@ include("save_pcof.jl")
 include("setup_problem.jl")
 
 include("quandary_interface.jl")
+
+include("gram_schmidt.jl")
 
 end # module
