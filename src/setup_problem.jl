@@ -96,6 +96,7 @@ end
 # initial control guess
 function init_control(; initAmp::Vector{Float64}, D1::Int64, Nfreq::Vector{Int64}, startFile::String = "", seed::Int64 = -1, randomize::Bool = true, growth_rate::Vector{Vector{Float64}} = Vector{Vector{Float64}}(undef,0), nTimeIntervals::Int64=1, U0::Matrix{ComplexF64}=Matrix{ComplexF64}(undef,0,0), Utarget::Matrix{ComplexF64}=Matrix{ComplexF64}(undef,0,0))
 
+    # 2-do: with nore than 1 initial condition, try zero control and free evolution as initial guess
     Nosc = length(Nfreq)
     nAlpha = 2*D1*sum(Nfreq)
 # pcof array now contains alpha-vector and intermediate initial conditions
@@ -1117,8 +1118,8 @@ Setup a Hamiltonian model, parameters for numerical time stepping, a target unit
     nsteps = calculate_timestep(T, Hsys, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, maxCoupled=maxAmp, Pmin=Pmin)
     println("Starting point: nsteps = ", nsteps, " maxAmp = ", maxAmp, " [rad/ns]")
     
-    # create a linear solver object
-    linear_solver = Juqbox.lsolver_object(solver=Juqbox.JACOBI_SOLVER, max_iter=100, tol=1e-12, nrhs=prod(Ne))
+    # create a linear solver object (Jacobi is now the default)
+    #linear_solver = Juqbox.lsolver_object(solver=Juqbox.JACOBI_SOLVER, max_iter=100, tol=1e-12, nrhs=prod(Ne))
   
     # create diagonal W-matrix with weights for suppressing leakage
     w_diag_mat = wmatsetup(is_ess, it2in, Ne, Ng, wmatScale)
@@ -1129,8 +1130,41 @@ Setup a Hamiltonian model, parameters for numerical time stepping, a target unit
     # println("differen: ", diag(w_diag_mat-w_diag_2))
 
     # Set up parameter struct
-    params = Juqbox.objparams(Ne, Ng, T, nsteps, Uinit=convert(Matrix{ComplexF64}, Ubasis), Utarget=Utarget, Cfreq=om, Rfreq=rot_freq, Hconst=Hsys, w_diag_mat=w_diag_mat, nCoeff=nCoeff, D1=D1, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, linear_solver=linear_solver, freq01=f01, self_kerr=xi, couple_coeff=couple_coeff, couple_type=couple_type, msb_order=msb_order, zeroCtrlBC=zeroCtrlBC, nTimeIntervals=nTimeIntervals, gammaJump=gammaJump, fidType=fidType, constraintType=constraintType)
+    params = Juqbox.objparams(Ne, Ng, T, nsteps, Uinit=convert(Matrix{ComplexF64}, Ubasis), Utarget=Utarget, Cfreq=om, Rfreq=rot_freq, Hconst=Hsys, w_diag_mat=w_diag_mat, nCoeff=nCoeff, D1=D1, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, freq01=f01, self_kerr=xi, couple_coeff=couple_coeff, couple_type=couple_type, msb_order=msb_order, zeroCtrlBC=zeroCtrlBC, nTimeIntervals=nTimeIntervals, gammaJump=gammaJump, fidType=fidType, constraintType=constraintType) # linear_solver=linear_solver, 
 
+    # set intermediate initial conditions from forward evolution with given pcof vector
+    # impose bounds on initial control vector
+    minCoeff, maxCoeff = control_bounds(params, maxAmp)
+    for q in 1:length(pcof0)
+        if pcof0[q] > maxCoeff[q]
+            pcof0[q] = maxCoeff[q]
+        end
+        if pcof0[q] < minCoeff[q]
+            pcof0[q] = minCoeff[q]
+        end
+    end
+
+    obj, Uhist, dum = traceobjgrad(pcof0, params, true, false)
+
+    # Update initial conditions for intermediate time-intervals
+    if nTimeIntervals>1
+        p = params
+        offc = p.nAlpha
+        currentStep = 1 # initial condition at t=0
+        
+        nMat = p.Ntot^2
+        for q = 1:p.nTimeIntervals-1
+            currentStep += p.Tsteps[q]
+            Winit = Uhist[:,:, currentStep]
+            pcof0[offc+1:offc+nMat] = vec(real(Winit)) # save real part
+            offc += nMat
+            pcof0[offc+1:offc+nMat] = vec(imag(Winit)) # save imaginary part
+            offc += nMat
+        end
+
+    end
+
+    println("Returning from traceobjgrad with size(Uhist) = ", size(Uhist))
 
     println("*** Settings ***")
     println("Number of coefficients per spline = ", D1, " Total number of control parameters = ", length(pcof0))

@@ -9,11 +9,11 @@ include("two_sys_noguard.jl")
 # assign the target gate
 Vtg = get_swap_1d_gate(2)
 target_gate = sqrt(Vtg)
-fidType = 3 # 2 # 1: Frobenius norm^2, 2: infidelity, 3: infidelity-squared
+fidType = 4 # 3 # 2 # 1: Frobenius norm^2, 2: infidelity, 3: infidelity-squared
 
 verbose = true
 
-nTimeIntervals = 3 # 3 # 2 # 1
+nTimeIntervals = 1 # 3 # 3 # 2 # 1
 
 retval = setup_std_model(Ne, Ng, f01, xi, xi12, couple_type, rot_freq, T, D1, target_gate, maxctrl_MHz=maxctrl_MHz, msb_order=msb_order, initctrl_MHz=initctrl_MHz, rand_seed=rand_seed, Pmin=Pmin, cw_prox_thres=cw_prox_thres, cw_amp_thres=cw_amp_thres, use_carrier_waves=use_carrier_waves, nTimeIntervals=nTimeIntervals, fidType=fidType, zeroCtrlBC=zeroCtrlBC, verbose=verbose)
 
@@ -44,7 +44,7 @@ end
 # for 2 intervals with D1=22 try 5, 15
 # for 2 intervals and the grad wrt W, try kpar in [177, 208]
 # for 3 intervals, Winit^{(1)} has index [177, 208], for Winit^{(2)} add 32
-params.kpar = 25 # 178 + 16 + 32 # 177 # 3 # 178 + 32 +16 + 8# 178, 178 + 16, 178 + 32 # test this component of the gradient
+params.kpar = 9 # 178 + 16 + 32 # 177 # 3 # 178 + 32 +16 + 8# 178, 178 + 16, 178 + 32 # test this component of the gradient
 
 println("Setup completed\n")
 

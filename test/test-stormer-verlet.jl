@@ -4,6 +4,8 @@ using JLD2
 using Printf
 Base.show(io::IO, f::Float64) = @printf(io, "%20.13e", f)
 
+using Juqbox
+
 function timesteptest( cfl = 0.1, testcase = 2, order = 2, verbose = false)
 
     N = 2 # vector dimension	
@@ -42,43 +44,44 @@ function timesteptest( cfl = 0.1, testcase = 2, order = 2, verbose = false)
     
     # timefunctions and forcing	
     if testcase == 1
-	# timefunc1(t) = 0.5*(sin(0.5*omega*(t)))^2;
-	timefunc1(t) = 0.25*(1.0 - cos(omega*t));
-	uforce1(t::Float64) = [0.0; 0.0]
-	vforce1(t::Float64) = [0.0; 0.0]
+        # timefunc1(t) = 0.5*(sin(0.5*omega*(t)))^2;
+        timefunc1(t) = 0.25*(1.0 - cos(omega*t));
+        uforce1(t::Float64) = [0.0; 0.0]
+        vforce1(t::Float64) = [0.0; 0.0]
 
-	timefunc =timefunc1
-	uforce = uforce1
-	vforce = vforce1
+        timefunc =timefunc1
+        uforce = uforce1
+        vforce = vforce1
 
     elseif testcase == 0
-	timefunc0(t::Float64) = 0.25*(1-sin(omega*t))
-	uforce0(t::Float64) = [0.0; 0.0]
-	vforce0(t::Float64) = [0.0; 0.0]
+        timefunc0(t::Float64) = 0.25*(1-sin(omega*t))
+        uforce0(t::Float64) = [0.0; 0.0]
+        vforce0(t::Float64) = [0.0; 0.0]
 
-	timefunc =timefunc0
-	uforce = uforce0
-	vforce = vforce0
+        timefunc =timefunc0
+        uforce = uforce0
+        vforce = vforce0
+
     elseif testcase == 2
-	timefunc2(t::Float64) = 4/T^2 *t*(T-t)
-	phi12(t::Float64) = 0.25*(t - sin(omega*t)/omega)
-	phidot2(t::Float64) = 0.5*(sin(0.5*omega*(t)))^2
-	uforce2(t::Float64) = [(timefunc2(t) - phidot2(t))*sin(phi12(t)); 0.0]
-	vforce2(t::Float64) = [0.0; -(timefunc2(t) - phidot2(t)) * cos(phi12(t))]
+        timefunc2(t::Float64) = 4/T^2 *t*(T-t)
+        phi12(t::Float64) = 0.25*(t - sin(omega*t)/omega)
+        phidot2(t::Float64) = 0.5*(sin(0.5*omega*(t)))^2
+        uforce2(t::Float64) = [(timefunc2(t) - phidot2(t))*sin(phi12(t)); 0.0]
+        vforce2(t::Float64) = [0.0; -(timefunc2(t) - phidot2(t)) * cos(phi12(t))]
 
-	timefunc =timefunc2
-	uforce = uforce2
-	vforce = vforce2
+        timefunc =timefunc2
+        uforce = uforce2
+        vforce = vforce2
     elseif testcase == 3
-	timefunc3(t::Float64) =  4/T^2 *t*(T-t)
-	phi13(t::Float64) = 0.25*(t - sin(omega*t)/omega)
-	phidot3(t::Float64) = 0.5*(sin(0.5*omega*(t)))^2
-	uforce3(t::Float64) = [-phidot3(t)*sin(phi13(t)); timefunc3(t)*cos(phi13(t))]
-	vforce3(t::Float64) = [-timefunc3(t)*sin(phi13(t)); phidot3(t)*cos(phi13(t))]
+        timefunc3(t::Float64) =  4/T^2 *t*(T-t)
+        phi13(t::Float64) = 0.25*(t - sin(omega*t)/omega)
+        phidot3(t::Float64) = 0.5*(sin(0.5*omega*(t)))^2
+        uforce3(t::Float64) = [-phidot3(t)*sin(phi13(t)); timefunc3(t)*cos(phi13(t))]
+        vforce3(t::Float64) = [-timefunc3(t)*sin(phi13(t)); phidot3(t)*cos(phi13(t))]
 
-	timefunc =timefunc3
-	uforce = uforce3
-	vforce = vforce3
+        timefunc =timefunc3
+        uforce = uforce3
+        vforce = vforce3
     end	
     
     K(t::Float64) = timefunc(t)*K0
@@ -90,22 +93,26 @@ function timesteptest( cfl = 0.1, testcase = 2, order = 2, verbose = false)
     timestepper = Juqbox.svparams(K,S,IN)
     
     #Time integration
-    usave = u
-    vsave = -v
-    tsave = t
+    usave = zeros(N, nsteps+1)
+    vsave = zeros(N, nsteps+1)
+    tsave = zeros(nsteps+1)
+
+    usave[:,1] = u
+    vsave[:,1] = -v
+    tsave[1] = t
 
 
     # Stormer-Verlet
     start = time()
 
     for ii in 1:nsteps
-	for jj in 1:stages 
-	    t, u, v, v05 =  Juqbox.step(timestepper,t,u,v,dt*gamma[jj],uforce,vforce)
-	    # t, u, v =  Juqbox.magnus(timestepper,t,u,v,dt,uforce,vforce)
-	end
-	usave = [usave u]
-	vsave = [vsave -v]
-	tsave = [tsave t]
+        for jj in 1:stages 
+            t, u, v, v05 =  Juqbox.step(timestepper,t,u,v,dt*gamma[jj],uforce,vforce)
+            # t, u, v =  Juqbox.magnus(timestepper,t,u,v,dt,uforce,vforce)
+        end
+        usave[:,ii+1] = u
+        vsave[:,ii+1] = -v
+        tsave[ii+1] = t
     end
     elapsed = time() - start
 
@@ -137,7 +144,7 @@ function timesteptest( cfl = 0.1, testcase = 2, order = 2, verbose = false)
         println("cg-err = " , cg_err, " ce-err = ", ce_err)
     end
 
-    return t,u,v,dt,cg_err,ce_err
+    return tsave, usave, vsave, dt, cg_err, ce_err
 end
 
 function timestep_convergence( errFileName:: String, writeFile:: Bool=false)
@@ -150,11 +157,11 @@ function timestep_convergence( errFileName:: String, writeFile:: Bool=false)
     verbose = false
 
     for j = 1:ntests
-	for i = 1:length(CFL_vec)
-	    t,u,v,dt,cg_err,ce_err = timesteptest(CFL_vec[i], j-1, order, verbose)
-	    err_mat[i,1,j] = cg_err
-	    err_mat[i,2,j] = ce_err
-	end
+        for i = 1:length(CFL_vec)
+            _,_,_,_,cg_err,ce_err = timesteptest(CFL_vec[i], j-1, order, verbose)
+            err_mat[i,1,j] = cg_err
+            err_mat[i,2,j] = ce_err
+        end
     end
 
     if writeFile
