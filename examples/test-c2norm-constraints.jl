@@ -19,6 +19,12 @@ p = retval[1]
 pcof0 = retval[2]
 maxAmp = retval[3];
 
+# randomize Winit part of pcof
+for q = 1:p.nTimeIntervals-1
+    offc = p.nAlpha + (q-1)*p.nWinit # for interval = 1 the offset should be nAlpha
+    pcof0[offc+1:offc+p.nWinit] = rand(p.nWinit)
+end
+
 p.traceInfidelityThreshold = 1e-3 # better than 99.9% fidelity
 
 Ntot = p.Ntot
@@ -51,7 +57,7 @@ println("c2norm_cons: ")
 println(c2norm_cons)
 
 println()
-testJac = false
+testJac = true # false
 
 if testJac
     nEleJac = (p.nTimeIntervals - 1) * (p.nAlpha + p.nWinit) # begin with the Jacobian wrt B-spline coeffs, and wrt Winit_next)
@@ -73,7 +79,7 @@ if testJac
 
     println()
     pert = 1e-7
-    one_cons = 2 # 1 # 2 # constraint number to be tested
+    one_cons = 1 # 1 # 2 # constraint number to be tested
     println("FD estimate of the jacobian of constraint = ", one_cons, ", wrt element kpar (col) = ", p.kpar)
 
     jac_idx = find_elem(one_cons, p.kpar, jac_rows, jac_cols)

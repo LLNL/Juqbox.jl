@@ -274,6 +274,10 @@ mutable struct objparams
     T0int:: Vector{Float64} # Vector of size nTimeIntervals holding the starting time for each interval
     Tsteps:: Vector{Int64} # Number of time steps in each interval
 
+    # Add starting and ending indices for B-spline coefficients in each interval
+    d1_start:: Vector{Int64}
+    d1_end:: Vector{Int64}
+
     Lmult_r:: Vector{Matrix{Float64}} # Vector of size (nTimeIntervals-1) for the Lagrange multiplier coefficients (real)
     Lmult_i:: Vector{Matrix{Float64}} # Vector of size (nTimeIntervals-1) for the Lagrange multiplier coefficients (imag)
 
@@ -471,6 +475,9 @@ mutable struct objparams
         T0int = zeros(Float64, nTimeIntervals)
         Tsteps = zeros(Int64, nTimeIntervals)
 
+        d1_start = zeros(Int64, nTimeIntervals)
+        d1_end = zeros(Int64, nTimeIntervals)
+
         T0int[1] = 0.0 # first interval always starts from t=0.0
     
         # Allocate storage for Lagrange multipliers
@@ -480,6 +487,8 @@ mutable struct objparams
         # Compute intermediate start times by rounding to the nearest time step
         if nTimeIntervals == 1
             Tsteps[1] = nsteps
+            d1_start[1] = 1
+            d1_end[1] = D1
         else
             dt = T/nsteps
             ds = 1.0/nTimeIntervals
@@ -501,6 +510,28 @@ mutable struct objparams
             if (sum(Tsteps) != nsteps)
                 Tsteps[nTimeIntervals] = nsteps - Tsteps[nTimeIntervals - 1]
             end
+
+            # starting and ending indices for the B-spline coefficients
+            dtknot = T/(D1-2)
+            # test
+            # tc = dtknot*( collect(1:D1) .- 1.5)
+            # println("Tcenter: ", tc)
+            # for k = 1:D1
+            #     println("B-idx = ", k, " support: (", tc[k] - 1.5*dtknot, ", ", tc[k] + 1.5*dtknot, "]")
+            # end
+                
+            for q = 1: nTimeIntervals-1
+                k0 = ceil(Int64, T0int[q]/dtknot)
+                k1 = 3 + floor(Int64, T0int[q+1]/dtknot)
+                d1_start[q] = max(1, k0)
+                d1_end[q] = min(D1, k1)
+                # println("Interval = ", q, " support = (", T0int[q], ", ", T0int[q+1], "]")
+            end
+            q = nTimeIntervals
+            k0 = ceil(Int64, T0int[q]/dtknot)
+            d1_start[q] = max(1, k0)
+            d1_end[q] = D1
+            # println("Interval = ", q, " support = (", T0int[q], ", ", T, "]")
         end
     
         # println("\nNorm real(Uinit), image(Uinit): ", norm(real(Uinit)), ", ", norm(imag(Uinit)), "\n")
@@ -518,7 +549,7 @@ mutable struct objparams
              usingPriorCoeffs, priorCoeffs, quiet, Rfreq, false, [],
              real(my_dVds), imag(my_dVds), my_sv_type, wa, nCoeff, D1, nAlpha, nWinit,
              freq01, self_kerr, couple_coeff, couple_type, # Add some checks for these ones!
-             msb_order, zeroCtrlBC, nTimeIntervals, T0int, Tsteps, Lmult_r, Lmult_i, gammaJump, gammaUnitary, constraintType, 0, 0
+             msb_order, zeroCtrlBC, nTimeIntervals, T0int, Tsteps, d1_start, d1_end, Lmult_r, Lmult_i, gammaJump, gammaUnitary, constraintType, 0, 0
             )
 
     end
@@ -2626,6 +2657,306 @@ function unitary_jacobian_idx(rows::Vector{Int32}, cols::Vector{Int32}, p::objpa
 end # function unitary_jacobian_idx
 
 ##################################################
+# Evaluate the state continuity constraints across intermediate time intervals
+##################################################
+function state_constraints(pcof0::Vector{Float64}, e_con::Vector{Float64}, p::objparams, verbose::Bool = false)
+    # shortcut to working_arrays object in p::objparams  
+    w = p.wa
+
+    # initializations start here
+    alpha = pcof0[1:p.nAlpha] # extract the B-spline-coefficients
+
+    # setup splinepar
+    if p.use_bcarrier
+        splinepar = bcparams(p.T, p.D1, p.Cfreq, alpha) # Assumes Nunc = 0
+    else
+        Nsig  = 2*(p.Ncoupled + p.Nunc) # Only uses for regular B-splines
+        splinepar = splineparams(p.T, p.D1, Nsig, alpha)
+    end
+
+    dt ::Float64 = p.T/p.nsteps # global time step
+
+    if p.nTimeIntervals == 1
+        # No constraints
+        return
+    end
+
+    nCons = length(e_con) - p.nConstUnitary # offset wrt unitary constraints
+    # e_con[:] .= 0.0 # not needed?
+
+    if verbose
+        println("c2norm_constraints: # time intervals = ", p.nTimeIntervals, " length(pcof) =  ", length(pcof0), " nAlpha = ", p.nAlpha, " nWinit = ", p.nWinit, " # constraints = ", nCons)
+    end
+
+    cons_idx = p.nConstUnitary # row number in e_con, updated with offset
+    for interval = 1:p.nTimeIntervals-1 # constraints only at interior time intervals
+        if verbose
+            println("Interval # ", interval)
+        end
+
+        if interval == 1
+            # initial conditions from Uinit (fixed)
+            Winit_r = p.Uinit_r
+            Winit_i = p.Uinit_i
+        else
+            # initial conditions from pcof0 (determined by optimization)
+            offc = p.nAlpha + (interval-2)*p.nWinit # for interval = 2 the offset should be nAlpha
+            # println("offset 1 = ", offc)
+            nMat = p.Ntot^2
+            Winit_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+            offc += nMat
+            # println("offset 2 = ", offc)
+            Winit_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+        end
+
+        # Evolve the state under Schroedinger's equation
+        # NOTE: the S-V scheme treats the real and imaginary parts with different time integrators
+        # First compute the solution operator for a basis of real initial conditions: I
+        reInitOp = evolve_schroedinger(p, splinepar, p.T0int[interval], p.Uinit_r, p.Uinit_i, p.Tsteps[interval])
+        
+        # Then a basis for purely imaginary initial conditions: iI
+        imInitOp = evolve_schroedinger(p, splinepar, p.T0int[interval], p.Uinit_i, p.Uinit_r, p.Tsteps[interval])
+        
+        # Now we can  account for the initial conditions for this time interval and easily calculate the gradient wrt Winit
+        # Uend = (reInitop[1] + i*reInitOp[2]) * Winit_r + (imInitOp[1] + i*imInitOp[2]) * Winit_i
+        Uend_r = (reInitOp[1] * Winit_r + imInitOp[1] * Winit_i) # real part of above expression
+        Uend_i = (reInitOp[2] * Winit_r + imInitOp[2] * Winit_i) # imaginary part
+
+        # compute offset in the pcof vector
+        offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
+        # println("offset 1 = ", offc)
+
+        nMat = p.Ntot * p.N # size of evolution matrices
+
+        # 1st the real part of all constraints for this interval
+        ur_vec = vec(Uend_r)
+        wr_vec = pcof0[offc+1:offc+nMat]
+        # println("Size(Uend_r) = ", size(Uend_r), " size(ur_vec) = ", size(ur_vec), " size(wr_vec) = ", size(wr_vec) )
+        e_con[cons_idx+1:cons_idx+nMat] = ur_vec - wr_vec # Cjump_r = Uend_r - Wend_r
+        cons_idx += nMat
+        offc += nMat
+
+        # 2nd the imaginary part of all constraints for this interval
+        ui_vec = vec(Uend_i)
+        wi_vec = pcof0[offc+1:offc+nMat]
+        e_con[cons_idx+1:cons_idx+nMat] = ui_vec - wi_vec # Cjump_i = Uend_i - Wend_i
+        cons_idx += nMat
+        offc += nMat
+
+    end # end for interval
+
+    if verbose
+        println("Number of assigned constraints = ", cons_idx, " length(e_con) = ", length(e_con))
+    end
+
+end # function state_constraints
+
+##################################################
+#  Evaluate Jacobian of the state constraints
+##################################################
+function state_jacobian(pcof0::Vector{Float64}, jac_e::Vector{Float64}, rows::Vector{Int32}, cols::Vector{Int32}, p::objparams, verbose::Bool = false)
+    if p.nTimeIntervals == 1
+        # No constraints
+        return nothing
+    end
+
+    # shortcut to working_arrays object in p::objparams  
+    w = p.wa
+
+    # initializations start here
+    alpha = pcof0[1:p.nAlpha] # extract the B-spline-coefficients
+
+    # setup splinepar
+    if p.use_bcarrier
+        splinepar = bcparams(p.T, p.D1, p.Cfreq, alpha) # Assumes Nunc = 0
+    else
+        Nsig  = 2*(p.Ncoupled + p.Nunc) # Only uses regular B-splines
+        splinepar = splineparams(p.T, p.D1, Nsig, alpha)
+    end
+
+    dt ::Float64 = p.T/p.nsteps # global time step
+
+    nMat = p.Ntot^2
+    ws_grad = zeros(2*p.N) # workspace
+    
+    # NOTE: In-place assignment of an array only works with the syntax jac_e[:] = vector or jac_e[nJac] = element
+    # The statement jac_e = vector changes the pointer to jac_e within the function, but the result will not be
+    # available in the calling function
+
+    nJac = p.nEleJacUnitary # offset for indexing (rows, cols, jac_e) for each Jacobian element
+
+    for interval = 1:p.nTimeIntervals-1 # loop over the state constraints for each time interval
+    
+        if verbose
+            println("Interval # ", interval)
+        end
+        
+        cons_num_int = p.nConstUnitary + (interval - 1)*p.nWinit # offset for 1st constraint in this interval
+        
+        if interval == 1
+            # initial conditions from Uinit (fixed)
+            Winit_r = p.Uinit_r
+            Winit_i = p.Uinit_i
+        else
+            # initial conditions from pcof0 (determined by optimization)
+            offc = p.nAlpha + (interval-2)*p.nWinit # for interval = 2 the offset should be nAlpha
+            # println("offset 1 = ", offc)
+            Winit_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+            offc += nMat
+            # println("offset 2 = ", offc)
+            Winit_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+        end
+
+        # Evolve the state under Schroedinger's equation
+        # NOTE: the S-V scheme treats the real and imaginary parts with different time integrators
+        # First compute the solution operator for a basis of real initial conditions: I
+        reInitOp = evolve_schroedinger(p, splinepar, p.T0int[interval], p.Uinit_r, p.Uinit_i, p.Tsteps[interval])
+        
+        # Then a basis for purely imaginary initial conditions: iI
+        imInitOp = evolve_schroedinger(p, splinepar, p.T0int[interval], p.Uinit_i, p.Uinit_r, p.Tsteps[interval])
+        
+        # Now we can  account for the initial conditions for this time interval and easily calculate the gradient wrt Winit
+        Uend_r = (reInitOp[1] * Winit_r + imInitOp[1] * Winit_i) # real part of above expression
+        Uend_i = (reInitOp[2] * Winit_r + imInitOp[2] * Winit_i) # imaginary part
+
+        # evaluate the jump in the state compared to the initial condition of the next interval
+        offc = p.nAlpha + (interval-1)*p.nWinit # pcof0 offset: for interval = 1 the offset should be nAlpha
+        # println("offset 1 = ", offc)
+        nMat = p.Ntot^2
+        Wend_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+        offc += nMat
+        # println("offset 2 = ", offc)
+        Wend_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+
+        # Are these variables needed/ used below?
+        Cjump_r = Uend_r - Wend_r
+        Cjump_i = Uend_i - Wend_i
+
+        nJac0 = nJac # remember starting number of Jacobian elements
+
+        #####################################
+        # UPDATE NEEDED HERE: Replace the adjoint solver by forward evaluation wrt each 
+        # component of the B-spline control vector
+        ##################################### 
+        
+        kpar0 = p.kpar # remember initial value of p.kpar 
+        # Loop over each component in the B-splines
+        # NOTE: only a subset of the parameters have any influence in this interval
+        cum_freq = cumsum(p.Nfreq)
+        for c = 1:p.Nosc
+            for f = 1:p.Nfreq[c]
+                for re_im = 1:2
+                    for k = p.d1_start[interval]:p.d1_end[interval] # 1:p.D1 # This range needs to be narrowed
+                        # compute offset
+                        p.kpar =  k + (re_im - 1)*p.D1 + (f-1)*2*p.D1 
+                        if c > 1
+                            p.kpar += 2*p.D1*cum_freq[c-1]
+                        end
+
+                        _, _, Ualpha_r, Ualpha_i = evolve_schroedinger(p, splinepar, p.T0int[interval], Winit_r, Winit_i, p.Tsteps[interval], true)
+
+                        #println("Interval = ", interval, " kpar = ", p.kpar, " len(Ualpha_r) = ", length(Ualpha_r), " norm(Ualpha_r) = ", norm(Ualpha_r), " len(Ualpha_i) = ", length(Ualpha_i), " norm(Ualpha_i) = ", norm(Ualpha_i))
+
+                        idxr = nJac .+ (1:nMat) # index range to assign in jac_e, row, cols
+                        #println("c=", c, " f=", f, " re_im=", re_im, " k=", k, " nJac = ", nJac, " adding 2*nMat = ", 2*nMat)
+                        rows[idxr] = cons_num_int .+ (1:nMat) # all rows
+                        cols[idxr] .= p.kpar # the column corresponds to one element of pcof
+                        jac_e[idxr] = vec(Ualpha_r) # real part
+                        nJac += nMat
+
+                        # imaginary part
+                        idxr = nJac .+ (1:nMat) # index range to assign in jac_e, row, cols
+                        # offset by nMat to get to the imaginary part
+                        rows[idxr] = cons_num_int .+ nMat .+ (1:nMat) # all rows
+
+                        cols[idxr] .= p.kpar # the column corresponds to one element of pcof
+                        jac_e[idxr] = vec(Ualpha_i) # imaginary part
+                        nJac += nMat
+                    end
+                end # for re_im
+            end # for f
+        end # for c
+
+        p.kpar = kpar0 # reset 
+        
+        #############################################
+        # Jacobian wrt the initial conditions for this interval
+        #############################################
+
+        # if interval >= 2 # jacobian wrt Winit^{(interval - 1)} through initial condition for (Uend_r, Uend_i)
+
+        #     if verbose
+        #         println("Assigning jac wrt starting Winit. Starting offset: ", cons_num_int)
+        #     end
+
+        #     cons_num = cons_num_int # constraint offset for this time interval
+            
+        #     # dependence through initial condition at (interval - 1)
+        #     # Cjump^{interval} = U^{interval}(W^{interval - 1}) - W^{interval}
+
+        #     for re_im = 1:2 # First the real part, followed by the imaginary part of the state constraints
+        #         for k = 1:p.N # k = col
+        #             for j = 1:p.Ntot # j = row
+        #                 cons_num += 1 # increment the constraint number
+                        
+        #                 # Solution operator
+        #                 S_r1 = reInitOp[re_im]
+        #                 S_i1 = imInitOp[re_im]
+                        
+        #                 # Jacobian wrt W_r in (interval - 1)
+        #                 idxr = nJac .+ (1:p.N) # index range to assign in jac_e, row, cols
+        #                 rows[idxr] .= cons_num
+        #                 cols[idxr] = p.nAlpha .+ (interval-2)*p.nWinit .+ (k-1)*p.Ntot .+ (1:p.N) # Wrt W_{r,pk} for p=[1,N]
+        #                 jac_e[idxr] = S_r1[j,1:p.N] # row 'j' in S_r1
+        #                 nJac += p.N # we added p.N elements to the Jacobian
+                        
+        #                 # Jacobian wrt W_i in (interval - 1)
+        #                 idxr = nJac .+ (1:p.N) # index range to assign in jac_e, row, cols
+        #                 rows[idxr] .= cons_num
+        #                 cols[idxr] = p.nAlpha .+ (interval-2)*p.nWinit .+ nMat .+ (k-1)*p.Ntot .+ (1:p.N) # Wrt W_{i,pk} for p=[1,N]
+        #                 jac_e[idxr] = S_i1[j,1:p.N] # row 'j' in S_r1
+        #                 nJac += p.N # we added p.N elements to the Jacobian
+        
+        #             end # for j (row)
+        #         end # for k (column)
+        #     end # for re_im
+
+        #     if verbose
+        #         println("Assigning jac wrt starting Winit. Ending offset: ", cons_num)
+        #     end
+        # end # if interval >= 2
+
+        ###############################################
+        # Jacobian wrt Wnext = Winit^{(interval)} from Wnext in Cjump = Uend - Wnext
+        ###############################################
+        # cons_num = cons_num_int # constraint offset for this time interval
+
+        # idxr = nJac .+ (1:p.nWinit) # index range to assign in jac_e, rows, cols
+
+        # if verbose
+        #     println("Constaint offset: ", cons_num, " Assigning Jacobian wrt ending Winit, index range = ", idxr, " cols = ", p.nAlpha .+ (interval-1)*p.nWinit .+ (1:p.nWinit))
+        # end
+        # rows[idxr] = cons_num .+ (1:p.nWinit)
+        # cols[idxr] = p.nAlpha .+ (interval-1)*p.nWinit .+ (1:p.nWinit)
+        # jac_e[idxr] .= -1.0
+
+        # nJac += p.nWinit
+
+        if verbose
+            println("interval = ", interval, " added ", nJac - nJac0, " elements to the Jacobian")
+        end
+    end # end for interval
+
+    if verbose
+        nCons = (p.nTimeIntervals - 1)*p.nWinit # Total number of constraints
+        println("Total number of constraints: nCons = ", nCons)
+        println("Total number of assigned Jacobian elements = ", nJac, " length(jac_e) = ", length(jac_e))
+    end
+
+    return nothing
+end # function state_jacobian
+
+##################################################
 # Evaluate non-linear constraints for the norm-squared of jumps in the state
 # across intermediate timr intervals
 ##################################################
@@ -2663,12 +2994,6 @@ function c2norm_constraints(pcof0::Vector{Float64}, e_con::Vector{Float64}, p::o
         if verbose
             println("Interval # ", interval)
         end
-        # get initial condition offset in pcof0 array
-        # offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
-        # nMat = p.Ntot^2
-        # W_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
-        # offc += nMat
-        # W_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
 
         if interval == 1
             # initial conditions from Uinit (fixed)
