@@ -33,7 +33,7 @@ export run_Quandary
 export lagrange_obj, lagrange_grad, unitary_constraints, unitary_jacobian, unitary_jacobian_idx
 export update_multipliers
 export c2norm_constraints, c2norm_jacobian, c2norm_jacobian_idx, final_obj, final_grad
-export state_constraints, state_jacobian
+export state_constraints, state_jacobian, state_jacobian_idx
 
 # Julia versions prior to v"1.3.1" can't use LinearAlgebra's 5 argument mul!, routines
 # included here for backwards compatability

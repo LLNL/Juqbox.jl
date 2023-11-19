@@ -14,16 +14,14 @@ theta = pi/4
 Vtg = get_swap_1d_gate(length(Ne))
 
 # rotate target so that it will agree with the final unitary 
-target_gate = exp(-im*theta)*Vtg
-#target_gate = Vtg # sqrt(Vtg)
+#target_gate = exp(-im*theta)*Vtg
+target_gate = Vtg # sqrt(Vtg)
 
 fidType = 4 # 4 # 1 # fidType=1 for Frobenius norm^2, fidType=2 for Infidelity, or fidType=3 for infidelity-squared, fidType=4 for generalized infidelity
 
 gammaJump = 0.0 # coefficient for the norm^2(Jump) penalty term in the augmented Lagrange method (constraintType=0)
 
-constraintType = 2 # 1 # 2 # 0: Augmented Lagrange method, no explicit constraints, 1: unitary constraints on initial conditions and norm^2(jump), 2: zero norm^2(jump) to make the state continuous across time intervals. Set to 1 for fidType = 2
-
-derivative_test = false # true
+constraintType = 4 # 1 # 2 # 0: Augmented Lagrange method, no explicit constraints, 1: unitary constraints on initial conditions and norm^2(jump), 2: zero norm^2(jump) to make the state continuous across time intervals. Set to 1 for fidType = 2
 
 nTimeIntervals = 2 # 1 # 4 #  3 # 25 # 3 # 4 # 3 # 3 # 2 # 1
 
@@ -37,8 +35,9 @@ params.traceInfidelityThreshold = 1e-4 # 1e-3 # better than 99.9% fidelity
 params.objThreshold = -1.0
 Ntot = params.Ntot
 params.tik0 = 1.0e-3 # 1.0 # Adjust Tikhonov coefficient
-maxIter= 500 # 200 # 500 # 1000 # 230 # 200 #100 # 200
+maxIter= 100 # 200 # 500 # 1000 # 230 # 200 #100 # 200
 lbfgsMax = 200
+derivative_test = true # false # true
 
 println("Setup completed\n")
 

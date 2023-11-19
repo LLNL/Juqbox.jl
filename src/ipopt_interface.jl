@@ -359,7 +359,6 @@ function eval_f_par3(pcof::Vector{Float64}, params:: Juqbox.objparams)
     return f
   end
 
-  # for objFuncType == 1, intermediate initial conditions (no leak term)
 function eval_grad_f_par3(pcof::Vector{Float64}, grad_f::Vector{Float64}, params:: Juqbox.objparams)
 
     grad_f[:] .= 0.0 # initialize gradient storage
@@ -399,6 +398,28 @@ function eval_jac_g_par3(pcof::Vector{Float64}, rows::Vector{Int32}, cols::Vecto
     
     return true        
 end 
+
+###########################################
+# IpOPT callback function for evaluating all pointwise jump constraints
+###########################################
+function eval_g_par5(pcof::Vector{Float64}, g::Vector{Float64}, params::objparams)
+    state_constraints(pcof, g, params, false)
+end # function eval_g_par
+
+###########################################
+# IpOPT callback function for evaluating the Jacobian of the pointwise jump constraints
+###########################################
+function eval_jac_g_par5(pcof::Vector{Float64}, rows::Vector{Int32}, cols::Vector{Int32}, jac_g::Union{Nothing,Vector{Float64}}, p:: Juqbox.objparams)
+    
+    if jac_g === nothing 
+        #println("eval_jac_g_par2: initialization, length(rows) = ", length(rows), "length(cols) = ", length(cols), " length(cols) = ", length(cols))
+        state_jacobian_idx(rows, cols, p, false)
+    else
+        state_jacobian(pcof, jac_g, p, false) # enter all elements of the Jacobian
+    end        
+    
+    return true        
+end
 
 ###########################################
 # IpOPT callback function for evaluating unitary and jump constraints
@@ -635,6 +656,39 @@ function ipopt_setup(params:: Juqbox.objparams, nCoeff:: Int64, maxAmp:: Vector{
 
         # setup the Ipopt data structure
         prob = CreateIpoptProblem( nCoeff, minCoeff, maxCoeff, nConst, g_L, g_U, nEleJac, nEleHess, eval_f3, eval_g3, eval_grad_f3, eval_jac_g3, eval_h)
+    elseif params.constraintType == 4 
+        # zero jump in state across time intervals
+       nConst = (params.nTimeIntervals - 1)*params.nWinit # 2*N^2 constraint per intermediate initial condition
+
+        nEleJac = 0
+        for q = 1: params.nTimeIntervals - 1
+            nEleJac += 2 * params.NfreqTot * (params.d1_end[q] - params.d1_start[q] + 1) * params.nWinit # Jacobian wrt alpha (Overestimating)
+        end
+        nEleJac += (params.nTimeIntervals - 1) * params.nWinit # Jacobian wrt target state (next) Winit
+        if params.nTimeIntervals > 2 # Jacobian wrt initial conditions, Winit
+            nEleJac += (params.nTimeIntervals - 2) * params.nWinit * 2 * params.N
+        end
+
+        nEleHess = 0
+        g_L = zeros(nConst); # Equality constraints
+        g_U = zeros(nConst);
+
+        # callback functions need access to the params object
+        # testing the finalDist + gamma*norm^2(jump) objective
+        # combined with equality constraints for norm^2(jump)=0
+        
+        # call final_obj/grad
+        eval_f5(pcof) = eval_f_par3(pcof, params)
+        eval_grad_f5(pcof, grad_f) = eval_grad_f_par3(pcof, grad_f, params)
+        
+        # callbacks for evaluating the constraints and their Jacobian
+        # call jacobian_constraint
+        eval_g5(pcof, g) = eval_g_par5(pcof, g, params) 
+        # call state_jacobian or state_jacobian_idx
+        eval_jac_g5(pcof, rows, cols, jac_g) = eval_jac_g_par5(pcof, rows, cols, jac_g, params)
+
+        # setup the Ipopt data structure
+        prob = CreateIpoptProblem( nCoeff, minCoeff, maxCoeff, nConst, g_L, g_U, nEleJac, nEleHess, eval_f5, eval_g5, eval_grad_f5, eval_jac_g5, eval_h)
     else
         println("ConstraintType = ", params.constraintType, " is not yet implemented" )
         throw("IPOPT interface can not be defined")

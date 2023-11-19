@@ -86,8 +86,9 @@ if testJac
     jac_rows = zeros(Int32,nEleJac)
     jac_cols = zeros(Int32,nEleJac)
     println("Calling state_jacobian to evaluate the Jacobian of the state constraints")
-    state_jacobian(pcof0, jac_ele, jac_rows, jac_cols, p, true)
-    # state_jacobian_idx(jac_rows, jac_cols, p, true)
+    state_jacobian_idx(jac_rows, jac_cols, p, true)
+    state_jacobian(pcof0, jac_ele, p, true)
+
 
     printJac = false
     if printJac
@@ -99,9 +100,9 @@ if testJac
 
     println()
     pert = 1e-7
-    #one_cons = 1 # 1 # 1 # 2 # constraint number to be tested
-    one_par = 280 # 249 # 217 # 11 # for cons=36: 217-220, 233-236, 252
-    c_rge = (33:64) # (1:32) #  
+    
+    one_par = 11 # 280 # 249 # 217 # 11 # for cons=36: 217-220, 233-236, 252
+    c_rge = (33:64) # (1:32) # range of constraints to test 
     println("FD estimate of the jacobian of constraints = ", c_rge, ", wrt element kpar (col) = ", one_par)
 
     max_diff = 0.0

@@ -14,12 +14,13 @@ theta = pi/4
 Vtg = get_swap_1d_gate(length(Ne))
 
 # rotate target so that it will agree with the final unitary 
-target_gate = exp(-im*theta)*sqrt(Vtg) # sqrt(Vtg)
+# target_gate = exp(-im*theta)*sqrt(Vtg) # sqrt(Vtg)
+target_gate = sqrt(Vtg)
 
 nTimeIntervals = 3 # 3 # 2 # 1
 
-fidType = 2 # fidType = 1 for Frobenius norm^2, or fidType = 2 for Infidelity
-constraintType = 1 # 0: No constraints, 1: unitary constraints on initial conditions, 2: zero norm^2(jump) to make the state continuous across time intervals. Set to 1 for fidType = 2
+fidType = 4 # fidType = 1 for Frobenius norm^2, or fidType = 2 for Infidelity
+constraintType = 4 # 0: No constraints, 1: unitary constraints on initial conditions, 2: zero norm^2(jump) to make the state continuous across time intervals. Set to 1 for fidType = 2
     
 
 retval = setup_std_model(Ne, Ng, f01, xi, xi12, couple_type, rot_freq, T, D1, target_gate, maxctrl_MHz=maxctrl_MHz, msb_order=msb_order, initctrl_MHz=initctrl_MHz, rand_seed=rand_seed, Pmin=Pmin, cw_prox_thres=cw_prox_thres, cw_amp_thres=cw_amp_thres, use_carrier_waves=use_carrier_waves, nTimeIntervals=nTimeIntervals, zeroCtrlBC=zeroCtrlBC, fidType=fidType, constraintType=constraintType)
