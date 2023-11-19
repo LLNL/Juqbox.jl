@@ -60,6 +60,14 @@ println("state_cons: ")
 println(state_cons)
 
 println()
+
+for q = 1: p.nTimeIntervals-1
+    println("Interval = ", q, " time span = (", p.T0int[q], ", ", p.T0int[q+1], "]", " B-spline index range = [", p.d1_start[q], ", ", p.d1_end[q], "]")
+end
+q= p.nTimeIntervals
+println("Final interval: time span = (", p.T0int[q], ", ", p.T, "]", " B-spline index range = [", p.d1_start[q], ", ", p.d1_end[q], "]")
+println()
+
 testJac = true # true # false
 
 if testJac
@@ -69,11 +77,11 @@ if testJac
         global nEleJac += 2 * p.NfreqTot * (p.d1_end[q] - p.d1_start[q] + 1) * p.nWinit # Jacobian wrt alpha (Overestimating)
     end
 
-    #nEleJac += (p.nTimeIntervals - 1) * p.nWinit # Jacobian wrt Winit_next
+    nEleJac += (p.nTimeIntervals - 1) * p.nWinit # Jacobian wrt target state (next) Winit
     if p.nTimeIntervals > 2 # Jacobian wrt initial conditions, Winit
-        #nEleJac += (p.nTimeIntervals - 2) * p.nWinit * 2 * p.N
+        nEleJac += (p.nTimeIntervals - 2) * p.nWinit * 2 * p.N
     end
-    println("# non-zero elements in Jac: ", nEleJac)
+    println("# allocated elements in Jac: ", nEleJac)
     jac_ele = zeros(nEleJac)
     jac_rows = zeros(Int32,nEleJac)
     jac_cols = zeros(Int32,nEleJac)
@@ -92,8 +100,8 @@ if testJac
     println()
     pert = 1e-7
     #one_cons = 1 # 1 # 1 # 2 # constraint number to be tested
-    one_par = 27 # for cons=36: 217-220, 233-236, 252
-    c_rge = (33:64) # (1:32) # 
+    one_par = 280 # 249 # 217 # 11 # for cons=36: 217-220, 233-236, 252
+    c_rge = (33:64) # (1:32) #  
     println("FD estimate of the jacobian of constraints = ", c_rge, ", wrt element kpar (col) = ", one_par)
 
     max_diff = 0.0
@@ -105,7 +113,7 @@ if testJac
             println("Warning: no entry in the jacobian matches row, col = ", one_cons, ", ", one_par)
             one_jac_ele = 0.0
         else
-            println("(row, col) = ", one_cons, ", ", one_par, " has index = ", jac_idx) 
+            #println("(row, col) = ", one_cons, ", ", one_par, " has index = ", jac_idx) 
             one_jac_ele = jac_ele[jac_idx]
         end
 
@@ -123,7 +131,7 @@ if testJac
 
         diff = obj_grad_fd - one_jac_ele
         global max_diff = max(max_diff, abs(diff))
-        println("row # = ", one_cons, " col # = ", one_par, " cons_jac_fd = ", obj_grad_fd, " cons_jac_adj = ", one_jac_ele, " diff = ", diff)
+        println("row # = ", one_cons, " col # = ", one_par, " cons_jac_fd = ", obj_grad_fd, " cons_jac_analyt = ", one_jac_ele, " diff = ", diff)
     end
     println()
     println("Max difference = ", max_diff)

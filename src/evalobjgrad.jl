@@ -2777,7 +2777,6 @@ function state_jacobian(pcof0::Vector{Float64}, jac_e::Vector{Float64}, rows::Ve
     dt ::Float64 = p.T/p.nsteps # global time step
 
     nMat = p.Ntot^2
-    ws_grad = zeros(2*p.N) # workspace
     
     # NOTE: In-place assignment of an array only works with the syntax jac_e[:] = vector or jac_e[nJac] = element
     # The statement jac_e = vector changes the pointer to jac_e within the function, but the result will not be
@@ -2829,15 +2828,10 @@ function state_jacobian(pcof0::Vector{Float64}, jac_e::Vector{Float64}, rows::Ve
         Wend_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
 
         # Are these variables needed/ used below?
-        Cjump_r = Uend_r - Wend_r
-        Cjump_i = Uend_i - Wend_i
+        # Cjump_r = Uend_r - Wend_r
+        # Cjump_i = Uend_i - Wend_i
 
         nJac0 = nJac # remember starting number of Jacobian elements
-
-        #####################################
-        # UPDATE NEEDED HERE: Replace the adjoint solver by forward evaluation wrt each 
-        # component of the B-spline control vector
-        ##################################### 
         
         kpar0 = p.kpar # remember initial value of p.kpar 
         # Loop over each component in the B-splines
@@ -2883,64 +2877,64 @@ function state_jacobian(pcof0::Vector{Float64}, jac_e::Vector{Float64}, rows::Ve
         # Jacobian wrt the initial conditions for this interval
         #############################################
 
-        # if interval >= 2 # jacobian wrt Winit^{(interval - 1)} through initial condition for (Uend_r, Uend_i)
+        if interval >= 2 # jacobian wrt Winit^{(interval - 1)} through initial condition for (Uend_r, Uend_i)
 
-        #     if verbose
-        #         println("Assigning jac wrt starting Winit. Starting offset: ", cons_num_int)
-        #     end
+            if verbose
+                println("Assigning jac wrt starting Winit. Starting offset: ", cons_num_int)
+            end
 
-        #     cons_num = cons_num_int # constraint offset for this time interval
+            cons_num = cons_num_int # constraint offset for this time interval
             
-        #     # dependence through initial condition at (interval - 1)
-        #     # Cjump^{interval} = U^{interval}(W^{interval - 1}) - W^{interval}
+            # dependence through initial condition at (interval - 1)
+            # Cjump^{interval} = U^{interval}(W^{interval - 1}) - W^{interval}
 
-        #     for re_im = 1:2 # First the real part, followed by the imaginary part of the state constraints
-        #         for k = 1:p.N # k = col
-        #             for j = 1:p.Ntot # j = row
-        #                 cons_num += 1 # increment the constraint number
+            for re_im = 1:2 # First the real part, followed by the imaginary part of the state constraints
+                for k = 1:p.N # k = col
+                    for j = 1:p.Ntot # j = row
+                        cons_num += 1 # increment the constraint number
                         
-        #                 # Solution operator
-        #                 S_r1 = reInitOp[re_im]
-        #                 S_i1 = imInitOp[re_im]
+                        # Solution operator
+                        S_r1 = reInitOp[re_im]
+                        S_i1 = imInitOp[re_im]
                         
-        #                 # Jacobian wrt W_r in (interval - 1)
-        #                 idxr = nJac .+ (1:p.N) # index range to assign in jac_e, row, cols
-        #                 rows[idxr] .= cons_num
-        #                 cols[idxr] = p.nAlpha .+ (interval-2)*p.nWinit .+ (k-1)*p.Ntot .+ (1:p.N) # Wrt W_{r,pk} for p=[1,N]
-        #                 jac_e[idxr] = S_r1[j,1:p.N] # row 'j' in S_r1
-        #                 nJac += p.N # we added p.N elements to the Jacobian
+                        # Jacobian wrt W_r in (interval - 1)
+                        idxr = nJac .+ (1:p.N) # index range to assign in jac_e, row, cols
+                        rows[idxr] .= cons_num
+                        cols[idxr] = p.nAlpha .+ (interval-2)*p.nWinit .+ (k-1)*p.Ntot .+ (1:p.N) # Wrt W_{r,pk} for p=[1,N]
+                        jac_e[idxr] = S_r1[j,1:p.N] # row 'j' in S_r1
+                        nJac += p.N # we added p.N elements to the Jacobian
                         
-        #                 # Jacobian wrt W_i in (interval - 1)
-        #                 idxr = nJac .+ (1:p.N) # index range to assign in jac_e, row, cols
-        #                 rows[idxr] .= cons_num
-        #                 cols[idxr] = p.nAlpha .+ (interval-2)*p.nWinit .+ nMat .+ (k-1)*p.Ntot .+ (1:p.N) # Wrt W_{i,pk} for p=[1,N]
-        #                 jac_e[idxr] = S_i1[j,1:p.N] # row 'j' in S_r1
-        #                 nJac += p.N # we added p.N elements to the Jacobian
+                        # Jacobian wrt W_i in (interval - 1)
+                        idxr = nJac .+ (1:p.N) # index range to assign in jac_e, row, cols
+                        rows[idxr] .= cons_num
+                        cols[idxr] = p.nAlpha .+ (interval-2)*p.nWinit .+ nMat .+ (k-1)*p.Ntot .+ (1:p.N) # Wrt W_{i,pk} for p=[1,N]
+                        jac_e[idxr] = S_i1[j,1:p.N] # row 'j' in S_r1
+                        nJac += p.N # we added p.N elements to the Jacobian
         
-        #             end # for j (row)
-        #         end # for k (column)
-        #     end # for re_im
+                    end # for j (row)
+                end # for k (column)
+            end # for re_im
 
-        #     if verbose
-        #         println("Assigning jac wrt starting Winit. Ending offset: ", cons_num)
-        #     end
-        # end # if interval >= 2
+            if verbose
+                println("Assigning jac wrt starting Winit. Ending offset: ", cons_num)
+            end
+        end # if interval >= 2
 
         ###############################################
         # Jacobian wrt Wnext = Winit^{(interval)} from Wnext in Cjump = Uend - Wnext
         ###############################################
-        # cons_num = cons_num_int # constraint offset for this time interval
+        cons_num = cons_num_int # constraint offset for this time interval
 
-        # idxr = nJac .+ (1:p.nWinit) # index range to assign in jac_e, rows, cols
+        idxr = nJac .+ (1:p.nWinit) # index range to assign in jac_e, rows, cols
 
-        # if verbose
-        #     println("Constaint offset: ", cons_num, " Assigning Jacobian wrt ending Winit, index range = ", idxr, " cols = ", p.nAlpha .+ (interval-1)*p.nWinit .+ (1:p.nWinit))
-        # end
-        # rows[idxr] = cons_num .+ (1:p.nWinit)
-        # cols[idxr] = p.nAlpha .+ (interval-1)*p.nWinit .+ (1:p.nWinit)
-        # jac_e[idxr] .= -1.0
+        if verbose
+            println("Constaint offset: ", cons_num, " Assigning Jacobian wrt ending Winit, index range = ", idxr, " cols = ", p.nAlpha .+ (interval-1)*p.nWinit .+ (1:p.nWinit))
+        end
+        rows[idxr] = cons_num .+ (1:p.nWinit)
+        cols[idxr] = p.nAlpha .+ (interval-1)*p.nWinit .+ (1:p.nWinit)
+        jac_e[idxr] .= -1.0
 
-        # nJac += p.nWinit
+        nJac += p.nWinit
 
         if verbose
             println("interval = ", interval, " added ", nJac - nJac0, " elements to the Jacobian")
