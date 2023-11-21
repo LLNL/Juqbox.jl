@@ -435,6 +435,7 @@ function plot_conv_hist(params:: Juqbox.objparams, convname:: String="")
             Plots.plot!(pconv, 1:nIter, params.secondaryHist, lab=L"{\cal J}_2")
         end
         Plots.plot!(pconv, 1:nIter, params.dualInfidelityHist, lab=L"\|\nabla{\cal G} - z\|_\infty") # dual infeasibility
+        Plots.plot!(pconv, 1:nIter, params.constraintViolationHist.+1e-12, lab=L"\|U_j - W_j\|") # constraint violation
         Plots.xlims!(pconv, (0, nIter+1))
 
         if length(convname)>0

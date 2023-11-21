@@ -1132,22 +1132,23 @@ Setup a Hamiltonian model, parameters for numerical time stepping, a target unit
     # Set up parameter struct
     params = Juqbox.objparams(Ne, Ng, T, nsteps, Uinit=convert(Matrix{ComplexF64}, Ubasis), Utarget=Utarget, Cfreq=om, Rfreq=rot_freq, Hconst=Hsys, w_diag_mat=w_diag_mat, nCoeff=nCoeff, D1=D1, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, freq01=f01, self_kerr=xi, couple_coeff=couple_coeff, couple_type=couple_type, msb_order=msb_order, zeroCtrlBC=zeroCtrlBC, nTimeIntervals=nTimeIntervals, gammaJump=gammaJump, fidType=fidType, constraintType=constraintType) # linear_solver=linear_solver, 
 
-    # set intermediate initial conditions from forward evolution with given pcof vector
-    # impose bounds on initial control vector
-    minCoeff, maxCoeff = control_bounds(params, maxAmp)
-    for q in 1:length(pcof0)
-        if pcof0[q] > maxCoeff[q]
-            pcof0[q] = maxCoeff[q]
+    rollOutInitialState = true # false
+    if rollOutInitialState && nTimeIntervals>1
+        # set intermediate initial conditions from forward evolution with given pcof vector
+        # impose bounds on initial control vector
+        println("Initial roll-out of the state evolution to assign the initial guesses for intermediate initial conditions")
+        minCoeff, maxCoeff = control_bounds(params, maxAmp)
+        for q in 1:length(pcof0)
+            if pcof0[q] > maxCoeff[q]
+                pcof0[q] = maxCoeff[q]
+            end
+            if pcof0[q] < minCoeff[q]
+                pcof0[q] = minCoeff[q]
+            end
         end
-        if pcof0[q] < minCoeff[q]
-            pcof0[q] = minCoeff[q]
-        end
-    end
 
-    obj, Uhist, dum = traceobjgrad(pcof0, params, true, false)
-
-    # Update initial conditions for intermediate time-intervals
-    if nTimeIntervals>1
+        obj, Uhist, dum = traceobjgrad(pcof0, params, true, false)
+        
         p = params
         offc = p.nAlpha
         currentStep = 1 # initial condition at t=0
@@ -1162,9 +1163,10 @@ Setup a Hamiltonian model, parameters for numerical time stepping, a target unit
             offc += nMat
         end
 
+        println("Returning from traceobjgrad with size(Uhist) = ", size(Uhist))
+    else
+        println("Starting from the geodesic")
     end
-
-    println("Returning from traceobjgrad with size(Uhist) = ", size(Uhist))
 
     println("*** Settings ***")
     println("Number of coefficients per spline = ", D1, " Total number of control parameters = ", length(pcof0))
