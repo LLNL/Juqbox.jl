@@ -72,4 +72,7 @@ include("quandary_interface.jl")
 
 include("gram_schmidt.jl")
 
+include("optim_utils.jl")
+using .OptimUtils
+
 end # module
