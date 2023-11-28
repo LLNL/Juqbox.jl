@@ -2,10 +2,10 @@ FROM ubuntu:22.04
 
 ENV ENVDIR=env
 
+WORKDIR /$ENVDIR
+
 # install sudo
 RUN apt-get -yq update && apt-get -yq install sudo
-
-WORKDIR /$ENVDIR
 
 # install packages
 RUN sudo apt-get install -yq git
@@ -38,7 +38,7 @@ RUN sudo apt-get install -yq lldb gdb
 
 # install julia
 WORKDIR $LIB_DIR
-RUN sudo wget https://julialang-s3.julialang.org/bin/linux/aarch64/1.9/julia-1.9.3-linux-aarch64.tar.gz
+RUN sudo wget --no-check-certificate https://julialang-s3.julialang.org/bin/linux/aarch64/1.9/julia-1.9.3-linux-aarch64.tar.gz
 RUN sudo tar -zxvf julia-1.9.3-linux-aarch64.tar.gz
 ENV PATH="$LIB_DIR/julia-1.9.3/bin:$PATH"
 
@@ -64,6 +64,7 @@ RUN julia -e 'using Pkg; Pkg.add("Test")'
 RUN julia -e 'using Pkg; Pkg.add("FileIO")'
 RUN julia -e 'using Pkg; Pkg.add("Suppressor")'
 RUN julia -e 'using Pkg; Pkg.add("Documenter")'
+RUN julia -e 'using Pkg; Pkg.add("HDF5")'
 
 ## create julia config file
 #WORKDIR /home/$USERNAME/.julia/config
