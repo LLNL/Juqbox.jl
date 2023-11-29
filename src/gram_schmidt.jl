@@ -6,7 +6,7 @@ using Printf
 # using Random
 # using Dates
 
-enforce_unitarity = false
+enforce_unitarity = true
 
 function check_unitarity(U_r::Matrix{Float64}, U_i::Matrix{Float64}; threshold::Float64=1.0e-2)
     if (!enforce_unitarity)

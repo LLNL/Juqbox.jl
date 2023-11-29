@@ -1125,7 +1125,7 @@ function update_multipliers(pcof0::Array{Float64,1}, p::objparams, verbose::Bool
 end # function update_multipliers
 
 
-function lagrange_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = true)
+function lagrange_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = true, enforce_continuity::Bool = false)
     
     # shortcut to working_arrays object in p::objparams  
     w = p.wa
@@ -1199,7 +1199,12 @@ function lagrange_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = tru
             # # println("offset 2 = ", offc)
             # Winit_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
 
-            Winit_r, Winit_i = Wr_arr[interval-1], Wi_arr[interval-1]
+            if (enforce_continuity)
+                # Use the final state of the previous interval
+                Winit_r, Winit_i = copy(Uend_r), copy(Uend_i)
+            else
+                Winit_r, Winit_i = Wr_arr[interval-1], Wi_arr[interval-1]
+            end
         end
 
         # Evolve the state under Schroedinger's equation
@@ -1230,8 +1235,14 @@ function lagrange_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = tru
 
             Cjump_r = Uend_r - Wend_r
             Cjump_i = Uend_i - Wend_i
-            Cjumpr_vec[interval] = Cjump_r
-            Cjumpi_vec[interval] = Cjump_i
+            if (enforce_continuity)
+                # if continuity is enforced, store and return the final states instead.
+                Cjumpr_vec[interval] = Uend_r
+                Cjumpi_vec[interval] = Uend_i
+            else
+                Cjumpr_vec[interval] = Cjump_r
+                Cjumpi_vec[interval] = Cjump_i
+            end
 
             # Jump in state at the end of interval k equals C^k = Uend^k - Wend^k (Ntot x Ntot matrices)
             # evaluate continuity constraint (Frobenius norm squared of mismatch)
