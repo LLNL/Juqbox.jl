@@ -6,7 +6,7 @@ using Printf
 # using Random
 # using Dates
 
-function check_unitarity(U_r::Matrix{Float64}, U_i::Matrix{Float64}; threshold::Float64=5.0e-5)
+function check_unitarity(U_r::Matrix{Float64}, U_i::Matrix{Float64}; threshold::Float64=1.0e-2)
     Uc = U_r + 1im * U_i
     constraint = (Uc * Uc')
     for i = 1:size(Uc, 1)

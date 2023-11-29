@@ -1,16 +1,16 @@
-### Set up a test problem using one of the standard Hamiltonian models
-# using Juqbox
-using Printf
-
 module OptimUtils
-export brent
+using Printf
+using LinearAlgebra
+export brent, cgmin
 
 N_mnbrak::Int64 = 1e4;                     # number of maximum iterations for mnbrak
 golden_ratio = 0.5*(1+sqrt(5));
 N_para::Int64 = 1e4;                       # number of maximum iterations for linmin
-brent_ib = 1.0e-2;                          # the size of initial step in line search, if nothing specified
+brent_ib = 1.0e-1;                          # the size of initial step in line search, if nothing specified
 brent_eps = 1e-14;
 Cr = 1. - 1/golden_ratio;
+
+N_optim::Int64 = 1e4;                          # number of maximum iterations for conjugate-gradient
 
 # Input arguments
 # %inputObjective: function to evaluate the objective functional
@@ -102,11 +102,83 @@ function brent(inputObjective::Function, p::Vector{Float64}, xi::Vector{Float64}
     J_min = fb;
     bmin = b;
 
-    println("j: ", j0);
-    println("bmin: ", bmin);
-    println("Jmin: ", J_min);
+    @printf("line steps: %d\n", j0);
+    @printf("step size: %.3E\n", bmin);
+    @printf("Jmin: %.3E\n", J_min);
 
     return p_min, J_min, bmin
+end
+
+# Input arguments
+# %inputObjective: function to evaluate the objective functional
+# %inputObjective: function to evaluate the objective gradient
+# %p_init: initial guess for design parameters
+# cgtol: gradient tolerance for optimization termination
+
+# Output arguments
+# %pmin: local minimum found from CG optimization
+# %Jmin: function value at pmin
+# %J_optim: Optimization history of objective functional
+# %grad_optim: Optimization history of objective gradient magnitude
+# j0: number of iterations executed to find the minimum
+function cgmin(inputObjective::Function, inputGradient::Function, p_init::Vector{Float64}, cgtol::Float64 = 1.0e-8, Jtol::Float64 = 1.0e100)
+    pmin = copy(p_init);
+
+    nCoeff = length(pmin)
+    grad_f = zeros(nCoeff)
+
+    J_optim = zeros(N_optim+1);
+    J_optim[1] = inputObjective(pmin);
+    Jmin = J_optim[1]
+    inputGradient(pmin, grad_f);
+
+    g = -grad_f; xi = copy(g); h = copy(g);
+    gg0 = dot(g, g);
+    grad_optim = zeros(N_optim+1);
+    grad_optim[1] = gg0;
+
+    stepsize = zeros(N_optim);
+
+    b0 = brent_ib / sqrt(gg0);
+
+    j0 = 0;
+    for j=1:N_optim
+        pmin, Jmin, stepsize[j] = brent(inputObjective, pmin, xi, b0);
+        b0 = stepsize[j];
+        
+        J_optim[j+1] = Jmin;
+        xi .= 0.0;
+        inputGradient(pmin, xi);
+        gg = dot(g, g);
+        
+        dgg = dot(xi + g, xi);
+        dgg1 = dot(xi, xi);
+        @printf("dgg1: %.3E\n", dgg1);
+        grad_optim[j+1] = dgg1;
+        gg1 = dot(g, xi);
+        nu = abs(gg1 / dgg1);
+        
+        if ((dgg1 < cgtol) && (Jmin < Jtol))
+            j0 = j;
+            println("CG minimization finished.")
+            break;
+        end
+            
+        gamma = dgg / gg;
+        gamma_FR = dgg1 / gg;
+        if (j >= 2)
+            if (gamma < -gamma_FR)
+                gamma = -gamma_FR;
+            elseif (gamma > gamma_FR)
+                gamma = gamma_FR;
+            end
+        end
+        
+        g = -xi; xi = g + gamma * h; h = copy(xi);
+        j0 = j;
+    end
+
+    return pmin, Jmin, J_optim, grad_optim, stepsize, j0
 end
 
 end
