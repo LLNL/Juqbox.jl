@@ -39,9 +39,9 @@ else
 end
 
 maxIter = 200
-fidType = 1 # fidType = 1 for Frobenius norm^2, or fidType = 2 for Infidelity, or fidType = 3 for infid^2
+fidType = 2 # fidType = 1 for Frobenius norm^2, or fidType = 2 for Infidelity, or fidType = 3 for infid^2
 Ninterval = 3
-penalty_strength = 4.0e-4
+penalty_strength = 1.28e0
 
 # TODO(kevin): nqubit=4,5 cases seem to use different setup_std_model function, but cannot find it anywhere.
 retval = setup_std_model(Ne, Ng, f01, xi, xi12, couple_type, rot_freq, T, D1, target_gate, 
@@ -61,6 +61,19 @@ params.Lmult_r *= 0.0
 params.Lmult_i *= 0.0
 
 params.traceInfidelityThreshold = 0.0 # 1e-3 # better than 99.9% fidelity
+
+# for initial guess, we use the continuous solution.
+_, _, _, _, _, Uend_r, Uend_i = Juqbox.lagrange_obj(pcof0, params, false, true)
+for itv = 1:params.nTimeIntervals-1
+    nMat = params.Ntot^2
+    # initial conditions from pcof0 (determined by optimization)
+    offc = params.nAlpha + (itv-1) * params.nWinit # for itv = 1 the offset should be nAlpha
+
+    pcof0[offc+1:offc+nMat] = Uend_r[itv]
+    offc += nMat
+    pcof0[offc+1:offc+nMat] = Uend_i[itv]
+end
+
 if (length(ARGS) >= 2)
     pcof0 = h5read(ARGS[2], "/minimizer_parameter")
 
@@ -78,6 +91,11 @@ if (length(ARGS) >= 2)
         params.Lmult_i[interval] -= prev_penalty_str * Cjump_i[interval]
     end
 end
+
+objf, finalDist, _, infid, _, _, _ = Juqbox.lagrange_obj(pcof0, params, false, true)
+println("objf: ", objf)
+println("finalDist: ", finalDist)
+println("infidelity: ", infid)
 
 println("Setup complete")
 println("objFuncType: ", params.objFuncType)
@@ -109,7 +127,7 @@ pcof_min, f_min, J_optim, grad_optim, step_optim, Niter = cgmin(obj_func, obj_gr
 println("Number of iteration: ", Niter)
 
 h5write("./cg_optim.h5", "/J_history", J_optim[1:Niter, :])
-h5write("./cg_optim.h5", "/grad_history", grad_optim[1:Niter])
+h5write("./cg_optim.h5", "/grad_history", grad_optim[1:Niter, :])
 h5write("./cg_optim.h5", "/step_history", step_optim[1:Niter])
 h5write("./cg_optim.h5", "/minimizer_parameter", pcof_min)
 for interval = 1:params.nTimeIntervals-1
