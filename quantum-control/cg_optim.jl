@@ -39,9 +39,9 @@ else
 end
 
 maxIter = 200
-fidType = 2 # fidType = 1 for Frobenius norm^2, or fidType = 2 for Infidelity, or fidType = 3 for infid^2
-Ninterval = 2
-penalty_strength = 1.0e-6
+fidType = 1 # fidType = 1 for Frobenius norm^2, or fidType = 2 for Infidelity, or fidType = 3 for infid^2
+Ninterval = 3
+penalty_strength = 4.0e-4
 
 # TODO(kevin): nqubit=4,5 cases seem to use different setup_std_model function, but cannot find it anywhere.
 retval = setup_std_model(Ne, Ng, f01, xi, xi12, couple_type, rot_freq, T, D1, target_gate, 
@@ -55,14 +55,16 @@ println("time duration: ", T)
 params = retval[1];
 pcof0 = retval[2];
 maxAmp = retval[3];
+params.tik0 = 0.0
 
 params.Lmult_r *= 0.0
 params.Lmult_i *= 0.0
 
 params.traceInfidelityThreshold = 0.0 # 1e-3 # better than 99.9% fidelity
-# update the Lagrange multipliers
 if (length(ARGS) >= 2)
     pcof0 = h5read(ARGS[2], "/minimizer_parameter")
+
+    # update the Lagrange multipliers
     prev_penalty_str = h5readattr(ARGS[2], "/")["penalty"]
    
     for interval = 1:params.nTimeIntervals-1
@@ -80,6 +82,7 @@ end
 println("Setup complete")
 println("objFuncType: ", params.objFuncType)
 println("constraintType: ", params.constraintType)
+println("Tikhonov penalty: ", params.tik0)
 
 # obj_func(pcof_eval::Vector{Float64}) = eval_f_par2(pcof_eval, params)
 # for objFuncType == 1, intermediate initial conditions (no leak term and no qudrature)
@@ -102,7 +105,7 @@ function obj_func(pcof::Vector{Float64})
 end
 
 obj_grad(pcof_eval::Vector{Float64}, grad_f_eval::Vector{Float64}) = eval_grad_f_par2(pcof_eval, grad_f_eval, params)
-pcof_min, f_min, J_optim, grad_optim, step_optim, Niter = Juqbox.cgmin(obj_func, obj_grad, pcof0, 1.0e-4, 1.0e-4)
+pcof_min, f_min, J_optim, grad_optim, step_optim, Niter = cgmin(obj_func, obj_grad, pcof0, params, 1.0e-5)
 println("Number of iteration: ", Niter)
 
 h5write("./cg_optim.h5", "/J_history", J_optim[1:Niter, :])

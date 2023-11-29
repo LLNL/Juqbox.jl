@@ -1,16 +1,7 @@
-module OptimUtils
 using Printf
 using LinearAlgebra
-export brent, cgmin
-
-N_mnbrak::Int64 = 1e4;                     # number of maximum iterations for mnbrak
-golden_ratio = 0.5*(1+sqrt(5));
-N_para::Int64 = 1e4;                       # number of maximum iterations for linmin
-brent_ib = 1.0e-1;                          # the size of initial step in line search, if nothing specified
-brent_eps = 1e-14;
-Cr = 1. - 1/golden_ratio;
-
-N_optim::Int64 = 50;                          # number of maximum iterations for conjugate-gradient
+include("optim_const.jl")
+using ..OptimConstants: N_mnbrak, golden_ratio, N_para, brent_ib, brent_eps, Cr, N_optim
 
 # Input arguments
 # %inputObjective: function to evaluate the objective functional
@@ -121,14 +112,19 @@ end
 # %J_optim: Optimization history of objective functional
 # %grad_optim: Optimization history of objective gradient magnitude
 # j0: number of iterations executed to find the minimum
-function cgmin(inputObjective::Function, inputGradient::Function, p_init::Vector{Float64}, cgtol::Float64 = 1.0e-8, Jtol::Float64 = 1.0e100)
+function cgmin(inputObjective::Function, inputGradient::Function, p_init::Vector{Float64}, param::objparams, cgtol::Float64 = 1.0e-8, Jtol::Float64 = 1.0e100)
+    # using OptimUtils: brent_ib, N_optim
+
     pmin = copy(p_init);
+
+    nMat = param.Ntot^2
+    @assert param.nWinit == 2 * param.Ntot^2
 
     nCoeff = length(pmin)
     grad_f = zeros(nCoeff)
 
     Jmin, finalDist, nrm2_Cjump = inputObjective(pmin);
-    J_optim = zeros(N_optim+1, 2+size(nrm2_Cjump)[1]);
+    J_optim = zeros(N_optim + 1, 2 + (param.nTimeIntervals-1));
     J_optim[1, 1] = Jmin
     J_optim[1, 2] = finalDist
     J_optim[1, 3:end] = nrm2_Cjump
@@ -136,8 +132,15 @@ function cgmin(inputObjective::Function, inputGradient::Function, p_init::Vector
 
     g = -grad_f; xi = copy(g); h = copy(g);
     gg0 = dot(g, g);
-    grad_optim = zeros(N_optim+1);
-    grad_optim[1] = gg0;
+    grad_optim = zeros(N_optim + 1, 2 + (param.nTimeIntervals-1));
+    grad_optim[1, 1] = gg0;
+    grad_optim[1, 2] = dot(g[1:param.nAlpha], g[1:param.nAlpha]);
+    for itv = 1:param.nTimeIntervals-1
+        # initial conditions from pcof0 (determined by optimization)
+        offc = param.nAlpha + (itv-1) * param.nWinit # for itv = 1 the offset should be nAlpha
+        
+        grad_optim[1, 2+itv] = dot(g[offc+1:offc+param.nWinit], g[offc+1:offc+param.nWinit]);
+    end
 
     stepsize = zeros(N_optim);
 
@@ -158,7 +161,14 @@ function cgmin(inputObjective::Function, inputGradient::Function, p_init::Vector
         dgg = dot(xi + g, xi);
         dgg1 = dot(xi, xi);
         @printf("dgg1: %.3E\n", dgg1);
-        grad_optim[j+1] = dgg1;
+        grad_optim[j+1, 1] = dgg1;
+        grad_optim[j+1, 2] = dot(xi[1:param.nAlpha], xi[1:param.nAlpha]);
+        for itv = 1:param.nTimeIntervals-1
+            # initial conditions from pcof0 (determined by optimization)
+            offc = param.nAlpha + (itv-1) * param.nWinit # for itv = 1 the offset should be nAlpha
+            
+            grad_optim[j+1, 2+itv] = dot(xi[offc+1:offc+param.nWinit], xi[offc+1:offc+param.nWinit]);
+        end
         gg1 = dot(g, xi);
         nu = abs(gg1 / dgg1);
         
@@ -183,6 +193,4 @@ function cgmin(inputObjective::Function, inputGradient::Function, p_init::Vector
     end
 
     return pmin, Jmin, J_optim, grad_optim, stepsize, j0
-end
-
 end

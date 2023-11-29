@@ -6,7 +6,12 @@ using Printf
 # using Random
 # using Dates
 
+enforce_unitarity = false
+
 function check_unitarity(U_r::Matrix{Float64}, U_i::Matrix{Float64}; threshold::Float64=1.0e-2)
+    if (!enforce_unitarity)
+        return
+    end
     Uc = U_r + 1im * U_i
     constraint = (Uc * Uc')
     for i = 1:size(Uc, 1)
@@ -36,6 +41,13 @@ function norm_vec(u_r::Vector{Float64}, u_i::Vector{Float64})
 end
 
 function unitarize(W_r::Matrix{Float64}, W_i::Matrix{Float64}, compute_grad::Bool)
+    if (!enforce_unitarity)
+        if (compute_grad)
+            return W_r, W_i, W_r, W_i
+        else
+            return W_r, W_i
+        end
+    end
 
     U_r = zeros(size(W_r))
     U_i = zeros(size(W_i))
@@ -81,6 +93,9 @@ end
 function unitarize_adjoint(W_r::Matrix{Float64}, W_i::Matrix{Float64},
     V_r::Matrix{Float64}, V_i::Matrix{Float64}, U_r::Matrix{Float64}, U_i::Matrix{Float64}, 
     gradU_r::Matrix{Float64}, gradU_i::Matrix{Float64})
+    if (!enforce_unitarity)
+        return gradU_r, gradU_i
+    end
 
     # adjoint gram-schmidt
     Ws_r = zeros(size(U_r))
