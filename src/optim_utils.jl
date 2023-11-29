@@ -10,7 +10,7 @@ brent_ib = 1.0e-1;                          # the size of initial step in line s
 brent_eps = 1e-14;
 Cr = 1. - 1/golden_ratio;
 
-N_optim::Int64 = 1e4;                          # number of maximum iterations for conjugate-gradient
+N_optim::Int64 = 50;                          # number of maximum iterations for conjugate-gradient
 
 # Input arguments
 # %inputObjective: function to evaluate the objective functional

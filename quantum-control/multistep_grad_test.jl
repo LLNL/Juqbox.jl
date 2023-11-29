@@ -5,11 +5,12 @@ using Plots
 using LinearAlgebra
 using Random
 using Dates
+using HDF5
 
 root_dir = "/home/test/Juqbox.jl"
 include(root_dir * "/src/ipopt_interface.jl")
 
-if (length(ARGS) != 1)
+if (length(ARGS) < 1)
     throw(ArgumentError("Input argument: integer (2-5) - number of qubits."))
 end
 
@@ -39,7 +40,7 @@ end
 
 maxIter = 200
 fidType = 2 # fidType = 1 for Frobenius norm^2, or fidType = 2 for Infidelity, or fidType = 3 for infid^2
-Ninterval = 2
+Ninterval = 3
 
 # TODO(kevin): nqubit=4,5 cases seem to use different setup_std_model function, but cannot find it anywhere.
 retval = setup_std_model(Ne, Ng, f01, xi, xi12, couple_type, rot_freq, T, D1, target_gate, 
@@ -58,6 +59,18 @@ maxAmp = retval[3];
 params.traceInfidelityThreshold = 0.0 # 1e-3 # better than 99.9% fidelity
 params.Lmult_r *= 0.0
 params.Lmult_i *= 0.0
+
+if (length(ARGS) >= 2)
+    pcof0 = h5read(ARGS[2], "/minimizer_parameter")
+
+    # # update the Lagrange multipliers
+    # prev_penalty_str = h5readattr(ARGS[2], "/")["penalty"]
+   
+    for interval = 1:params.nTimeIntervals-1
+        params.Lmult_r[interval] = h5read(ARGS[2], "/Lmult_r/" * string(interval))
+        params.Lmult_i[interval] = h5read(ARGS[2], "/Lmult_i/" * string(interval))
+    end
+end
 
 println("Setup complete")
 println("objFuncType: ", params.objFuncType)
