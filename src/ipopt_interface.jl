@@ -272,7 +272,7 @@ end
 # for objFuncType == 1, intermediate initial conditions (no leak term and no qudrature)
 function eval_f_par2(pcof::Vector{Float64}, params:: Juqbox.objparams)
 
-    f, _, finalDist, _ = Juqbox.lagrange_obj(pcof, params, false)
+    f, _, _, finalDist, _, _, _ = Juqbox.lagrange_obj(pcof, params, false)
 
     # NOTE: when the initial condition isn't unitary, the trace infidelity may be negative
     params.lastTraceInfidelity = max(1e-10, finalDist) 

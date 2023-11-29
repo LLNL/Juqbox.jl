@@ -32,13 +32,13 @@ function brent(inputObjective::Function, p::Vector{Float64}, xi::Vector{Float64}
     #initial bracket
     step = zeros(N_mnbrak+1);
     J_brak = zeros(N_mnbrak+1);
-    J_brak[1] = inputObjective(p);
+    J_brak[1], _, _ = inputObjective(p);
     # println("b: ", 0.0, ", J: ", J_brak[1])
-    J1 = inputObjective(p + b0 * xi);
+    J1, _, _ = inputObjective(p + b0 * xi);
     # println("b: ", b0, ", J: ", J1)
     while (J1 > J_brak[1])
         b0 = b0 / golden_ratio;
-        J1 = inputObjective(p + b0 * xi);
+        J1, _, _ = inputObjective(p + b0 * xi);
         # println("b: ", b0, ", J: ", J1)
     end
     # println("smaller J1 found");
@@ -48,7 +48,7 @@ function brent(inputObjective::Function, p::Vector{Float64}, xi::Vector{Float64}
     for j=1:N_mnbrak
         xf = p + amp * xi;
         step[j+1] = amp;
-        J_brak[j+1] = inputObjective(xf);
+        J_brak[j+1], _, _ = inputObjective(xf);
         # println("b: ", amp, ", J: ", J_brak[j+1])
         
         if (J_brak[j+1] > J_brak[j])
@@ -81,7 +81,7 @@ function brent(inputObjective::Function, p::Vector{Float64}, xi::Vector{Float64}
         end
         
         xb = p + b_new * xi;
-        fbx = inputObjective(xb);
+        fbx, _, _ = inputObjective(xb);
         # println("b: ", b_new, ", J: ", fbx)
         
         x_arr = zeros(4); x_arr[1] = a; x_arr[4] = c;
@@ -127,9 +127,11 @@ function cgmin(inputObjective::Function, inputGradient::Function, p_init::Vector
     nCoeff = length(pmin)
     grad_f = zeros(nCoeff)
 
-    J_optim = zeros(N_optim+1);
-    J_optim[1] = inputObjective(pmin);
-    Jmin = J_optim[1]
+    Jmin, finalDist, nrm2_Cjump = inputObjective(pmin);
+    J_optim = zeros(N_optim+1, 2+size(nrm2_Cjump)[1]);
+    J_optim[1, 1] = Jmin
+    J_optim[1, 2] = finalDist
+    J_optim[1, 3:end] = nrm2_Cjump
     inputGradient(pmin, grad_f);
 
     g = -grad_f; xi = copy(g); h = copy(g);
@@ -145,8 +147,10 @@ function cgmin(inputObjective::Function, inputGradient::Function, p_init::Vector
     for j=1:N_optim
         pmin, Jmin, stepsize[j] = brent(inputObjective, pmin, xi, b0);
         b0 = stepsize[j];
+
+        # evaluate one more time to obtain sub-objective functional.
+        J_optim[j+1, 1], J_optim[j+1, 2], J_optim[j+1, 3:end] = inputObjective(pmin)
         
-        J_optim[j+1] = Jmin;
         xi .= 0.0;
         inputGradient(pmin, xi);
         gg = dot(g, g);

@@ -1179,6 +1179,9 @@ function lagrange_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = tru
         Wr_arr[interval], Wi_arr[interval] = unitarize(Winit_r_tmp, Winit_i_tmp, false)
     end
 
+    Cjumpr_vec = Vector{Matrix{Float64}}(undef, p.nTimeIntervals-1)
+    Cjumpi_vec = Vector{Matrix{Float64}}(undef, p.nTimeIntervals-1)
+
     # Split the time stepping into independent tasks in each time interval
     for interval = 1:p.nTimeIntervals
 
@@ -1227,6 +1230,8 @@ function lagrange_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = tru
 
             Cjump_r = Uend_r - Wend_r
             Cjump_i = Uend_i - Wend_i
+            Cjumpr_vec[interval] = Cjump_r
+            Cjumpi_vec[interval] = Cjump_i
 
             # Jump in state at the end of interval k equals C^k = Uend^k - Wend^k (Ntot x Ntot matrices)
             # evaluate continuity constraint (Frobenius norm squared of mismatch)
@@ -1268,7 +1273,7 @@ function lagrange_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = tru
         println("lagrange_obj():, objf = ", objf, " Tikhonov penalty = ", tp)
     end
 
-    return objf, nrm2_Cjump, infid, tp
+    return objf, finalDist, nrm2_Cjump, infid, tp, Cjumpr_vec, Cjumpi_vec
 
 end # function lagrange_obj
 
