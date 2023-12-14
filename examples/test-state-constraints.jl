@@ -68,7 +68,7 @@ q= p.nTimeIntervals
 println("Final interval: time span = (", p.T0int[q], ", ", p.T, "]", " B-spline index range = [", p.d1_start[q], ", ", p.d1_end[q], "]")
 println()
 
-testJac = true # true # false
+testJac = false # true # false
 
 if testJac
     nEleJac = 0
