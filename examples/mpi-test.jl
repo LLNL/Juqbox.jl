@@ -22,12 +22,12 @@ function getMat(interval::Int64, N::Int64, type::Int64)
     end
 end
 
-function cons_test(pcof0::Vector{Float64}, e_con::Vector{Float64}, my_startInt::Int64, my_endInt::Int64, N::Int64, nAlpha::Int64)
+function cons_test(pcof0::Vector{Float64}, e_con::Vector{Float64}, myStartInt::Int64, myEndInt::Int64, N::Int64, nAlpha::Int64, nTimeIntervals::Int64)
     nWinit = 2*N^2
     nMat = N^2
 
     #cons_idx = 0 # this variable is shared by all threads
-    for interval = my_startInt:my_endInt # constraints only at interior time intervals
+    for interval = myStartInt:myEndInt # constraints only at interior time intervals
 
         println("Interval # ", interval)
         
@@ -37,8 +37,7 @@ function cons_test(pcof0::Vector{Float64}, e_con::Vector{Float64}, my_startInt::
             Winit_i = Matrix{Float64}(I,N,N)
         else
             # initial conditions from pcof0 (determined by optimization)
-            
-            rg1 = (nAlpha+(interval-2)*nWinit+1:nAlpha+(interval-2)*nWinit+nMat)
+            rg1 = nAlpha .+ (interval-2)*nWinit .+ (1:nMat)
             Winit_r = reshape(pcof0[rg1], N, N)
 
             rg2 = nMat .+ rg1 
@@ -54,91 +53,135 @@ function cons_test(pcof0::Vector{Float64}, e_con::Vector{Float64}, my_startInt::
         imInitOp = getMat(interval, N, 2)
         
         # Now we can  account for the initial conditions for this time interval and easily calculate the gradient wrt Winit
-        Uend_r = (reInitOp * Winit_r) # real part of above expression
-        Uend_i = (imInitOp * Winit_i) # imaginary part
-
-        # 1st the real part of all constraints for this interval
-        ur_vec = vec(Uend_r)
-        rg3 = nAlpha .+ (interval-1)*nWinit .+ (1:nMat) # global index range
-        wr_vec = pcof0[rg3] # pcof0 is a global vector
+        ur_vec = vec(reInitOp * Winit_r) # real part of above expression
+        ui_vec = vec(imInitOp * Winit_i) # imaginary part
         
-        rg4 = (interval - my_startInt)*nWinit+1:(interval - my_startInt)*nWinit+nMat
-        e_con[rg4] = ur_vec - wr_vec # e_con is a local vector
+        if interval < nTimeIntervals
+            # return equality constrains for the interior intervals
+            # 1st the real part of all constraints for this interval
+            rg3 = nAlpha .+ (interval-1)*nWinit .+ (1:nMat) # global index range
+            wr_vec = pcof0[rg3] # pcof0 is a global vector
+            
+            rg4 = (interval - myStartInt)*nWinit .+ (1:nMat) # local index range
+            e_con[rg4] = ur_vec - wr_vec # e_con is a local vector
 
-        # 2nd the imaginary part of all constraints for this interval
-        ui_vec = vec(Uend_i)
-        rg5 = rg3 .+ nMat
-        wi_vec = pcof0[rg5] # pcof0 is a global vector
-        
-        rg6 = rg4 .+ nMat
-        e_con[rg6] = ui_vec - wi_vec # e_con is a local vector
+            # 2nd the imaginary part of all constraints for this interval
+            rg5 = rg3 .+ nMat
+            wi_vec = pcof0[rg5] # pcof0 is a global vector
+            
+            rg6 = rg4 .+ nMat
+            e_con[rg6] = ui_vec - wi_vec # e_con is a local vector
+        else interval == nProcs 
+            # just return the evolved state
+            rg4 = (interval - myStartInt)*nWinit .+ (1:nMat)
+            e_con[rg4] = ur_vec # e_con is a local vector
+            rg6 = rg4 .+ nMat
+            e_con[rg6] = ui_vec # e_con is a local vector
+        end
 
     end # end for interval
 end
 
-MPI.Init()
+function setup_mpi(nTimeIntervals::Int64, nWinit::Int64) # TODO: put this fcn in a struct
+    MPI.Init()
 
-comm = MPI.COMM_WORLD # Global communicator
-myRank = MPI.Comm_rank(comm) # myRank
-nProcs = MPI.Comm_size(comm) # nProcs
+    comm = MPI.COMM_WORLD # Global communicator
+    myRank = MPI.Comm_rank(comm) # myRank
+    nProcs = MPI.Comm_size(comm) # nProcs
+    root = 0
 
-root = 0
+    if nProcs > nTimeIntervals
+        if myRank == root
+            println("Error: nProc=$nProcs, > nTimeIntervals=$nTimeIntervals")
+        end
+        MPI.Abort(comm,-1)
+    end
+
+    if myRank == root
+        println("Number of procs: ", nProcs, " #time-intervals: ", nTimeIntervals)
+    end
+
+    # local number of time intervals for evaluating constraints
+    nIntervalsInRank = split_count(nTimeIntervals, nProcs) # split_count(nTimeIntervals-1, nProcs) 
+    cum_counts = cumsum(nIntervalsInRank)
+
+    if myRank == root
+        println("# local time intervals: ", nIntervalsInRank, " cumsum: ", cum_counts)
+    end
+
+    if myRank == 0
+        myStartInt = 1
+    else
+        myStartInt = cum_counts[myRank]+1
+    end
+    myEndInt = cum_counts[myRank+1] # arrays are 1-bound, myRank starts from 0
+
+    for i = 0:nProcs-1
+        if i == myRank
+            println("rank ", myRank, " startInt ", myStartInt, " endInt ", myEndInt)
+        end
+        MPI.Barrier(comm)
+    end
+
+    # local number of elements in e_con_local for each rank
+    nValuesProc = nWinit * nIntervalsInRank # this is a vector
+    if myRank == root
+        println("nValuesProc: ", nValuesProc, " sum: ", sum(nValuesProc))
+    end
+
+    return comm, myRank, nProcs, root, nIntervalsInRank, myStartInt, myEndInt, nValuesProc
+end # setup_mpi()
+
 
 nTimeIntervals = 4
-nInternalIntervals = nTimeIntervals - 1
+N = 3 # Matrices are NxN
+nWinit = 2*N^2
 
-if myRank == root
-    println("Number of procs: ", nProcs, " #internal time-intervals: ", nInternalIntervals)
-end
-
-# local number of time intervals for evaluating constraints
-nCounts = split_count(nTimeIntervals-1, nProcs) 
-cum_counts = cumsum(nCounts)
-
-if myRank == root
-    println("# local time intervals: ", nCounts, " cumsum: ", cum_counts)
-end
-
-if myRank == 0
-    my_startInt = 1
-else
-    my_startInt = cum_counts[myRank]+1
-end
-my_endInt = cum_counts[myRank+1] # arrays are 1-bound
-
-println("rank ", myRank, " startInt ", my_startInt, " endInt ", my_endInt)
+comm, myRank, nProcs, root, nIntervalsInRank, myStartInt, myEndInt, nValuesProc = setup_mpi(nTimeIntervals, nWinit)
 
 # setup test parameters
 
-N = 3 # Matrices are NxN
-nWinit = 2*N^2
 nAlpha = 5
-nCoeff = nAlpha + nWinit*(nTimeIntervals - 1)
-pcof0 = collect(range(-5.0, 7.0, length=nCoeff))
+nCoeff = nAlpha + nWinit*(nTimeIntervals - 1) # pcof holds B-spline coefficients and initial cond's for the interior intervals
+pcof0 = collect(range(-5.0, 7.0, length=nCoeff)) # make up a pcof array for testing
 
-e_con_local  = zeros(nWinit*(my_endInt - my_startInt + 1))
+e_con_local  = zeros(nWinit*(myEndInt - myStartInt + 1))
 
 # compute "my" part of econ_global
-cons_test(pcof0, e_con_local, my_startInt, my_endInt, N, nAlpha)
+cons_test(pcof0, e_con_local, myStartInt, myEndInt, N, nAlpha, nTimeIntervals)
 
-# assemble e_con_global
-nValuesProc = nWinit * nCounts # this is a vector
-if myRank == root
-    println("nValuesProc: ", nValuesProc, " sum: ", sum(nValuesProc))
-end
+# println("Local e_con:")
+# for i = 0:nProcs-1
+#     if i == myRank
+#         @show myRank, e_con_local
+#         println()
+#     end
+#     MPI.Barrier(comm)
+# end
+# println()
 
 # use Allgatherv! to communicate the local results to all ranks
-e_con_global = zeros(nWinit*nInternalIntervals)
-# doesn't work!
-# MPI.Allgatherv!(e_con_local, e_con_global, comm)
+e_con_global = zeros(nWinit*nTimeIntervals)
 
 output_vbuf = VBuffer(e_con_global, nValuesProc)
 MPI.Allgatherv!(e_con_local, output_vbuf, comm)
 
 if myRank == root
-    econ_ref = readdlm("econ-ref-4.dat") # for nTimeInt = 4
     println("root e_con: ", e_con_global)
-    println("norm(e_con - econ_ref) = ", norm(e_con_global - econ_ref))
+
+    fname = "econ-ref-" * string(nTimeIntervals) * ".dat"
+    if isfile(fname)
+        econ_ref = readdlm(fname) # read reference file
+    else
+        econ_ref = zeros(0)
+    end
+
+    if length(e_con_global) == length(econ_ref)
+        println("Comparing to reference solution: norm(e_con - econ_ref) = ", norm(e_con_global - econ_ref))
+    elseif nProcs == 1
+        writedlm(fname, e_con_global)
+        println("Saved reference solution on file: ", fname)
+    end
 end
 
 MPI.Finalize()
