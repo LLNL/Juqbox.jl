@@ -2658,6 +2658,97 @@ function unitary_jacobian_idx(rows::Vector{Int32}, cols::Vector{Int32}, p::objpa
 end # function unitary_jacobian_idx
 
 ##################################################
+# Evaluate the state matrices for all time intervals
+##################################################
+function rollOutStateMatrices(pcof0::Vector{Float64}, state_vec_global::Vector{Float64}, p::objparams, mpiObj::setup_mpi, verbose::Bool = false)
+    # shortcut to working_arrays object in p::objparams  
+    w = p.wa
+
+    # initializations start here
+    alpha = pcof0[1:p.nAlpha] # extract the B-spline-coefficients
+
+    # setup splinepar
+    if p.use_bcarrier
+        splinepar = bcparams(p.T, p.D1, p.Cfreq, alpha) # Assumes Nunc = 0
+    else
+        Nsig  = 2*(p.Ncoupled + p.Nunc) # Only uses for regular B-splines
+        splinepar = splineparams(p.T, p.D1, Nsig, alpha)
+    end
+
+    dt ::Float64 = p.T/p.nsteps # global time step
+    
+    state_vec_local  = zeros(p.nWinit*(mpiObj.myEndInt - mpiObj.myStartInt + 1)) # local storage
+
+    if verbose && mpiObj.myRank == mpiObj.root
+        println("rollOutStateMatrices: # time intervals = ", p.nTimeIntervals, " length(pcof) =  ", length(pcof0), " nAlpha = ", p.nAlpha, " nWinit = ", p.nWinit, " global # elements = ", length(state_vec_global), " local # elements = ", length(state_vec_local))
+    end
+
+    nMat = p.Ntot * p.N # size of evolution matrices
+    
+    # time the main loop:
+    t0 = MPI.Wtime()
+    for interval = mpiObj.myStartInt:mpiObj.myEndInt # 1:p.nTimeIntervals # evolve state for all time intervals
+        # if verbose
+        #     println("Interval # ", interval)
+        # end
+
+        if interval == 1
+            # initial conditions from Uinit (fixed)
+            Winit_r = p.Uinit_r
+            Winit_i = p.Uinit_i
+        else
+            rg1 = p.nAlpha .+ (interval-2)*p.nWinit .+ (1:nMat)
+            Winit_r = reshape(pcof0[rg1], p.Ntot, p.N)
+
+            rg2 = nMat .+ rg1 
+            Winit_i = reshape(pcof0[rg2], p.Ntot, p.N)
+        end
+
+        # Evolve the state under Schroedinger's equation
+        # TODO: Rollout both real & imag parts directly from (Winit_r, Winit_i)
+        reSolOp, imSolOp = evolve_schroedinger(p, splinepar, p.T0int[interval], Winit_r, Winit_i, p.Tsteps[interval])
+
+        # NOTE: the S-V scheme treats the real and imaginary parts with different time integrators
+        # First compute the solution operator for a basis of real initial conditions: I
+        #reInitOp1, reInitOp2 = evolve_schroedinger(p, splinepar, p.T0int[interval], p.Uinit_r, p.Uinit_i, p.Tsteps[interval]) # multiple threads use the same object p::objparams, which mean that the same working arrays (p.w) are used by all threads inside evolve_schroedinger(). Hence not thread-safe (?)
+        
+        # Then a basis for purely imaginary initial conditions: iI
+        #imInitOp1, imInitOp2 = evolve_schroedinger(p, splinepar, p.T0int[interval], p.Uinit_i, p.Uinit_r, p.Tsteps[interval])
+        
+        # Now we can  account for the initial conditions for this time interval and easily calculate the gradient wrt Winit
+        # Uend = (reInitop[1] + i*reInitOp[2]) * Winit_r + (imInitOp[1] + i*imInitOp[2]) * Winit_i
+        # ur_vec = vec(reInitOp1 * Winit_r + imInitOp1 * Winit_i) # real part of above expression
+        # ui_vec = vec(reInitOp2 * Winit_r + imInitOp2 * Winit_i) # imaginary part
+
+        # 1st the real part of all constraints for this interval
+        rg4 = (interval-mpiObj.myStartInt)*p.nWinit .+ (1:nMat) # (interval-1)*p.nWinit+1:(interval-1)*p.nWinit+nMat
+        @inbounds state_vec_local[rg4] = vec(reSolOp) #vec(reInitOp1 * Winit_r + imInitOp1 * Winit_i) 
+
+        # 2nd the imaginary part of all constraints for this interval
+        rg6 = nMat .+ rg4 # ((interval-1)*p.nWinit+nMat+1:(interval-1)*p.nWinit+2*nMat)
+        @inbounds state_vec_local[rg6] = vec(imSolOp) #vec(reInitOp2 * Winit_r + imInitOp2 * Winit_i) 
+    end # end for interval
+    t1 = MPI.Wtime()
+    # local number of elements in state_vec_local for each rank
+    nValuesProc = p.nWinit * mpiObj.nIntervalsInRank # nValuesProc is a vector
+
+    if verbose && mpiObj.myRank == mpiObj.root
+        println("nValuesProc: ", nValuesProc, " sum: ", sum(nValuesProc))
+    end
+
+    output_vbuf = MPI.VBuffer(state_vec_global, nValuesProc) # Buffer for Allgatherv!
+    MPI.Allgatherv!(state_vec_local, output_vbuf, mpiObj.comm) # Assemble 'state_vec_local' from all ranks and save the result in output_vbuf, i.e., state_vec_global
+
+    t2 = MPI.Wtime()
+
+    if verbose && mpiObj.myRank == mpiObj.root
+        println("Timings from root: Main loop: ", t1-t0, " Allgatherv!(): ", t2-t1, " Main+Allg(): ", t2-t0)
+    end
+
+    return nothing
+end # function rollOutStateMatrices
+
+##################################################
 # Evaluate the state continuity constraints across intermediate time intervals
 ##################################################
 function state_constraints(pcof0::Vector{Float64}, e_con::Vector{Float64}, p::objparams, verbose::Bool = false)
@@ -2689,7 +2780,9 @@ function state_constraints(pcof0::Vector{Float64}, e_con::Vector{Float64}, p::ob
         println("c2norm_constraints: # time intervals = ", p.nTimeIntervals, " length(pcof) =  ", length(pcof0), " nAlpha = ", p.nAlpha, " nWinit = ", p.nWinit, " # constraints = ", nCons)
     end
 
-    cons_idx = p.nConstUnitary # row number in e_con, updated with offset
+    # from thread-test.jl (still not working with threading)
+    nMat = p.Ntot * p.N # size of evolution matrices
+    #cons_idx = p.nConstUnitary # row number in e_con, updated with offset
     for interval = 1:p.nTimeIntervals-1 # constraints only at interior time intervals
         if verbose
             println("Interval # ", interval)
@@ -2700,54 +2793,46 @@ function state_constraints(pcof0::Vector{Float64}, e_con::Vector{Float64}, p::ob
             Winit_r = p.Uinit_r
             Winit_i = p.Uinit_i
         else
-            # initial conditions from pcof0 (determined by optimization)
-            offc = p.nAlpha + (interval-2)*p.nWinit # for interval = 2 the offset should be nAlpha
-            # println("offset 1 = ", offc)
-            nMat = p.Ntot^2
-            Winit_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
-            offc += nMat
-            # println("offset 2 = ", offc)
-            Winit_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+            # new
+            rg1 = (p.nAlpha+(interval-2)*p.nWinit+1:p.nAlpha+(interval-2)*p.nWinit+nMat)
+            Winit_r = reshape(pcof0[rg1], p.Ntot, p.N)
+
+            rg2 = nMat .+ rg1 
+            Winit_i = reshape(pcof0[rg2], p.Ntot, p.N)
         end
 
         # Evolve the state under Schroedinger's equation
         # NOTE: the S-V scheme treats the real and imaginary parts with different time integrators
         # First compute the solution operator for a basis of real initial conditions: I
-        reInitOp = evolve_schroedinger(p, splinepar, p.T0int[interval], p.Uinit_r, p.Uinit_i, p.Tsteps[interval])
+        reInitOp1, reInitOp2 = evolve_schroedinger(p, splinepar, p.T0int[interval], p.Uinit_r, p.Uinit_i, p.Tsteps[interval]) # multiple threads use the same object p::objparams, which mean that the same working arrays (p.w) are used by all threads inside evolve_schroedinger(). Hence not thread-safe (?)
         
         # Then a basis for purely imaginary initial conditions: iI
-        imInitOp = evolve_schroedinger(p, splinepar, p.T0int[interval], p.Uinit_i, p.Uinit_r, p.Tsteps[interval])
+        imInitOp1, imInitOp2 = evolve_schroedinger(p, splinepar, p.T0int[interval], p.Uinit_i, p.Uinit_r, p.Tsteps[interval])
         
         # Now we can  account for the initial conditions for this time interval and easily calculate the gradient wrt Winit
         # Uend = (reInitop[1] + i*reInitOp[2]) * Winit_r + (imInitOp[1] + i*imInitOp[2]) * Winit_i
-        Uend_r = (reInitOp[1] * Winit_r + imInitOp[1] * Winit_i) # real part of above expression
-        Uend_i = (reInitOp[2] * Winit_r + imInitOp[2] * Winit_i) # imaginary part
+        Uend_r = (reInitOp1 * Winit_r + imInitOp1 * Winit_i) # real part of above expression
+        Uend_i = (reInitOp2 * Winit_r + imInitOp2 * Winit_i) # imaginary part
 
-        # compute offset in the pcof vector
-        offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
-        # println("offset 1 = ", offc)
-
-        nMat = p.Ntot * p.N # size of evolution matrices
-
+        # new
         # 1st the real part of all constraints for this interval
         ur_vec = vec(Uend_r)
-        wr_vec = pcof0[offc+1:offc+nMat]
+        rg3 = p.nAlpha .+ (interval-1)*p.nWinit .+ (1:nMat)
+        wr_vec = pcof0[rg3]
         # println("Size(Uend_r) = ", size(Uend_r), " size(ur_vec) = ", size(ur_vec), " size(wr_vec) = ", size(wr_vec) )
-        e_con[cons_idx+1:cons_idx+nMat] = ur_vec - wr_vec # Cjump_r = Uend_r - Wend_r
-        cons_idx += nMat
-        offc += nMat
+        rg4 = rg3 .- p.nAlpha # (interval-1)*p.nWinit+1:(interval-1)*p.nWinit+nMat
+        e_con[rg4] = ur_vec - wr_vec # Cjump_r = Uend_r - Wend_r
 
         # 2nd the imaginary part of all constraints for this interval
         ui_vec = vec(Uend_i)
-        wi_vec = pcof0[offc+1:offc+nMat]
-        e_con[cons_idx+1:cons_idx+nMat] = ui_vec - wi_vec # Cjump_i = Uend_i - Wend_i
-        cons_idx += nMat
-        offc += nMat
-
+        rg5 = p.nAlpha .+ (interval-1)*p.nWinit+nMat .+ (1:nMat)
+        wi_vec = pcof0[rg5]
+        rg6 = rg5 .- p.nAlpha # ((interval-1)*p.nWinit+nMat+1:(interval-1)*p.nWinit+2*nMat)
+        e_con[rg6] = ui_vec - wi_vec # Cjump_i = Uend_i - Wend_i
     end # end for interval
 
     if verbose
-        println("Number of assigned constraints = ", cons_idx, " length(e_con) = ", length(e_con))
+        println("length(e_con) = ", length(e_con))
     end
 
 end # function state_constraints

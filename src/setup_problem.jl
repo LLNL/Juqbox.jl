@@ -1033,7 +1033,7 @@ Setup a Hamiltonian model, parameters for numerical time stepping, a target unit
 - `maxAmp::Vector{Float64}`: Max amplitudes for each segement of the control vector. Here a segment corresponds to a control Hamiltonian
 """
   ################################
-  function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float64}, xi::Vector{Float64}, couple_coeff::Vector{Float64}, couple_type::Int64, rot_freq::Vector{Float64}, T::Float64, D1::Int64, gate_final::Matrix{ComplexF64}; maxctrl_MHz::Float64=10.0, msb_order::Bool = false, Pmin::Int64 = 40, initctrl_MHz::Float64=0.0, randomize_init_ctrl::Bool = true, rand_seed::Int64=2345, pcofFileName::String="", zeroCtrlBC::Bool = true, use_eigenbasis::Bool = false, cw_amp_thres::Float64=5e-2, cw_prox_thres::Float64=2e-3, splines_real_imag::Bool=true, wmatScale::Float64=1.0, use_carrier_waves::Bool=true, nTimeIntervals::Int64=1, gammaJump::Float64=0.1, fidType::Int64=2, constraintType::Int64=0, verbose::Bool=false)
+  function setup_std_model(Ne::Vector{Int64}, Ng::Vector{Int64}, f01::Vector{Float64}, xi::Vector{Float64}, couple_coeff::Vector{Float64}, couple_type::Int64, rot_freq::Vector{Float64}, T::Float64, D1::Int64, gate_final::Matrix{ComplexF64}, mpiObj::setup_mpi; maxctrl_MHz::Float64=10.0, msb_order::Bool = false, Pmin::Int64 = 40, initctrl_MHz::Float64=0.0, randomize_init_ctrl::Bool = true, rand_seed::Int64=2345, pcofFileName::String="", zeroCtrlBC::Bool = true, use_eigenbasis::Bool = false, cw_amp_thres::Float64=5e-2, cw_prox_thres::Float64=2e-3, splines_real_imag::Bool=true, wmatScale::Float64=1.0, use_carrier_waves::Bool=true, nTimeIntervals::Int64=1, gammaJump::Float64=0.1, fidType::Int64=2, constraintType::Int64=0, rollOutInitialState::Bool = true, verbose::Bool=false )
   
     # convert maxctrl_MHz to rad/ns per frequency
     # This is (approximately) the max amplitude of each control function (p & q)
@@ -1061,6 +1061,7 @@ Setup a Hamiltonian model, parameters for numerical time stepping, a target unit
     end
 
     if use_carrier_waves
+        verbose = verbose && (mpiObj.myRank == mpiObj.root)
         om, growth_rate, Utrans = get_resonances(is_ess, it2in, Ness=Ne, Nguard=Ng, Hsys=Hsys, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, cw_amp_thres=cw_amp_thres, cw_prox_thres=cw_prox_thres, rot_freq=rot_freq, verbose=verbose)
         println("Info: using carrier waves in control pulses")
     else
@@ -1072,7 +1073,9 @@ Setup a Hamiltonian model, parameters for numerical time stepping, a target unit
             om[q] = [0.0]
             growth_rate[q] = [1.0]
         end
-        println("Info: NOT using carrier waves in control pulses")
+        if mpiObj.myRank == mpiObj.root
+            println("Info: NOT using carrier waves in control pulses")
+        end
     end
 
     Nfreq = zeros(Int64,Nosc) # Number of frequencies per control Hamiltonian
@@ -1080,8 +1083,10 @@ Setup a Hamiltonian model, parameters for numerical time stepping, a target unit
         Nfreq[q] = length(om[q])
     end
 
-    println("D1 = ", D1, " Ness = ", Ness, " Nosc = ", Nosc, " Nfreq = ", Nfreq)
-  
+    if mpiObj.myRank == mpiObj.root
+        println("D1 = ", D1, " Ness = ", Ness, " Nosc = ", Nosc, " Nfreq = ", Nfreq)
+    end
+
     # Amplitude bounds to be imposed during optimization
     maxAmp = maxctrl_radns * ones(Nosc) # internally scaled by 1/(sqrt(2)*Nfreq[q]) in setup_ipopt() and Quandary
     # For initializing the B-spline coefficients
@@ -1116,8 +1121,11 @@ Setup a Hamiltonian model, parameters for numerical time stepping, a target unit
   
     # Note: calculate_timestep expects maxCoupled to have Nosc elements
     nsteps = calculate_timestep(T, Hsys, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, maxCoupled=maxAmp, Pmin=Pmin)
-    println("Starting point: nsteps = ", nsteps, " maxAmp = ", maxAmp, " [rad/ns]")
     
+    if mpiObj.myRank == mpiObj.root
+        println("Starting point: nsteps = ", nsteps, " maxAmp = ", maxAmp, " [rad/ns]")
+    end
+
     # create a linear solver object (Jacobi is now the default)
     #linear_solver = Juqbox.lsolver_object(solver=Juqbox.JACOBI_SOLVER, max_iter=100, tol=1e-12, nrhs=prod(Ne))
   
@@ -1132,11 +1140,13 @@ Setup a Hamiltonian model, parameters for numerical time stepping, a target unit
     # Set up parameter struct
     params = Juqbox.objparams(Ne, Ng, T, nsteps, Uinit=convert(Matrix{ComplexF64}, Ubasis), Utarget=Utarget, Cfreq=om, Rfreq=rot_freq, Hconst=Hsys, w_diag_mat=w_diag_mat, nCoeff=nCoeff, D1=D1, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, freq01=f01, self_kerr=xi, couple_coeff=couple_coeff, couple_type=couple_type, msb_order=msb_order, zeroCtrlBC=zeroCtrlBC, nTimeIntervals=nTimeIntervals, gammaJump=gammaJump, fidType=fidType, constraintType=constraintType) # linear_solver=linear_solver, 
 
-    rollOutInitialState = true # false
     if rollOutInitialState && nTimeIntervals>1
-        # set intermediate initial conditions from forward evolution with given pcof vector
-        # impose bounds on initial control vector
-        println("Initial roll-out of the state evolution to assign the initial guesses for intermediate initial conditions")
+        # set intermediate initial conditions from forward evolution with given pcof vector => satisfy all eq-constraints 
+        # first impose bounds on initial control vector
+        
+        if mpiObj.myRank == mpiObj.root
+            println("Initial roll-out of the state evolution to assign the initial guesses for intermediate initial conditions")
+        end
         minCoeff, maxCoeff = control_bounds(params, maxAmp)
         for q in 1:length(pcof0)
             if pcof0[q] > maxCoeff[q]
@@ -1162,20 +1172,25 @@ Setup a Hamiltonian model, parameters for numerical time stepping, a target unit
             pcof0[offc+1:offc+nMat] = vec(imag(Winit)) # save imaginary part
             offc += nMat
         end
-
-        println("Returning from traceobjgrad with size(Uhist) = ", size(Uhist))
+        if mpiObj.myRank == mpiObj.root
+            println("Returning from traceobjgrad with size(Uhist) = ", size(Uhist))
+        end
     else
-        println("Starting from the geodesic")
+        if mpiObj.myRank == mpiObj.root
+            println("Starting from the geodesic")
+        end
     end
 
-    println("*** Settings ***")
-    println("Number of coefficients per spline = ", D1, " Total number of control parameters = ", length(pcof0))
-    println()
-    println("Returning problem setup as a tuple (params, pcof0, maxAmp)")
-    println("params::objparams: object holding the Hamiltonians, carrier freq's, time-stepper, etc")
-    println("pcof0:: Vector{Float64}: Initial coefficient vector is stored in 'pcof0' vector")
-    println("maxAmp:: Vector{Float64}: Approximate max control amplitude for the p(t) and q(t) control function for each control Hamiltonian")
-    println("")
+    if mpiObj.myRank == mpiObj.root
+        println("*** Settings ***")
+        println("Number of coefficients per spline = ", D1, " Total number of control parameters = ", length(pcof0))
+        println()
+        println("Returning problem setup as a tuple (params, pcof0, maxAmp)")
+        println("params::objparams: object holding the Hamiltonians, carrier freq's, time-stepper, etc")
+        println("pcof0:: Vector{Float64}: Initial coefficient vector is stored in 'pcof0' vector")
+        println("maxAmp:: Vector{Float64}: Approximate max control amplitude for the p(t) and q(t) control function for each control Hamiltonian")
+        println("")
+    end
   
     return params, pcof0, maxAmp
   end

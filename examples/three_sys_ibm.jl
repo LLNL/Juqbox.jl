@@ -4,7 +4,7 @@ using Printf
 using Plots
 
 Ne = [2,2,2] # Number of essential energy levels
-Ng = [0,0,0] # Number of extra guard levels
+Ng = [1,1,1] # Number of extra guard levels
 
 #f01 = [5.18, 5.12, 5.06] # 0-1 transition freq's
 f01 = [5.113535725239690, 5.160748676896810, 5.3534263008668200] # 0-1 transition freq's
@@ -49,7 +49,7 @@ ncores = 4 # prod(Ne)
 
 # Note: to get Hessian at ctrl = 0, set rand_amp_frac = 0.0
 #Initialize ctrl vector with random numbers, with amplitude rand_amp_frac*maxctrl_MHz
-init_amp_frac = 0.5
+initctrl_MHz = 70.0
 rand_seed = 5432
 
 cw_amp_thres = 5e-2
@@ -58,16 +58,17 @@ cw_prox_thres = 1e-3
 wmatScale = 1.0
 
 use_carrier_waves = true
+zeroCtrlBC = true
 
-# assign the target gate
-target_gate = get_swap_1d_gate(3)
+# # assign the target gate
+# target_gate = get_swap_1d_gate(3)
 
-retval = setup_std_model(Ne, Ng, f01, xi, xi12, couple_type, rot_freq, T, D1, target_gate, maxctrl_MHz=maxctrl_MHz, msb_order=msb_order, init_amp_frac=init_amp_frac, rand_seed=rand_seed, Pmin=Pmin, cw_prox_thres=cw_prox_thres, cw_amp_thres=cw_amp_thres, wmatScale=wmatScale, use_carrier_waves=use_carrier_waves)
-# cw_prox_thres=5e-3, , cw_amp_thres=6e-2
-params = retval[1]
-pcof0 = retval[2]
-maxAmp = retval[3];
+# retval = setup_std_model(Ne, Ng, f01, xi, xi12, couple_type, rot_freq, T, D1, target_gate, maxctrl_MHz=maxctrl_MHz, msb_order=msb_order, init_amp_frac=init_amp_frac, rand_seed=rand_seed, Pmin=Pmin, cw_prox_thres=cw_prox_thres, cw_amp_thres=cw_amp_thres, wmatScale=wmatScale, use_carrier_waves=use_carrier_waves)
+# # cw_prox_thres=5e-3, , cw_amp_thres=6e-2
+# params = retval[1]
+# pcof0 = retval[2]
+# maxAmp = retval[3];
 
-params.traceInfidelityThreshold = 1e-3 # >= 99.9%, 1e-4 # better than 99.99% fidelity
+# params.traceInfidelityThreshold = 1e-3 # >= 99.9%, 1e-4 # better than 99.99% fidelity
 
-println("Setup complete")
+# println("Setup complete")

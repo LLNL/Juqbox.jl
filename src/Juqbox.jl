@@ -12,6 +12,8 @@ using FileIO
 using FFTW
 using DelimitedFiles
 
+using MPI
+
 export splineparams, bspline2, gradbspline2
 export bcparams, bcarrier2, gradbcarrier2!
 
@@ -35,11 +37,15 @@ export update_multipliers
 export c2norm_constraints, c2norm_jacobian, c2norm_jacobian_idx, final_obj, final_grad
 export state_constraints, state_jacobian, state_jacobian_idx
 
+export setup_mpi, rollOutStateMatrices
+
 # Julia versions prior to v"1.3.1" can't use LinearAlgebra's 5 argument mul!, routines
 # included here for backwards compatability
 if(VERSION < v"1.3.1")
     include("backwards_compat.jl")
 end
+
+include("setup_mpi.jl") # MPI initialization and domain decomp for multiple time intervals
 
 include("bsplines.jl") # add all B-spline functionality to the Juqbox module
 

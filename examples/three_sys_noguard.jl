@@ -16,7 +16,7 @@ favg = sum(f01)/nSys
 rot_freq = favg * ones(nSys)
 
 # Set the initial duration
-T = 250.0 # 600.0 200.0 # was 500.0. 
+T = 500.0 # 250.0 # 600.0 200.0 # was 500.0. 
 # Number of coefficients per spline
 # D1 = 26
 dtau = 3.33

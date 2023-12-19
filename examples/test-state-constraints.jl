@@ -3,6 +3,9 @@
 using Juqbox
 using Printf
 using Plots
+using DelimitedFiles
+using LinearAlgebra
+using MPI
 
 include("two_sys_noguard.jl")
 
@@ -11,8 +14,12 @@ Vtg = get_swap_1d_gate(2)
 target_gate = sqrt(Vtg) #sqrt(swap)
 
 nTimeIntervals = 3 # 3 # 2 # 1
+rollOutInitialState=false
 
-retval = setup_std_model(Ne, Ng, f01, xi, xi12, couple_type, rot_freq, T, D1, target_gate, maxctrl_MHz=maxctrl_MHz, msb_order=msb_order, initctrl_MHz=initctrl_MHz, rand_seed=rand_seed, Pmin=Pmin, cw_prox_thres=cw_prox_thres, cw_amp_thres=cw_amp_thres, use_carrier_waves=use_carrier_waves, nTimeIntervals=nTimeIntervals, zeroCtrlBC=zeroCtrlBC, constraintType=2)
+MPI.Init() # Seems important to call MPI.Init from the top level (?)
+mpiObj = Juqbox.setup_mpi(nTimeIntervals) # Initialize MPI and decompose the time intervals among ranks
+
+retval = setup_std_model(Ne, Ng, f01, xi, xi12, couple_type, rot_freq, T, D1, target_gate, mpiObj, maxctrl_MHz=maxctrl_MHz, msb_order=msb_order, initctrl_MHz=initctrl_MHz, rand_seed=rand_seed, Pmin=Pmin, cw_prox_thres=cw_prox_thres, cw_amp_thres=cw_amp_thres, use_carrier_waves=use_carrier_waves, nTimeIntervals=nTimeIntervals, zeroCtrlBC=zeroCtrlBC, constraintType=2, rollOutInitialState=rollOutInitialState)
 
 p = retval[1]
 pcof0 = retval[2]
@@ -55,11 +62,26 @@ nCons = (p.nTimeIntervals - 1)*p.nWinit # 2*N^2 constraint per intermediate init
 state_cons = zeros(nCons)
 println("# constraints: ", nCons)
 println("Calling state_constraints to evaluate all constraints")
+
 state_constraints(pcof0, state_cons, p, true)
+
 println("state_cons: ")
 println(state_cons)
-
 println()
+
+# save/compare constraints on file
+fname = "state-cons-ref-" * string(p.nTimeIntervals) * ".dat"
+if isfile(fname)
+    econ_ref = readdlm(fname) # read reference file
+else
+    econ_ref = zeros(0)
+end
+if length(state_cons) == length(econ_ref)
+    println("Comparing to reference solution: norm(e_con - econ_ref) = ", norm(state_cons - econ_ref))
+else
+    writedlm(fname, state_cons)
+    println("Saved reference solution on file: ", fname)
+end
 
 for q = 1: p.nTimeIntervals-1
     println("Interval = ", q, " time span = (", p.T0int[q], ", ", p.T0int[q+1], "]", " B-spline index range = [", p.d1_start[q], ", ", p.d1_end[q], "]")
