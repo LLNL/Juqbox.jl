@@ -18,11 +18,12 @@ function find_elem(row::Int64, col::Int64, jac_rows::Vector{Int32}, jac_cols::Ve
 end
 
 nTimeIntervals = 12 # 3 # 2 # 1
+nWinit = 2*256 # TODO: assign this after setup_std_model has been called
 debug = true # true # false
 
 #MPI.Init_thread(MPI.THREAD_SINGLE) # Seems important to call MPI.Init from the top level (?)
 MPI.Init()
-mpiObj = Juqbox.setup_mpi(nTimeIntervals, debug) # Initialize MPI and decompose the time intervals among ranks
+mpiObj = Juqbox.setup_mpi(nTimeIntervals, nWinit, debug) # Initialize MPI and decompose the time intervals among ranks
 
 # include("two_sys_noguard.jl")
 #include("three_sys_noguard.jl")
@@ -63,23 +64,17 @@ if doContinue
     # for 3 intervals, Winit^{(1)} has index [177, 208], for Winit^{(2)} add 32
     p.kpar = 172 # 280 # 248 # 198 # 248 # 3 # 234 # 217 # 198 # 38 # 3 # 178 # 178, 178 + 16, 178 + 32 # test this component of the gradient
 
-    println("Setup completed\n")
-
-    # allocate storage for the constraints
-    nStateVecGlobal = p.nTimeIntervals*p.nWinit # 2*N^2 constraint per time interval
-
-    state_vec_global = zeros(nStateVecGlobal)
-    
     if mpiObj.myRank == mpiObj.root
-        println("# global elements: ", nStateVecGlobal)
+        println("Setup completed\n")
         println("Calling rollOutStateMatrices")
     end
 
     ############################################################
-    rollOutStateMatrices(pcof0, state_vec_global, p, mpiObj, true)
+    rollOutStateMatrices(pcof0, p, mpiObj, false) # For best performance, set last argument to false 
     ############################################################
 
     if mpiObj.myRank == mpiObj.root
+        state_vec_global = mpiObj.output_vbuf.data
         # println("state_vec_global: ")
         # println(state_vec_global)
         println()

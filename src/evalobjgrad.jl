@@ -2660,7 +2660,7 @@ end # function unitary_jacobian_idx
 ##################################################
 # Evaluate the state matrices for all time intervals
 ##################################################
-function rollOutStateMatrices(pcof0::Vector{Float64}, state_vec_global::Vector{Float64}, p::objparams, mpiObj::setup_mpi, verbose::Bool = false)
+function rollOutStateMatrices(pcof0::Vector{Float64}, p::objparams, mpiObj::setup_mpi, verbose::Bool = false)
     # shortcut to working_arrays object in p::objparams  
     w = p.wa
 
@@ -2680,7 +2680,7 @@ function rollOutStateMatrices(pcof0::Vector{Float64}, state_vec_global::Vector{F
     state_vec_local  = zeros(p.nWinit*(mpiObj.myEndInt - mpiObj.myStartInt + 1)) # local storage
 
     if verbose && mpiObj.myRank == mpiObj.root
-        println("rollOutStateMatrices: # time intervals = ", p.nTimeIntervals, " length(pcof) =  ", length(pcof0), " nAlpha = ", p.nAlpha, " nWinit = ", p.nWinit, " global # elements = ", length(state_vec_global), " local # elements = ", length(state_vec_local))
+        println("rollOutStateMatrices: # time intervals = ", p.nTimeIntervals, " length(pcof) =  ", length(pcof0), " nAlpha = ", p.nAlpha, " nWinit = ", p.nWinit, " local # elements = ", length(state_vec_local))
     end
 
     nMat = p.Ntot * p.N # size of evolution matrices
@@ -2729,19 +2729,12 @@ function rollOutStateMatrices(pcof0::Vector{Float64}, state_vec_global::Vector{F
         @inbounds state_vec_local[rg6] = vec(imSolOp) #vec(reInitOp2 * Winit_r + imInitOp2 * Winit_i) 
     end # end for interval
     t1 = MPI.Wtime()
-    # local number of elements in state_vec_local for each rank
-    nValuesProc = p.nWinit * mpiObj.nIntervalsInRank # nValuesProc is a vector
 
-    if verbose && mpiObj.myRank == mpiObj.root
-        println("nValuesProc: ", nValuesProc, " sum: ", sum(nValuesProc))
-    end
-
-    output_vbuf = MPI.VBuffer(state_vec_global, nValuesProc) # Buffer for Allgatherv!
-    MPI.Allgatherv!(state_vec_local, output_vbuf, mpiObj.comm) # Assemble 'state_vec_local' from all ranks and save the result in output_vbuf, i.e., state_vec_global
+    MPI.Allgatherv!(state_vec_local, mpiObj.output_vbuf, mpiObj.comm) # Assemble 'state_vec_local' from all ranks and save the result in output_vbuf, where state_vec_global = output_vbuf.data
 
     t2 = MPI.Wtime()
 
-    if verbose && mpiObj.myRank == mpiObj.root
+    if mpiObj.myRank == mpiObj.root
         println("Timings from root: Main loop: ", t1-t0, " Allgatherv!(): ", t2-t1, " Main+Allg(): ", t2-t0)
     end
 

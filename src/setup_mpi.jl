@@ -17,8 +17,9 @@ struct setup_mpi
     nIntervalsInRank::Vector{Int64}
     myStartInt::Int64 
     myEndInt::Int64
+    output_vbuf:: MPI.VBuffer{Vector{Float64}}
 
-    function setup_mpi(nTimeIntervals::Int64, debug::Bool = false)
+    function setup_mpi(nTimeIntervals::Int64, nWinit::Int64, debug::Bool = false)
 
         comm = MPI.COMM_WORLD # Global communicator
         myRank = MPI.Comm_rank(comm) # myRank
@@ -60,6 +61,20 @@ struct setup_mpi
             end
         end
 
-        new(comm, myRank, nProcs, root, nTimeIntervals, nIntervalsInRank, myStartInt, myEndInt)
+            # allocate storage for the constraints
+        nStateVecGlobal = nTimeIntervals*nWinit # 2*N^2 constraint per time interval
+        state_vec_global = zeros(nStateVecGlobal)
+
+        # local number of elements in state_vec_local for each rank
+        nValuesProc = nWinit * nIntervalsInRank # nValuesProc is a vector
+
+        if debug && myRank == root
+            println("nValuesProc: ", nValuesProc, " sum: ", sum(nValuesProc))
+            println("# global elements: ", nStateVecGlobal)
+        end
+
+        output_vbuf = MPI.VBuffer(state_vec_global, nValuesProc) # Buffer for Allgatherv!
+
+        new(comm, myRank, nProcs, root, nTimeIntervals, nIntervalsInRank, myStartInt, myEndInt, output_vbuf)
     end 
 end # struct setup_mpi
