@@ -20,7 +20,8 @@ end
 nTimeIntervals = 12 # 3 # 2 # 1
 debug = true # true # false
 
-MPI.Init_thread(MPI.THREAD_SINGLE) # Seems important to call MPI.Init from the top level (?)
+#MPI.Init_thread(MPI.THREAD_SINGLE) # Seems important to call MPI.Init from the top level (?)
+MPI.Init()
 mpiObj = Juqbox.setup_mpi(nTimeIntervals, debug) # Initialize MPI and decompose the time intervals among ranks
 
 # include("two_sys_noguard.jl")
