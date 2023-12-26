@@ -282,6 +282,8 @@ mutable struct objparams
     Lmult_r:: Vector{Matrix{Float64}} # Vector of size (nTimeIntervals-1) for the Lagrange multiplier coefficients (real)
     Lmult_i:: Vector{Matrix{Float64}} # Vector of size (nTimeIntervals-1) for the Lagrange multiplier coefficients (imag)
 
+    nrm2_Cjump:: Vector{Float64} # Vector of size (nTimeIntervals-1) for the norm squared of the jump across intermediate time intervals
+
     gammaJump:: Float64 # Coefficient of the quadratic penalty term for jumps across time intervals
     gammaUnitary:: Float64 # Coefficient of the penalty term that suppresses non-unitary initial conditions
     constraintType:: Int64 # set to true to impose unitary constraints on intermediate initial conditions
@@ -485,6 +487,9 @@ mutable struct objparams
         Lmult_r = Vector{Matrix{Float64}}(undef, nTimeIntervals-1)
         Lmult_i = Vector{Matrix{Float64}}(undef, nTimeIntervals-1)
 
+        # Allocate storage for the norm of the jump across time intervals
+        nrm2_Cjump = zeros(Float64, nTimeIntervals-1)
+
         # Compute intermediate start times by rounding to the nearest time step
         if nTimeIntervals == 1
             Tsteps[1] = nsteps
@@ -550,7 +555,7 @@ mutable struct objparams
              usingPriorCoeffs, priorCoeffs, quiet, Rfreq, false, [],
              real(my_dVds), imag(my_dVds), my_sv_type, wa, nCoeff, D1, nAlpha, nWinit,
              freq01, self_kerr, couple_coeff, couple_type, # Add some checks for these ones!
-             msb_order, zeroCtrlBC, nTimeIntervals, T0int, Tsteps, d1_start, d1_end, Lmult_r, Lmult_i, gammaJump, gammaUnitary, constraintType, 0, 0
+             msb_order, zeroCtrlBC, nTimeIntervals, T0int, Tsteps, d1_start, d1_end, Lmult_r, Lmult_i, nrm2_Cjump, gammaJump, gammaUnitary, constraintType, 0, 0
             )
 
     end
@@ -1192,7 +1197,7 @@ function lagrange_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = tru
     Uend_i = Matrix{Float64}(undef, p.Ntot, p.Ntot)
 
     # Storage for saving jump discontinuities across time intervals
-    nrm2_Cjump = zeros(p.nTimeIntervals-1)
+    #nrm2_Cjump = zeros(p.nTimeIntervals-1)
 
     # Total objective
     objf = 0.0
@@ -1246,14 +1251,14 @@ function lagrange_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = tru
 
             # Jump in state at the end of interval k equals C^k = Uend^k - Wend^k (Ntot x Ntot matrices)
             # evaluate continuity constraint (Frobenius norm squared of mismatch)
-            nrm2_Cjump[interval] = norm( Cjump_r )^2 + norm( Cjump_i )^2
+            p.nrm2_Cjump[interval] = norm( Cjump_r )^2 + norm( Cjump_i )^2
 
-            objf += 0.5*p.gammaJump * nrm2_Cjump[interval] # accumulate contributions to the augemnted Lagrangian
+            objf += 0.5*p.gammaJump * p.nrm2_Cjump[interval] # accumulate contributions to the augemnted Lagrangian
 
             # println("Sizes: p.Lmult_r = ", size(p.Lmult_r[interval]), " Uend_r = ", size(Uend_r), " Wend_r = ", size(Wend_r))
             Lmult_cont = -p.N*real(tracefidcomplex(p.Lmult_r[interval], p.Lmult_i[interval], Cjump_r, Cjump_i))
             if verbose
-                println("Interval # ", interval, " Continuity jump (norm2) = ", nrm2_Cjump[interval], " (Lagrange multiplier) x (continuity jump) = ", Lmult_cont)
+                println("Interval # ", interval, " Continuity jump (norm2) = ", p.nrm2_Cjump[interval], " (Lagrange multiplier) x (continuity jump) = ", Lmult_cont)
             end
             
             objf += Lmult_cont # accumulate contributions to the augemnted Lagrangian
@@ -1287,7 +1292,7 @@ function lagrange_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = tru
         println("lagrange_obj():, objf = ", objf, " Tikhonov penalty = ", tp)
     end
 
-    return objf, nrm2_Cjump, infid, tp
+    return objf, infid, tp
 
 end # function lagrange_obj
 
@@ -1341,7 +1346,7 @@ function lagrange_grad(pcof0::Array{Float64,1},  p::objparams, objf_grad::Vector
     Uend_i = Matrix{Float64}(undef, p.Ntot, p.Ntot)
 
     # Storage for saving jump discontinuities across time intervals
-    nrm2_Cjump = zeros(p.nTimeIntervals-1)
+    #nrm2_Cjump = zeros(p.nTimeIntervals-1)
 
     # Total objective
     objf = 0.0
@@ -1489,6 +1494,11 @@ function lagrange_grad(pcof0::Array{Float64,1},  p::objparams, objf_grad::Vector
                     elseif p.pFidType == 2 || p.pFidType == 3
                         v_rq = p.Utarget_r[:, col_kp]
                         v_iq = p.Utarget_i[:, col_kp]
+                    elseif p.pFidType == 4
+                        v_rq = p.Utarget_r[:, col_kp]
+                        v_iq = p.Utarget_i[:, col_kp]
+                        u_rq = Uend_r[:, col_kp]
+                        u_iq = Uend_i[:, col_kp]
                     else
                         println("pFidType = ", p.pFidType)
                         throw("pFidType not yet implemented")
@@ -1510,6 +1520,11 @@ function lagrange_grad(pcof0::Array{Float64,1},  p::objparams, objf_grad::Vector
                     elseif p.pFidType == 3 # infidelity-squared
                         sW1 = (s_rp' * v_rq + s_ip' * v_iq) + im*( s_rp' * v_iq - s_ip' * v_rq )
                         dFdW_kpar = -4*infid*real( conj(scomplex0) * sW1 )/p.N # Note: scomplex0 is scaled by 1/N
+                    elseif p.pFidType == 4 # generalized infidelity
+                        sW1 = (s_rp' * v_rq + s_ip' * v_iq) + im*( s_rp' * v_iq - s_ip' * v_rq )
+                        sW2 = (s_rp' * u_rq + s_ip' * u_iq)
+                        dFdW_kpar = 2*sW2/p.N - 2*real( conj(scomplex0) * sW1 )/p.N # Note: scomplex0 is scaled by 1/N
+                        #println("sW1 = ", sW1, " sW2 = ", sW2, " dFdW_kpar = ", dFdW_kpar)
                     else
                         println("pFidType = ", p.pFidType)
                         throw("pFidType not yet implemented")
@@ -1536,84 +1551,83 @@ function lagrange_grad(pcof0::Array{Float64,1},  p::objparams, objf_grad::Vector
 
             # Jump in state at the end of interval k equals C^k = Uend^k - Wend^k (Ntot x Ntot matrices)
             # evaluate continuity constraint (Frobenius norm squared of mismatch)
-            nrm2_Cjump[interval] = norm( Cjump_r )^2 + norm( Cjump_i )^2
+            p.nrm2_Cjump[interval] = norm( Cjump_r )^2 + norm( Cjump_i )^2
 
-            objf += 0.5*p.gammaJump * nrm2_Cjump[interval] # accumulate contributions to the augemnted Lagrangian
+            objf += 0.5*p.gammaJump * p.nrm2_Cjump[interval] # accumulate contributions to the augemnted Lagrangian
 
             # println("Sizes: p.Lmult_r = ", size(p.Lmult_r[interval]), " Uend_r = ", size(Uend_r), " Wend_r = ", size(Wend_r))
             Lmult_cont = -p.N*real(tracefidcomplex(p.Lmult_r[interval], p.Lmult_i[interval], Cjump_r, Cjump_i))
             if verbose
-                println("Interval # ", interval, " Continuity jump (norm2) = ", nrm2_Cjump[interval], " (Lagrange multiplier) x (continuity jump) = ", Lmult_cont)
+                println("Interval # ", interval, " Continuity jump (norm2) = ", p.nrm2_Cjump[interval], " (Lagrange multiplier) x (continuity jump) = ", Lmult_cont)
             end
             
             objf += Lmult_cont # accumulate contributions to the augmented Lagrangian
+          
+            # gradient wrt Winit^{(interval)} through Cjump = Uend - Winit
+            ws_grad = zeros(p.nCoeff) # workspace
+            # contribution to gradient wrt Winit^{(interval)} from Wend in Cjump and Lmult
+            offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
+            ws_grad[offc+1:offc+nMat] = vec(-p.gammaJump * Cjump_r + p.Lmult_r[interval]) # real part
+            offc += nMat
+            ws_grad[offc+1:offc+nMat] = vec(-p.gammaJump * Cjump_i + p.Lmult_i[interval]) # imaginary part
+            
+            objf_grad[:] += ws_grad # accumulate total gradient
 
-            # if evaladjoint            
-                # gradient wrt Winit^{(interval)} through Cjump = Uend - Winit
-                ws_grad = zeros(p.nCoeff) # workspace
-                # contribution to gradient wrt Winit^{(interval)} from Wend in Cjump and Lmult
-                offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
-                ws_grad[offc+1:offc+nMat] = vec(-p.gammaJump * Cjump_r + p.Lmult_r[interval]) # real part
-                offc += nMat
-                ws_grad[offc+1:offc+nMat] = vec(-p.gammaJump * Cjump_i + p.Lmult_i[interval]) # imaginary part
+            if interval >= 2 # gradient wrt Winit^{(interval - 1)} through initial condition for (Uend_r, Uend_i)
+                offc_r = p.nAlpha + (interval-2)*p.nWinit # for interval = 2 the offset should be nAlpha
+                offc_i = offc_r + nMat
                 
-                objf_grad[:] += ws_grad # accumulate total gradient
-
-                if interval >= 2 # gradient wrt Winit^{(interval - 1)} through initial condition for (Uend_r, Uend_i)
-                    offc_r = p.nAlpha + (interval-2)*p.nWinit # for interval = 2 the offset should be nAlpha
-                    offc_i = offc_r + nMat
-                    
-                    # p = row, q = col
-                    for col in 1:p.N
-                        c_rq = Cjump_r[:, col]
-                        c_iq = Cjump_i[:, col]
-                        la_rq = p.Lmult_r[interval][:, col]
-                        la_iq = p.Lmult_i[interval][:, col]
-                        # dependence through initial condition 
-                        # Cjump^{interval} = U^{interval}(W^{interval - 1}) - W^{interval}
-                         
-                        # real part: vectorize over 'row'
-                        s_rp = reInitOp[1]
-                        s_ip = reInitOp[2]
-                        objf_grad[offc_r + 1: offc_r + p.N] += p.gammaJump*( s_rp' * c_rq + s_ip' * c_iq) - ( s_rp' * la_rq + s_ip' * la_iq) 
+                # p = row, q = col
+                for col in 1:p.N
+                    c_rq = Cjump_r[:, col]
+                    c_iq = Cjump_i[:, col]
+                    la_rq = p.Lmult_r[interval][:, col]
+                    la_iq = p.Lmult_i[interval][:, col]
+                    # dependence through initial condition 
+                    # Cjump^{interval} = U^{interval}(W^{interval - 1}) - W^{interval}
                         
-                        # imaginary part: vectorize over row
-                        s_rp = imInitOp[1]
-                        s_ip = imInitOp[2]
-                        objf_grad[offc_i + 1: offc_i + p.N] += p.gammaJump*( s_rp' * c_rq + s_ip' * c_iq) - ( s_rp' * la_rq + s_ip' * la_iq)
+                    # real part: vectorize over 'row'
+                    s_rp = reInitOp[1]
+                    s_ip = reInitOp[2]
+                    objf_grad[offc_r + 1: offc_r + p.N] += p.gammaJump*( s_rp' * c_rq + s_ip' * c_iq) - ( s_rp' * la_rq + s_ip' * la_iq) 
+                    
+                    # imaginary part: vectorize over row
+                    s_rp = imInitOp[1]
+                    s_ip = imInitOp[2]
+                    objf_grad[offc_i + 1: offc_i + p.N] += p.gammaJump*( s_rp' * c_rq + s_ip' * c_iq) - ( s_rp' * la_rq + s_ip' * la_iq)
 
-                        offc_r += p.N
-                        offc_i += p.N
-                    end # for col
-                end # if interval >= 2
+                    offc_r += p.N
+                    offc_i += p.N
+                end # for col
+            end # if interval >= 2
+            # End gradient wrt Wend 
 
-                # End gradient wrt Wend 
 
-                # gradient wrt alpha (B-spline coefficients)
+            # gradient wrt alpha (B-spline coefficients)
 
-                # adjoint gradient of quadratic jump
-                Amat_r = p.gammaJump*Cjump_r
-                Amat_i = p.gammaJump*Cjump_i
-                # Calculate gradients
-                quadGrad = adjoint_gradient(p, splinepar, tEnd, p.Tsteps[interval], Uend_r, Uend_i, Amat_r, Amat_i)
-                
-                objf_grad[:] += quadGrad # accumulate gradient
+            # adjoint gradient of quadratic jump
+            Amat_r = p.gammaJump*Cjump_r
+            Amat_i = p.gammaJump*Cjump_i
+            # Calculate gradients
+            quadGrad = adjoint_gradient(p, splinepar, tEnd, p.Tsteps[interval], Uend_r, Uend_i, Amat_r, Amat_i)
+            
+            objf_grad[:] += quadGrad # accumulate gradient
 
-                # adjoint gradient of Lagrange mult.
-                Amat_r = -p.Lmult_r[interval]
-                Amat_i = -p.Lmult_i[interval]
-                lagrangeGrad = adjoint_gradient(p, splinepar, tEnd, p.Tsteps[interval], Uend_r, Uend_i, Amat_r, Amat_i)
-                
-                objf_grad[:] += lagrangeGrad # accumulate gradient
+            # adjoint gradient of Lagrange mult.
+            Amat_r = -p.Lmult_r[interval]
+            Amat_i = -p.Lmult_i[interval]
+            lagrangeGrad = adjoint_gradient(p, splinepar, tEnd, p.Tsteps[interval], Uend_r, Uend_i, Amat_r, Amat_i)
+            
+            objf_grad[:] += lagrangeGrad # accumulate gradient
 
-                if eval1gradient
-                    println("kpar = ", p.kpar, " dLda_kpar = ", dLda_kpar, " dLda_adj = ", lagrangeGrad[p.kpar]," diff = ", dLda_kpar - lagrangeGrad[p.kpar])
-                    println("kpar = ", p.kpar, " dCda_kpar = ", dCda_kpar, " dCda_adj = ", quadGrad[p.kpar]," diff = ", dCda_kpar - quadGrad[p.kpar])
+            if eval1gradient
+                println("kpar = ", p.kpar, " dLda_kpar = ", dLda_kpar, " dLda_adj = ", lagrangeGrad[p.kpar]," diff = ", dLda_kpar - lagrangeGrad[p.kpar])
+                println("kpar = ", p.kpar, " dCda_kpar = ", dCda_kpar, " dCda_adj = ", quadGrad[p.kpar]," diff = ", dCda_kpar - quadGrad[p.kpar])
 
-                    println("dCdW_kpar = ", dCdW_kpar, " dLdW_kpar = ", dLdW_kpar, " dFdW_kpar = ", dFdW_kpar)
-                    println("Fwd grad_kpar = ", grad_kpar, " adjoint_grad_kpar = ", objf_grad[p.kpar], " diff = ", grad_kpar - objf_grad[p.kpar])
-                end
-            # end
+                println("dCdW_kpar = ", dCdW_kpar, " dLdW_kpar = ", dLdW_kpar, " dFdW_kpar = ", dFdW_kpar)
+                println("Fwd grad_kpar = ", grad_kpar, " adjoint_grad_kpar = ", objf_grad[p.kpar], " diff = ", grad_kpar - objf_grad[p.kpar])
+            end
+            
         else # final time interval
 
             if p.pFidType == 1 # Frobenius norm^2 of U - V_tg
@@ -1632,113 +1646,140 @@ function lagrange_grad(pcof0::Array{Float64,1},  p::objparams, objf_grad::Vector
                 println("Interval # ", interval, " pFidType = ", p.pFidType, " finalDist = ", finalDist, " infid = ", infid)
             end 
 
-            # if evaladjoint
-                # Gradient of infidelity
+            # no contribution if there is only 1 interval because the first initial condition is fixed
+            if p.nTimeIntervals > 1 
+                # Gradient wrt Winit^{interval -  1} through initial condition for Uend
+                offc_r = p.nAlpha + (interval-2)*p.nWinit # for interval = 2 the offset should be nAlpha
+                offc_i = offc_r + nMat
 
-                # no contribution if there is only 1 interval because the first initial condition is fixed
-                if p.nTimeIntervals > 1 
-                    # Gradient wrt Winit^{interval -  1} through initial condition for Uend
-                    offc_r = p.nAlpha + (interval-2)*p.nWinit # for interval = 2 the offset should be nAlpha
-                    offc_i = offc_r + nMat
+                # p = row, q = col
+                if p.pFidType == 1 # Frobenius norm^2 of (Uend - Vtg)
+                    for col in 1:p.N
+                        v_rq = Uend_r[:, col] - p.Utarget_r[:, col]
+                        v_iq = Uend_i[:, col] - p.Utarget_i[:, col]
+                        
+                        # real part: vectorize over 'row'
+                        s_rp = reInitOp[1]
+                        s_ip = reInitOp[2]
+                        sW1 = (s_rp' * v_rq + s_ip' * v_iq) # + im*( s_rp' * v_iq - s_ip' * v_rq )
+                            
+                        objf_grad[offc_r + 1: offc_r + p.N] += 2*sW1
+                        
+                        # imaginary part: vectorize over row
+                        s_rp = imInitOp[1]
+                        s_ip = imInitOp[2]
+                        sW1 = (s_rp' * v_rq + s_ip' * v_iq) # + im*( s_rp' * v_iq - s_ip' * v_rq )
+                        
+                        objf_grad[offc_i + 1: offc_i + p.N] += 2*sW1
 
-                    # p = row, q = col
-                    if p.pFidType == 1 # Frobenius norm^2 of (Uend - Vtg)
-                        for col in 1:p.N
-                            v_rq = Uend_r[:, col] - p.Utarget_r[:, col]
-                            v_iq = Uend_i[:, col] - p.Utarget_i[:, col]
+                        offc_r += p.N
+                        offc_i += p.N
+                    end # for col
+                elseif p.pFidType == 2 # infidelity
+                    for col in 1:p.N
+                        v_rq = p.Utarget_r[:, col]
+                        v_iq = p.Utarget_i[:, col]
+                        
+                        # real part: vectorize over 'row'
+                        s_rp = reInitOp[1]
+                        s_ip = reInitOp[2]
+                        sW1 = (s_rp' * v_rq + s_ip' * v_iq) + im*( s_rp' * v_iq - s_ip' * v_rq )
                             
-                            # real part: vectorize over 'row'
-                            s_rp = reInitOp[1]
-                            s_ip = reInitOp[2]
-                            sW1 = (s_rp' * v_rq + s_ip' * v_iq) # + im*( s_rp' * v_iq - s_ip' * v_rq )
-                                
-                            objf_grad[offc_r + 1: offc_r + p.N] += 2*sW1
-                            
-                            # imaginary part: vectorize over row
-                            s_rp = imInitOp[1]
-                            s_ip = imInitOp[2]
-                            sW1 = (s_rp' * v_rq + s_ip' * v_iq) # + im*( s_rp' * v_iq - s_ip' * v_rq )
-                            
-                            objf_grad[offc_i + 1: offc_i + p.N] += 2*sW1
+                        objf_grad[offc_r + 1: offc_r + p.N] += -2*real( conj(scomplex0) * sW1 )/p.N
+                        
+                        # imaginary part: vectorize over row
+                        s_rp = imInitOp[1]
+                        s_ip = imInitOp[2]
+                        sW1 = (s_rp' * v_rq + s_ip' * v_iq) + im*( s_rp' * v_iq - s_ip' * v_rq )
+                        
+                        objf_grad[offc_i + 1: offc_i + p.N] += -2*real( conj(scomplex0) * sW1 )/p.N
 
-                            offc_r += p.N
-                            offc_i += p.N
-                        end # for col
-                    elseif p.pFidType == 2 # infidelity
-                        for col in 1:p.N
-                            v_rq = p.Utarget_r[:, col]
-                            v_iq = p.Utarget_i[:, col]
+                        offc_r += p.N
+                        offc_i += p.N
+                    end # for col
+                elseif p.pFidType == 3 # infidelity-squared
+                    for col in 1:p.N
+                        v_rq = p.Utarget_r[:, col]
+                        v_iq = p.Utarget_i[:, col]
+                        
+                        # real part: vectorize over 'row'
+                        s_rp = reInitOp[1]
+                        s_ip = reInitOp[2]
+                        sW1 = (s_rp' * v_rq + s_ip' * v_iq) + im*( s_rp' * v_iq - s_ip' * v_rq )
                             
-                            # real part: vectorize over 'row'
-                            s_rp = reInitOp[1]
-                            s_ip = reInitOp[2]
-                            sW1 = (s_rp' * v_rq + s_ip' * v_iq) + im*( s_rp' * v_iq - s_ip' * v_rq )
-                                
-                            objf_grad[offc_r + 1: offc_r + p.N] += -2*real( conj(scomplex0) * sW1 )/p.N
-                            
-                            # imaginary part: vectorize over row
-                            s_rp = imInitOp[1]
-                            s_ip = imInitOp[2]
-                            sW1 = (s_rp' * v_rq + s_ip' * v_iq) + im*( s_rp' * v_iq - s_ip' * v_rq )
-                            
-                            objf_grad[offc_i + 1: offc_i + p.N] += -2*real( conj(scomplex0) * sW1 )/p.N
+                        objf_grad[offc_r + 1: offc_r + p.N] += -4*infid*real( conj(scomplex0) * sW1 )/p.N
+                        
+                        # imaginary part: vectorize over row
+                        s_rp = imInitOp[1]
+                        s_ip = imInitOp[2]
+                        sW1 = (s_rp' * v_rq + s_ip' * v_iq) + im*( s_rp' * v_iq - s_ip' * v_rq )
+                        
+                        objf_grad[offc_i + 1: offc_i + p.N] += -4*infid*real( conj(scomplex0) * sW1 )/p.N
 
-                            offc_r += p.N
-                            offc_i += p.N
-                        end # for col
-                    elseif p.pFidType == 3 # infidelity-squared
-                        for col in 1:p.N
-                            v_rq = p.Utarget_r[:, col]
-                            v_iq = p.Utarget_i[:, col]
-                            
-                            # real part: vectorize over 'row'
-                            s_rp = reInitOp[1]
-                            s_ip = reInitOp[2]
-                            sW1 = (s_rp' * v_rq + s_ip' * v_iq) + im*( s_rp' * v_iq - s_ip' * v_rq )
-                                
-                            objf_grad[offc_r + 1: offc_r + p.N] += -4*infid*real( conj(scomplex0) * sW1 )/p.N
-                            
-                            # imaginary part: vectorize over row
-                            s_rp = imInitOp[1]
-                            s_ip = imInitOp[2]
-                            sW1 = (s_rp' * v_rq + s_ip' * v_iq) + im*( s_rp' * v_iq - s_ip' * v_rq )
-                            
-                            objf_grad[offc_i + 1: offc_i + p.N] += -4*infid*real( conj(scomplex0) * sW1 )/p.N
-
-                            offc_r += p.N
-                            offc_i += p.N
-                        end # for col
-                    end
-                end # if nTimeIntervals > 1
-
-                # gradient wrt alpha (B-spline coefficients)
-                if p.pFidType == 1
-                    # dFda_kpar = 2*trace_operator(dUda_r, Uend_r - p.Utarget_r) + 2*trace_operator(dUda_i, Uend_i - p.Utarget_i)
-                    infidGrad = adjoint_gradient(p, splinepar, tEnd, p.Tsteps[interval], Uend_r, Uend_i, 2*(Uend_r - p.Utarget_r), 2*(Uend_i - p.Utarget_i))
-                elseif p.pFidType == 2
-                    Amat = -2*conj(scomplex0) * (p.Utarget_r + im*p.Utarget_i)/p.N # for infidelity gradient
-                    # Calculate gradients
-                    infidGrad = adjoint_gradient(p, splinepar, tEnd, p.Tsteps[interval], Uend_r, Uend_i, real(Amat), imag(Amat))
-                elseif p.pFidType == 3
-                    Amat = -4*infid*conj(scomplex0) * (p.Utarget_r + im*p.Utarget_i)/p.N # for infidelity-squared gradient
-                    # Calculate gradients
-                    infidGrad = adjoint_gradient(p, splinepar, tEnd, p.Tsteps[interval], Uend_r, Uend_i, real(Amat), imag(Amat))
-                elseif p.pFidType == 4 # Gradient of the generalized infidelity
-                    Amat = 2*(Uend_r + im*Uend_i)/p.N - 2*conj(scomplex0) * (p.Utarget_r + im*p.Utarget_i)/p.N
-                    # Calculate gradients
-                    infidGrad = adjoint_gradient(p, splinepar, tEnd, p.Tsteps[interval], Uend_r, Uend_i, real(Amat), imag(Amat))
+                        offc_r += p.N
+                        offc_i += p.N
+                    end # for col
+                elseif p.pFidType == 4 # generalized infidelity
+                    for col in 1:p.N
+                        v_rq = p.Utarget_r[:, col]
+                        v_iq = p.Utarget_i[:, col]
+        
+                        u_rq = Uend_r[:, col]
+                        u_iq = Uend_i[:, col]
+                        
+                        # real part: vectorize over 'row'
+                        s_rp = reInitOp[1]
+                        s_ip = reInitOp[2]
+                        sW1 = (s_rp' * v_rq + s_ip' * v_iq) + im*( s_rp' * v_iq - s_ip' * v_rq )
+                        sW2 = (s_rp' * u_rq + s_ip' * u_iq)
+        
+                        objf_grad[offc_r + 1: offc_r + p.N] += 2*sW2/p.N - 2*real( conj(scomplex0) * sW1 )/p.N
+                        
+                        # imaginary part: vectorize over row
+                        s_rp = imInitOp[1]
+                        s_ip = imInitOp[2]
+                        sW1 = (s_rp' * v_rq + s_ip' * v_iq) + im*( s_rp' * v_iq - s_ip' * v_rq )
+                        sW2 = (s_rp' * u_rq + s_ip' * u_iq)
+                        
+                        objf_grad[offc_i + 1: offc_i + p.N] += 2*sW2/p.N - 2*real( conj(scomplex0) * sW1 )/p.N
+        
+                        offc_r += p.N
+                        offc_i += p.N
+                    end # for col
+                else
+                    println("pFidType = ", p.pFidType)
+                    throw("pFidType not yet implemented")
                 end
-                
-                objf_grad[:] += infidGrad # accumulate gradient
+            end # if nTimeIntervals > 1
 
-                if eval1gradient
-                    println("kpar = ", p.kpar, " dFda_kpar = ", dFda_kpar)
-                    println("kpar = ", p.kpar, " dFda_adj = ", infidGrad[p.kpar]," diff = ", dFda_kpar - infidGrad[p.kpar])
+            # gradient wrt alpha (B-spline coefficients)
+            if p.pFidType == 1
+                # dFda_kpar = 2*trace_operator(dUda_r, Uend_r - p.Utarget_r) + 2*trace_operator(dUda_i, Uend_i - p.Utarget_i)
+                infidGrad = adjoint_gradient(p, splinepar, tEnd, p.Tsteps[interval], Uend_r, Uend_i, 2*(Uend_r - p.Utarget_r), 2*(Uend_i - p.Utarget_i))
+            elseif p.pFidType == 2
+                Amat = -2*conj(scomplex0) * (p.Utarget_r + im*p.Utarget_i)/p.N # for infidelity gradient
+                # Calculate gradients
+                infidGrad = adjoint_gradient(p, splinepar, tEnd, p.Tsteps[interval], Uend_r, Uend_i, real(Amat), imag(Amat))
+            elseif p.pFidType == 3
+                Amat = -4*infid*conj(scomplex0) * (p.Utarget_r + im*p.Utarget_i)/p.N # for infidelity-squared gradient
+                # Calculate gradients
+                infidGrad = adjoint_gradient(p, splinepar, tEnd, p.Tsteps[interval], Uend_r, Uend_i, real(Amat), imag(Amat))
+            elseif p.pFidType == 4 # Gradient of the generalized infidelity
+                Amat = 2*(Uend_r + im*Uend_i)/p.N - 2*conj(scomplex0) * (p.Utarget_r + im*p.Utarget_i)/p.N
+                # Calculate gradients
+                infidGrad = adjoint_gradient(p, splinepar, tEnd, p.Tsteps[interval], Uend_r, Uend_i, real(Amat), imag(Amat))
+            end
+            
+            objf_grad[:] += infidGrad # accumulate gradient
 
-                    println("dCdW_kpar = ", dCdW_kpar, " dLdW_kpar = ", dLdW_kpar, " dFdW_kpar = ", dFdW_kpar)
-                    println("Fwd grad_kpar = ", grad_kpar, " adjoint_grad_kpar = ", objf_grad[p.kpar], " diff = ", grad_kpar - objf_grad[p.kpar])
-                end
-            # end # if evaladjoint
+            if eval1gradient
+                println("kpar = ", p.kpar, " dFda_kpar = ", dFda_kpar)
+                println("kpar = ", p.kpar, " dFda_adj = ", infidGrad[p.kpar]," diff = ", dFda_kpar - infidGrad[p.kpar])
+
+                println("dCdW_kpar = ", dCdW_kpar, " dLdW_kpar = ", dLdW_kpar, " dFdW_kpar = ", dFdW_kpar)
+                println("Fwd grad_kpar = ", grad_kpar, " adjoint_grad_kpar = ", objf_grad[p.kpar], " diff = ", grad_kpar - objf_grad[p.kpar])
+            end
+        
         end # if interval < p.nIntervals
 
     end # for interval...
@@ -1755,16 +1796,12 @@ function lagrange_grad(pcof0::Array{Float64,1},  p::objparams, objf_grad::Vector
         println("lagrange_objgrad():, objf = ", objf, " Tikhonov penalty = ", tp)
     end
 
-    # if evaladjoint
-        if eval1gradient
-            println("kpar = ", p.kpar, " adjointGrad[kpar] = ", objf_grad[p.kpar], " Fwd grad_kpar = ", grad_kpar, " diff = ", grad_kpar - objf_grad[p.kpar])
-        end
-        # Note: objf_grad is returned in-place
-
-        # return objf, copy(objf_grad) # ipopt interface requires a copy of objf_grad?
-    # end
+    if eval1gradient
+        println("kpar = ", p.kpar, " adjointGrad[kpar] = ", objf_grad[p.kpar], " Fwd grad_kpar = ", grad_kpar, " diff = ", grad_kpar - objf_grad[p.kpar])
+    end
+    # Note: objf_grad is returned in-place
     
-    return objf, nrm2_Cjump, abs(infid), tp
+    return objf, abs(infid), tp
 
 end # function lagrange_grad
 
@@ -1885,8 +1922,7 @@ function final_grad(pcof0::Array{Float64,1},  p::objparams, objf_grad::Vector{Fl
         else
             println("Objective does NOT depend on W, nIntervals = ", p.nTimeIntervals)
         end
-        
-    end
+    end # eval1gradient
 
     # initializations start here
     alpha = pcof0[1:p.nAlpha] # extract the B-spline-coefficients

@@ -10,16 +10,22 @@ include("two_sys_noguard.jl")
 # assign the target gate, sqrt(Swap12)
 Vtg = get_swap_1d_gate(length(Ne))
 target_gate = Vtg # sqrt(Vtg)
-fidType = 3 # fidType=1 for Frobenius norm^2, fidType=2 for Infidelity, or fidType=3 for infidelity-squared
 
-constraintType = 2 # 0: No constraints, 1: unitary constraints on initial conditions, 2: zero norm^2(jump) to make the state continuous across time intervals. Set to 1 for fidType = 2
-maxIter= 5 # 200 #100 # 200
-nOuter = 1 # Only the augmented Lagrangian method uses outer iters
-use_multipliers = false # true # Lagrange multipliers
+# fidType      Objective
+#     1        Frobenius norm^2, 
+#     2        Infidelity
+#     3        Infidelity-squared
+#     4        Generalized (convex) infidelity
+fidType = 4 
+
+constraintType = 0 # 0: No constraints, 1: unitary constraints on initial conditions, 2: zero norm^2(jump) to make the state continuous across time intervals. Set to 1 for fidType = 2
+maxIter= 100 # 100 # 200 #100 # 200
+nOuter = 20 # 20 # Only the augmented Lagrangian method uses outer iters
+use_multipliers = true # Lagrange multipliers
 gammaJump = 5e-3 # initial value
 gammaMax = 100.0
-gammaFactor = 1.5 # 2.0
-derivative_test = false # true
+gammaFactor = 2.0 # 1.5 # 2.0
+derivative_test = false # true # false # true
 
 nTimeIntervals = 3 # 6 # 4 # 3 # 3 # 2 # 1
 
@@ -34,6 +40,13 @@ params.objThreshold = -1.0e-1
 Ntot = params.Ntot
 params.tik0 = 1.0e-2 # 1.0 # Adjust Tikhonov coefficient
 
+params.quiet = true # run ipopt in quiet mode
+if params.quiet
+    ipopt_verbose = 0
+else
+    ipopt_verbose = 5 # default value
+end
+
 # Test non-zero Lagrange multipliers
 if params.nTimeIntervals > 1
     for q = 1:params.nTimeIntervals-1
@@ -45,10 +58,10 @@ end
 println("Setup completed\n")
 
 for outerIt in 1:nOuter
-    global pcof0, derivative_test, use_multipliers
+    global pcof0, derivative_test, use_multipliers, ipopt_verbose
     println()
     println("Outer iteration # ", outerIt, " gammaJump = ", params.gammaJump, " Calling run_optimizer")
-    global pcof = run_optimizer(params, pcof0, maxAmp, maxIter=maxIter, derivative_test=derivative_test)
+    global pcof = run_optimizer(params, pcof0, maxAmp, maxIter=maxIter, derivative_test=derivative_test, print_level = ipopt_verbose)
     global pl = plot_results(params,pcof)
     println("IPOpt completed")
 

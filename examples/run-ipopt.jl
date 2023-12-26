@@ -9,11 +9,11 @@ using Plots
 #theta = pi/4
 
 # 3 qubits
-#include("three_sys_noguard.jl")
+include("three_sys_noguard.jl")
 #theta = 0.0
 
 # 4 qubits
-include("four_sys_noguard.jl")
+#include("four_sys_noguard.jl")
 
 # assign the target gate, sqrt(Swap12)
 Vtg = get_swap_1d_gate(length(Ne))

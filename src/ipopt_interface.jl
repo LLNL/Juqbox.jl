@@ -272,7 +272,7 @@ end
 # for objFuncType == 1, intermediate initial conditions (no leak term and no qudrature)
 function eval_f_par2(pcof::Vector{Float64}, params:: Juqbox.objparams)
 
-    f, _, finalDist, _ = Juqbox.lagrange_obj(pcof, params, false)
+    f, finalDist, _ = Juqbox.lagrange_obj(pcof, params, false)
 
     # NOTE: when the initial condition isn't unitary, the trace infidelity may be negative
     params.lastTraceInfidelity = max(1e-10, finalDist) 
@@ -297,7 +297,7 @@ function eval_grad_f_par2(pcof::Vector{Float64}, grad_f::Vector{Float64}, params
     #axpy!(1.0, totalgrad, grad_f) # AP: why is this needed? By directly assigning grad_f, the calling function reports grad_f = 0 ????
 
     # in-place grad_f
-    _, _, finalDist, _ = Juqbox.lagrange_grad(pcof, params, grad_f, false)
+    _, finalDist, _ = Juqbox.lagrange_grad(pcof, params, grad_f, false)
 
     # test
     # println("eval_grad_f_par2: grad_f after calling lagrange_objgrad")
@@ -499,7 +499,12 @@ function intermediate_par(
         push!(params.dualInfidelityHist, inf_du)
         push!(params.primaryHist, params.lastTraceInfidelity)
         push!(params.secondaryHist,  params.lastLeakIntegral)
-        push!(params.constraintViolationHist, inf_pr)
+        if params.constraintType == 0 && params.nTimeIntervals > 1 # Aug-Lagrange
+            inf_jump = sqrt(maximum(params.nrm2_Cjump))
+        else
+            inf_jump = inf_pr
+        end
+        push!(params.constraintViolationHist, inf_jump)
     end
     if obj_value < params.objThreshold
         println("Stopping because objective value = ", obj_value,
@@ -539,10 +544,8 @@ function ipopt_setup(params:: Juqbox.objparams, nCoeff:: Int64, maxAmp:: Vector{
 
     minCoeff, maxCoeff = control_bounds(params, maxAmp)
     
-    intermediate(alg_mod, iter_count, obj_value, inf_pr, inf_du, mu,
-                d_norm, regularization_size, alpha_du, alpha_pr, ls_trials) =
-                    intermediate_par(alg_mod, iter_count, obj_value, inf_pr, inf_du, mu,
-                                    d_norm, regularization_size, alpha_du, alpha_pr, ls_trials, params)
+    intermediate(alg_mod, iter_count, obj_value, inf_pr, inf_du, mu, d_norm, regularization_size, alpha_du, alpha_pr, ls_trials) =
+                intermediate_par(alg_mod, iter_count, obj_value, inf_pr, inf_du, mu, d_norm, regularization_size, alpha_du, alpha_pr, ls_trials, params)
 
     #testing
     #println("ipopt_setup(): params.objFuncType = ", params.objFuncType, " #intervals = ", params.nTimeIntervals)
@@ -578,7 +581,7 @@ function ipopt_setup(params:: Juqbox.objparams, nCoeff:: Int64, maxAmp:: Vector{
        
     println("ipopt_setup: imposing constraints of type = ", params.constraintType, ", # timeIntervals = ", params.nTimeIntervals)
     
-    if (params.constraintType == 0) # Minimize the infidelity + leakage; no intermediate initial conditions
+    if (params.constraintType == 0) # Minimize the Lagrangian without imposing constraints
         nConst = 0
         nEleJac = 0
         nEleHess = 0
