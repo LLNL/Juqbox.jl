@@ -4,8 +4,8 @@ using Juqbox
 using Printf
 using Plots
 
-include("two_sys_noguard.jl")
-#include("three_sys_noguard.jl")
+#include("two_sys_noguard.jl")
+include("three_sys_noguard.jl")
 
 # assign the target gate, sqrt(Swap12)
 Vtg = get_swap_1d_gate(length(Ne))
@@ -19,15 +19,15 @@ target_gate = Vtg # sqrt(Vtg)
 fidType = 4 
 
 constraintType = 0 # 0: No constraints, 1: unitary constraints on initial conditions, 2: zero norm^2(jump) to make the state continuous across time intervals. Set to 1 for fidType = 2
-maxIter= 100 # 100 # 200 #100 # 200
-nOuter = 20 # 20 # Only the augmented Lagrangian method uses outer iters
+maxIter= 200 # 100 # 200 #100 # 200
+nOuter = 1 # 20 # Only the augmented Lagrangian method uses outer iters
 use_multipliers = true # Lagrange multipliers
-gammaJump = 5e-3 # initial value
+gammaJump = 0.1 # 5e-3 # initial value
 gammaMax = 100.0
-gammaFactor = 2.0 # 1.5 # 2.0
+gammaFactor = 1.5 # 2.0
 derivative_test = false # true # false # true
 
-nTimeIntervals = 3 # 6 # 4 # 3 # 3 # 2 # 1
+nTimeIntervals = 10 # 5 # 3 # 6 # 4 # 3 # 3 # 2 # 1
 
 retval = setup_std_model(Ne, Ng, f01, xi, xi12, couple_type, rot_freq, T, D1, target_gate, maxctrl_MHz=maxctrl_MHz, msb_order=msb_order, initctrl_MHz=initctrl_MHz, rand_seed=rand_seed, Pmin=Pmin, cw_prox_thres=cw_prox_thres, cw_amp_thres=cw_amp_thres, use_carrier_waves=use_carrier_waves, nTimeIntervals=nTimeIntervals, zeroCtrlBC=zeroCtrlBC, gammaJump=gammaJump, fidType=fidType, constraintType=constraintType)
 
@@ -35,9 +35,10 @@ params = retval[1]
 pcof0 = retval[2]
 maxAmp = retval[3];
 
-params.traceInfidelityThreshold = 0.0 # 1e-3 # better than 99.9% fidelity
+params.traceInfidelityThreshold = 0.0 # NOTE: Only measure the infidelity in the last interval
 params.objThreshold = -1.0e-1
-Ntot = params.Ntot
+rollout_infid_threshold = 1e-5
+
 params.tik0 = 1.0e-2 # 1.0 # Adjust Tikhonov coefficient
 
 params.quiet = true # run ipopt in quiet mode
@@ -49,8 +50,9 @@ end
 
 # Test non-zero Lagrange multipliers
 if params.nTimeIntervals > 1
+    Ntot = params.Ntot
     for q = 1:params.nTimeIntervals-1
-        params.Lmult_r[q] = zeros(Ntot, Ntot) # rand(Ntot, Ntot) # zeros(Ntot, Ntot) # 
+        params.Lmult_r[q] = zeros(Ntot, Ntot) # rand(Ntot, Ntot)
         params.Lmult_i[q] = zeros(Ntot, Ntot) # rand(Ntot, Ntot)
     end
 end
@@ -60,14 +62,24 @@ println("Setup completed\n")
 for outerIt in 1:nOuter
     global pcof0, derivative_test, use_multipliers, ipopt_verbose
     println()
-    println("Outer iteration # ", outerIt, " gammaJump = ", params.gammaJump, " Calling run_optimizer")
+    println("Outer iteration # ", outerIt, " gammaJump = ", params.gammaJump, " Calling run_optimizer...")
     global pcof = run_optimizer(params, pcof0, maxAmp, maxIter=maxIter, derivative_test=derivative_test, print_level = ipopt_verbose)
-    global pl = plot_results(params,pcof)
-    println("IPOpt completed")
+    
+    # evaluate fidelity and unitaryhistory
+    alpha = pcof[1:params.nAlpha] # extract the B-spline coefficients
+    objv, rollout_infid, leakage = Juqbox.traceobjgrad(alpha, params, false, false);
+
+    println()
+    println("Rollout infidelity: ", rollout_infid, " max(||Jump||): ", sqrt(maximum(params.nrm2_Cjump)), " final dual_inf: ", params.dualInfidelityHist[end])
+
+    if rollout_infid < rollout_infid_threshold
+        println("Terminating outer iteration with rollout_infid = ", rollout_infid)
+        break
+    end
 
     if outerIt < nOuter
         if use_multipliers
-            println("Updating Lagrange multipliers")
+            # println("Updating Lagrange multipliers")
             update_multipliers(pcof, params)
 
             # if params.nTimeIntervals > 1
@@ -87,3 +99,5 @@ for outerIt in 1:nOuter
 end
 
 println("Outer iteration completed")
+
+# pl = plot_results(params,pcof)
