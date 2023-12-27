@@ -579,7 +579,7 @@ function ipopt_setup(params:: Juqbox.objparams, nCoeff:: Int64, maxAmp:: Vector{
     #     prob = CreateIpoptProblem( nCoeff, minCoeff, maxCoeff, nconst, g_L, g_U, nEleJac, nEleHess, eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h);
     # else # params.objFuncType = 1 (add infidelity and leakage in the objective) 
        
-    println("ipopt_setup: imposing constraints of type = ", params.constraintType, ", # timeIntervals = ", params.nTimeIntervals)
+    #println("ipopt_setup: imposing constraints of type = ", params.constraintType, ", # timeIntervals = ", params.nTimeIntervals)
     
     if (params.constraintType == 0) # Minimize the Lagrangian without imposing constraints
         nConst = 0
@@ -828,11 +828,19 @@ function run_optimizer(params:: objparams, pcof0:: Vector{Float64}, maxAmp:: Vec
     prob.x = copy(pcof0);
 
     # Ipopt solver
-    println("*** Starting the optimization ***")
-    if @isdefined solveProblem
-        @time solveProblem(prob);
-    else 
-        @time IpoptSolve(prob);
+    if print_level > 0
+        println("*** Starting the optimization ***")
+        if @isdefined solveProblem
+            @time solveProblem(prob);
+        else 
+            @time IpoptSolve(prob);
+        end
+    else
+        if @isdefined solveProblem
+            solveProblem(prob);
+        else 
+            IpoptSolve(prob);
+        end
     end
     pcof = prob.x;
 
