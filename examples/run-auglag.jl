@@ -19,13 +19,13 @@ target_gate = Vtg # sqrt(Vtg)
 fidType = 4 
 
 constraintType = 0 # 0: No constraints, 1: unitary constraints on initial conditions, 2: zero norm^2(jump) to make the state continuous across time intervals. Set to 1 for fidType = 2
-maxIter= 200 # 100 # 200 #100 # 200
-nOuter = 1 # 20 # Only the augmented Lagrangian method uses outer iters
+maxIter= 150 # 100 # 200 #100 # 200
+nOuter = 5 # 20 # Only the augmented Lagrangian method uses outer iters
 use_multipliers = true # Lagrange multipliers
-gammaJump = 0.1 # 5e-3 # initial value
+gammaJump =  5e-3 # 0.1 # initial value
 gammaMax = 100.0
 gammaFactor = 1.5 # 2.0
-derivative_test = false # true # false # true
+derivative_test = true # false # true
 
 nTimeIntervals = 10 # 5 # 3 # 6 # 4 # 3 # 3 # 2 # 1
 
@@ -36,16 +36,16 @@ pcof0 = retval[2]
 maxAmp = retval[3];
 
 params.traceInfidelityThreshold = 0.0 # NOTE: Only measure the infidelity in the last interval
-params.objThreshold = -1.0e-1
+params.objThreshold = -1.0e10 # total objective may go negative with the Augmented-Lagrange method
 rollout_infid_threshold = 1e-5
 
 params.tik0 = 1.0e-2 # 1.0 # Adjust Tikhonov coefficient
 
-params.quiet = true # run ipopt in quiet mode
+params.quiet = false # true # run ipopt in quiet mode
 if params.quiet
     ipopt_verbose = 0
 else
-    ipopt_verbose = 5 # default value
+    ipopt_verbose = 1 # default value
 end
 
 # Test non-zero Lagrange multipliers

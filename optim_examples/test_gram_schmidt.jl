@@ -6,7 +6,6 @@ using LinearAlgebra
 using Random
 using Dates
 using Juqbox
-# include("gram_schmidt.jl")
 
 N = 4
 
