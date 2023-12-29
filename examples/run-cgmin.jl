@@ -22,12 +22,10 @@ constraintType = 0 # 0: No constraints, 1: unitary constraints on initial condit
 maxIter= 150 # 100 # 200 #100 # 200
 nOuter = 5 # 20 # Only the augmented Lagrangian method uses outer iters
 use_multipliers = true # Lagrange multipliers
-gammaJump =  5e-3 # 0.1 # initial value
+gammaJump =  0.1 # 5e-3 # 0.1 # initial value
 gammaMax = 100.0
 gammaFactor = 1.5 # 2.0
-derivative_test = false # true
-
-initctrl_MHz = 1.0
+derivative_test = true # false # true
 
 nTimeIntervals = 5 # 3 # 6 # 4 # 3 # 3 # 2 # 1
 
@@ -40,17 +38,13 @@ maxAmp = retval[3];
 params.traceInfidelityThreshold = 0.0 # NOTE: Only measure the infidelity in the last interval
 params.objThreshold = -1.0e10 # total objective may go negative with the Augmented-Lagrange method
 rollout_infid_threshold = 1e-5
+cgtol = 1.0e-5
 
 params.tik0 = 0.0 # 1.0e-2 # 1.0 # Adjust Tikhonov coefficient
 
 params.quiet = false # true # run ipopt in quiet mode
-if params.quiet
-    ipopt_verbose = 0
-else
-    ipopt_verbose = 2 # default value
-end
 
-# Test non-zero Lagrange multipliers
+# Optionall use non-zero Lagrange multipliers
 if params.nTimeIntervals > 1
     Ntot = params.Ntot
     for q = 1:params.nTimeIntervals-1
@@ -64,15 +58,17 @@ println("Setup completed\n")
 for outerIt in 1:nOuter
     global pcof0, derivative_test, use_multipliers, ipopt_verbose
     println()
-    println("Outer iteration # ", outerIt, " gammaJump = ", params.gammaJump, " Calling run_optimizer...")
-    global pcof = run_optimizer(params, pcof0, maxAmp, maxIter=maxIter, derivative_test=derivative_test, print_level = ipopt_verbose)
+    println("Outer iteration # ", outerIt, " gammaJump = ", params.gammaJump, " Calling cgmin optimizer...")
+    cg_res = cgmin(lagrange_obj, lagrange_grad, pcof0, params, cgtol)
+
+    global pcof = cg_res[1]
     
     # evaluate fidelity and unitaryhistory
     alpha = pcof[1:params.nAlpha] # extract the B-spline coefficients
     objv, rollout_infid, leakage = Juqbox.traceobjgrad(alpha, params, false, false);
 
     println()
-    println("Rollout infidelity: ", rollout_infid, " max(||Jump||): ", sqrt(maximum(params.nrm2_Cjump)), " final dual_inf: ", params.dualInfidelityHist[end])
+    println("Rollout infidelity: ", rollout_infid, " max(||Jump||): ", sqrt(maximum(params.nrm2_Cjump)) ) #, " final dual_inf: ", params.dualInfidelityHist[end])
 
     if rollout_infid < rollout_infid_threshold
         println("Terminating outer iteration with rollout_infid = ", rollout_infid)

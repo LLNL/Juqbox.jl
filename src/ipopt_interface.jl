@@ -495,7 +495,7 @@ function intermediate_par(
     params:: Juqbox.objparams)
   # ...
     if params.saveConvHist 
-        push!(params.objHist, max(1e-10,obj_value))
+        push!(params.objHist, abs(obj_value)) # can be negative for Aug-Lag
         push!(params.dualInfidelityHist, inf_du)
         push!(params.primaryHist, params.lastTraceInfidelity)
         push!(params.secondaryHist,  params.lastLeakIntegral)

@@ -1059,9 +1059,7 @@ end
 
 #########################################################
 #
-# Augmented Lagrange method with multiple time intervals
-# Evaluate the final distance to target, all continuity penalty terms,
-# and all Lagrange multiplier terms
+# Augmented Lagrange method; update all Lagrange multipliers
 #
 #########################################################
 
@@ -1098,6 +1096,23 @@ function update_multipliers(pcof0::Array{Float64,1}, p::objparams, verbose::Bool
 
     eval1gradient = false # only for testing the adjoint gradient
 
+    # Kevin's: copy over initial conditions from pcof0 and run Gram-Schmidt to make them unitary
+    Wr_arr = Array{Matrix{Float64}}(undef, p.nTimeIntervals-1)
+    Wi_arr = Array{Matrix{Float64}}(undef, p.nTimeIntervals-1)
+    for interval = 1:p.nTimeIntervals-1
+        # initial conditions from pcof0 (determined by optimization)
+        offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
+        nMat = p.Ntot^2
+        Winit_r_tmp = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+        offc += nMat
+        
+        Winit_i_tmp = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+
+        # Run Gram-Schmidt, save result in Wr_arr, Wi_arr
+        Wr_arr[interval], Wi_arr[interval] = unitarize(Winit_r_tmp, Winit_i_tmp, false)
+    end
+    # end Kevin's
+
     # Split the time stepping into independent tasks in each time interval
     for interval = 1:p.nTimeIntervals - 1 # Lagrange multipliers are only defined for the intermediate time levels
 
@@ -1107,13 +1122,17 @@ function update_multipliers(pcof0::Array{Float64,1}, p::objparams, verbose::Bool
             Winit_i = p.Uinit_i
         else
             # initial conditions from pcof0 (determined by optimization)
-            offc = p.nAlpha + (interval-2)*p.nWinit # for interval = 2 the offset should be nAlpha
+            # offc = p.nAlpha + (interval-2)*p.nWinit # for interval = 2 the offset should be nAlpha
             # println("offset 1 = ", offc)
-            nMat = p.Ntot^2
-            Winit_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
-            offc += nMat
+            # nMat = p.Ntot^2
+            # Winit_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+            # offc += nMat
             # println("offset 2 = ", offc)
-            Winit_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+            # Winit_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+
+            # Kevin's mods (use modified initial conditions)
+            Winit_r = Wr_arr[interval-1]
+            Winit_i = Wi_arr[interval-1]
         end
 
         # Evolve the state under Schroedinger's equation
@@ -1129,14 +1148,16 @@ function update_multipliers(pcof0::Array{Float64,1}, p::objparams, verbose::Bool
         Uend_r[:,:] = (reInitOp[1] * Winit_r + imInitOp[1] * Winit_i) # real part of above expression
         Uend_i[:,:] = (reInitOp[2] * Winit_r + imInitOp[2] * Winit_i) # imaginary part
 
-        offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
+        #offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
         # println("offset 1 = ", offc)
-        nMat = p.Ntot^2
-        Wend_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
-        offc += nMat
+        #nMat = p.Ntot^2
+        #Wend_r = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+        #offc += nMat
         # println("offset 2 = ", offc)
-        Wend_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+        #Wend_i = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
 
+        Wend_r = Wr_arr[interval] # Kevin's
+        Wend_i = Wi_arr[interval] # Kevin's
         Cjump_r = Uend_r - Wend_r
         Cjump_i = Uend_i - Wend_i
 
@@ -1165,7 +1186,7 @@ function update_multipliers(pcof0::Array{Float64,1}, p::objparams, verbose::Bool
 end # function update_multipliers
 
 
-function lagrange_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = true)
+function lagrange_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = false)
     
     # shortcut to working_arrays object in p::objparams  
     w = p.wa
@@ -1217,6 +1238,7 @@ function lagrange_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = tru
         offc += nMat
         
         Winit_i_tmp = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+
         # Run Gram-Schmidt, save result in Wr_arr, Wi_arr
         Wr_arr[interval], Wi_arr[interval] = unitarize(Winit_r_tmp, Winit_i_tmp, false)
     end
@@ -1259,6 +1281,7 @@ function lagrange_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = tru
         # Uend = (reInitop[1] + i*reInitOp[2]) * Winit_r + (imInitOp[1] + i*imInitOp[2]) * Winit_i
         Uend_r = (reInitOp[1] * Winit_r + imInitOp[1] * Winit_i) # real part of above expression
         Uend_i = (reInitOp[2] * Winit_r + imInitOp[2] * Winit_i) # imaginary part
+        
         check_unitarity(Uend_r, Uend_i) # Kevin's
         if interval < p.nTimeIntervals
             #offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
@@ -1323,7 +1346,8 @@ function lagrange_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = tru
 
 end # function lagrange_obj
 
-function lagrange_grad(pcof0::Array{Float64,1},  p::objparams, objf_grad::Vector{Float64}, verbose::Bool = true)
+##################################################################
+function lagrange_grad(pcof0::Array{Float64,1},  p::objparams, objf_grad::Vector{Float64}, verbose::Bool = false)
     # shortcut to working_arrays object in p::objparams
     w = p.wa
 
