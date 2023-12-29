@@ -4,8 +4,8 @@ using Juqbox
 using Printf
 using Plots
 
-#include("two_sys_noguard.jl")
-include("three_sys_noguard.jl")
+include("two_sys_noguard.jl")
+#include("three_sys_noguard.jl")
 
 # assign the target gate, sqrt(Swap12)
 Vtg = get_swap_1d_gate(length(Ne))
@@ -19,7 +19,7 @@ target_gate = Vtg # sqrt(Vtg)
 fidType = 4 
 
 constraintType = 0 # 0: No constraints, 1: unitary constraints on initial conditions, 2: zero norm^2(jump) to make the state continuous across time intervals. Set to 1 for fidType = 2
-maxIter= 150 # 100 # 200 #100 # 200
+maxIter= 100 # 100 # 200 #100 # 200
 nOuter = 5 # 20 # Only the augmented Lagrangian method uses outer iters
 use_multipliers = true # Lagrange multipliers
 gammaJump =  0.1 # 5e-3 # 0.1 # initial value
@@ -59,7 +59,7 @@ for outerIt in 1:nOuter
     global pcof0, derivative_test, use_multipliers, ipopt_verbose
     println()
     println("Outer iteration # ", outerIt, " gammaJump = ", params.gammaJump, " Calling cgmin optimizer...")
-    cg_res = cgmin(lagrange_obj, lagrange_grad, pcof0, params, cgtol)
+    cg_res = cgmin(lagrange_obj, lagrange_grad, pcof0, params, cgtol=cgtol, maxIter=maxIter)
 
     global pcof = cg_res[1]
     

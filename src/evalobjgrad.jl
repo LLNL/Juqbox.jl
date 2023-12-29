@@ -1137,17 +1137,8 @@ function update_multipliers(pcof0::Array{Float64,1}, p::objparams, verbose::Bool
 
         # Evolve the state under Schroedinger's equation
         # NOTE: the S-V scheme treats the real and imaginary parts with different time integrators
-        # First compute the solution operator for a basis of real initial conditions: I
-        reInitOp = evolve_schroedinger(p, splinepar, p.T0int[interval], p.Uinit_r, p.Uinit_i, p.Tsteps[interval], eval1gradient)
+        Uend_r, Uend_i = evolve_schroedinger(p, splinepar, p.T0int[interval], Winit_r, Winit_i, p.Tsteps[interval], eval1gradient)
         
-        # Then a basis for purely imaginary initial conditions: iI
-        imInitOp = evolve_schroedinger(p, splinepar, p.T0int[interval], p.Uinit_i, p.Uinit_r, p.Tsteps[interval], eval1gradient)
-        
-        # Now we can  account for the initial conditions for this time interval and easily calculate the gradient wrt Winit
-        # Uend = (reInitop[1] + i*reInitOp[2]) * Winit_r + (imInitOp[1] + i*imInitOp[2]) * Winit_i
-        Uend_r[:,:] = (reInitOp[1] * Winit_r + imInitOp[1] * Winit_i) # real part of above expression
-        Uend_i[:,:] = (reInitOp[2] * Winit_r + imInitOp[2] * Winit_i) # imaginary part
-
         #offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
         # println("offset 1 = ", offc)
         #nMat = p.Ntot^2
@@ -1162,14 +1153,7 @@ function update_multipliers(pcof0::Array{Float64,1}, p::objparams, verbose::Bool
         Cjump_i = Uend_i - Wend_i
 
         # Jump in state at the end of interval k equals C^k = Uend^k - Wend^k (Ntot x Ntot matrices)
-        # evaluate continuity constraint (Frobenius norm squared of mismatch)
-        # nrm2_Cjump[interval] = norm( Cjump_r )^2 + norm( Cjump_i )^2
-
-        # objf += 0.5*p.gammaJump * nrm2_Cjump[interval] # accumulate contributions to the augemnted Lagrangian
-
-        # println("Sizes: p.Lmult_r = ", size(p.Lmult_r[interval]), " Uend_r = ", size(Uend_r), " Cjump_r = ", size(Cjump_r))
-        # Lmult_cont = -p.N*real(tracefidcomplex(p.Lmult_r[interval], p.Lmult_i[interval], Cjump_r, Cjump_i))
-
+        
         p.Lmult_r[interval][:,:] -= p.gammaJump * Cjump_r # Should be a negative sign according to N&W
         p.Lmult_i[interval][:,:] -= p.gammaJump * Cjump_i
 
@@ -1186,6 +1170,7 @@ function update_multipliers(pcof0::Array{Float64,1}, p::objparams, verbose::Bool
 end # function update_multipliers
 
 
+###########################################################
 function lagrange_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = false)
     
     # shortcut to working_arrays object in p::objparams  
@@ -1270,17 +1255,7 @@ function lagrange_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = fal
         end
 
         # Evolve the state under Schroedinger's equation
-        # NOTE: the S-V scheme treats the real and imaginary parts with different time integrators
-        # First compute the solution operator for a basis of real initial conditions: I
-        reInitOp = evolve_schroedinger(p, splinepar, p.T0int[interval], p.Uinit_r, p.Uinit_i, p.Tsteps[interval], eval1gradient)
-        
-        # Then a basis for purely imaginary initial conditions: iI
-        imInitOp = evolve_schroedinger(p, splinepar, p.T0int[interval], p.Uinit_i, p.Uinit_r, p.Tsteps[interval], eval1gradient)
-        
-        # Now we can  account for the initial conditions for this time interval and easily calculate the gradient wrt Winit
-        # Uend = (reInitop[1] + i*reInitOp[2]) * Winit_r + (imInitOp[1] + i*imInitOp[2]) * Winit_i
-        Uend_r = (reInitOp[1] * Winit_r + imInitOp[1] * Winit_i) # real part of above expression
-        Uend_i = (reInitOp[2] * Winit_r + imInitOp[2] * Winit_i) # imaginary part
+        Uend_r, Uend_i = evolve_schroedinger(p, splinepar, p.T0int[interval], Winit_r, Winit_i, p.Tsteps[interval], eval1gradient)
         
         check_unitarity(Uend_r, Uend_i) # Kevin's
         if interval < p.nTimeIntervals

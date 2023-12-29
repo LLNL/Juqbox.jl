@@ -2,17 +2,17 @@ using Printf
 using LinearAlgebra
 
 module OptimConstants
-    export N_mnbrak, golden_ratio, N_para, brent_ib, brent_eps, Cr, N_optim
+    export N_mnbrak, golden_ratio, N_para, brent_ib, brent_eps, Cr #, N_optim
     N_mnbrak::Int64 = 1e4;                     # number of maximum iterations for mnbrak
     golden_ratio = 0.5 * (1.0 + sqrt(5.0));
     N_para::Int64 = 1e4;                       # number of maximum iterations for linmin
-    brent_ib = 1.0e-1;                          # the size of initial step in line search, if nothing specified
+    brent_ib = 1.0e-1;                         # the size of initial step in line search, if nothing specified
     brent_eps = 1e-14;
     Cr = 1. - 1/golden_ratio;
-    N_optim::Int64 = 100;                          # number of maximum iterations for conjugate-gradient
+    # N_optim::Int64 = 100;                   # number of maximum iterations for conjugate-gradient. REPLACED by argument maxIter in cgmin()
 end
 
-using ..OptimConstants: N_mnbrak, golden_ratio, N_para, brent_ib, brent_eps, Cr, N_optim
+using ..OptimConstants: N_mnbrak, golden_ratio, N_para, brent_ib, brent_eps, Cr
 
 # Input arguments
 # %inputObjective: function to evaluate the objective functional
@@ -113,20 +113,20 @@ function brent(inputObjective::Function, pcof0::Vector{Float64}, xi::Vector{Floa
 end
 
 # Input arguments
-# %inputObjective: function to evaluate the objective functional
-# %inputGradient: function to evaluate the objective gradient
-# %pcof0: initial guess for design parameters
+# inputObjective: function to evaluate the objective functional
+# inputGradient: function to evaluate the objective gradient
+# pcof0: initial guess for design parameters
 # cgtol: gradient tolerance for optimization termination
 
 # Output arguments
-# %pmin: local minimum found from CG optimization
-# %Jmin: function value at pmin
-# %J_optim: Optimization history of objective functional (Not anymore)
-# %grad_optim: Optimization history of objective gradient magnitude (Not anymore)
+# %pmin: design variables at local minimum found from CG optimization
+# %Jmin: objective function value at pmin
+# %J_optim: Optimization history of objective functional (REMOVED)
+# %grad_optim: Optimization history of objective gradient magnitude (REMOVED)
 # j0: number of iterations executed to find the minimum
-function cgmin(inputObjective::Function, inputGradient::Function, pcof0::Vector{Float64}, params::objparams, cgtol::Float64 = 1.0e-8, Jtol::Float64 = 1.0e100)
-    # using OptimUtils: brent_ib, N_optim
-
+function cgmin(inputObjective::Function, inputGradient::Function, pcof0::Vector{Float64}, params::objparams; cgtol::Float64 = 1.0e-8, maxIter::Int64 = 100)
+# NOTE: In the Augmented-Lagrangian method the minimization is over the functional J, which may become negative at intermediate iterations due to the lagrange multiplier terms.
+# Setting the convergence criteria as J < Jtol is therefore not meaningful 
     pmin = copy(pcof0);
 
     nMat = params.Ntot^2
@@ -136,7 +136,7 @@ function cgmin(inputObjective::Function, inputGradient::Function, pcof0::Vector{
     grad_f = zeros(nCoeff)
 
     # Jmin, finalDist, _ = inputObjective(pmin, params);
-    # J_optim = zeros(N_optim + 1, 2 + (params.nTimeIntervals-1));
+    # J_optim = zeros(maxIter + 1, 2 + (params.nTimeIntervals-1));
     # J_optim[1, 1] = Jmin
     # J_optim[1, 2] = finalDist
     # J_optim[1, 3:end] = params.nrm2_Cjump[:]
@@ -155,7 +155,7 @@ function cgmin(inputObjective::Function, inputGradient::Function, pcof0::Vector{
         inf_jump = 0.0
     end
     push!(params.constraintViolationHist, inf_jump)
-    # grad_optim = zeros(N_optim + 1, 2 + (params.nTimeIntervals-1));
+    # grad_optim = zeros(maxIter + 1, 2 + (params.nTimeIntervals-1));
     # grad_optim[1, 1] = gg0;
     # grad_optim[1, 2] = dot(g[1:params.nAlpha], g[1:params.nAlpha]);
     # for itv = 1:params.nTimeIntervals-1
@@ -165,14 +165,12 @@ function cgmin(inputObjective::Function, inputGradient::Function, pcof0::Vector{
         # grad_optim[1, 2+itv] = dot(g[offc+1:offc+params.nWinit], g[offc+1:offc+params.nWinit]);
     # end
 
-    stepsize = zeros(N_optim);
-
     b0 = brent_ib / sqrt(gg0);
 
     j0 = 0;
-    for j=1:N_optim
-        pmin, Jmin, stepsize[j] = brent(inputObjective, pmin, xi, params, b0);
-        b0 = stepsize[j];
+    for j=1:maxIter
+        pmin, Jmin, newStep = brent(inputObjective, pmin, xi, params, b0);
+        b0 = newStep;
 
         # evaluate one more time to obtain sub-objective functional.
         # J_optim[j+1, 1], J_optim[j+1, 2], _ = inputObjective(pmin, params)
@@ -208,9 +206,9 @@ function cgmin(inputObjective::Function, inputGradient::Function, pcof0::Vector{
         gg1 = dot(g, xi);
         nu = abs(gg1 / dgg1);
         
-        if ((dgg1 < cgtol) && (Jmin < Jtol))
+        if dgg1 < cgtol # AP: could add other convergence criteria here, e.g., infid<threshold
             j0 = j;
-            println("CG minimization finished.")
+            println("CG found local minima with norm^2(grad) = ", dgg1, " < ", cgtol)
             break;
         end
             
@@ -227,7 +225,7 @@ function cgmin(inputObjective::Function, inputGradient::Function, pcof0::Vector{
         g = -xi; xi = g + gamma * h; h = copy(xi);
         j0 = j;
     end
-    println("CG-min finished in: ", j0, " iterations, out of max: ", N_optim)
+    println("CG-min finished in: ", j0, " iterations, out of max: ", maxIter)
     # return pmin, Jmin, J_optim, grad_optim, stepsize, j0
-    return pmin, Jmin, stepsize, j0
+    return pmin, Jmin, j0
 end
