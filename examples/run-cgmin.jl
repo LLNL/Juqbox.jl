@@ -4,8 +4,8 @@ using Juqbox
 using Printf
 using Plots
 
-include("two_sys_noguard.jl")
-#include("three_sys_noguard.jl")
+#include("two_sys_noguard.jl")
+include("three_sys_noguard.jl")
 
 # assign the target gate, sqrt(Swap12)
 Vtg = get_swap_1d_gate(length(Ne))
@@ -19,15 +19,15 @@ target_gate = Vtg # sqrt(Vtg)
 fidType = 4 
 
 constraintType = 0 # 0: No constraints, 1: unitary constraints on initial conditions, 2: zero norm^2(jump) to make the state continuous across time intervals. Set to 1 for fidType = 2
-maxIter= 100 # 100 # 200 #100 # 200
-nOuter = 5 # 20 # Only the augmented Lagrangian method uses outer iters
+maxIter= 50 # 100 # 200 #100 # 200
+nOuter = 20 # 20 # Only the augmented Lagrangian method uses outer iters
 use_multipliers = true # Lagrange multipliers
 gammaJump =  0.1 # 5e-3 # 0.1 # initial value
 gammaMax = 100.0
-gammaFactor = 1.5 # 2.0
+gammaFactor = 1.2 # 1.1 # 1.5 # 2.0
 derivative_test = true # false # true
 
-nTimeIntervals = 5 # 3 # 6 # 4 # 3 # 3 # 2 # 1
+nTimeIntervals = 10 # 3 # 6 # 4 # 3 # 3 # 2 # 1
 
 retval = setup_std_model(Ne, Ng, f01, xi, xi12, couple_type, rot_freq, T, D1, target_gate, maxctrl_MHz=maxctrl_MHz, msb_order=msb_order, initctrl_MHz=initctrl_MHz, rand_seed=rand_seed, Pmin=Pmin, cw_prox_thres=cw_prox_thres, cw_amp_thres=cw_amp_thres, use_carrier_waves=use_carrier_waves, nTimeIntervals=nTimeIntervals, zeroCtrlBC=zeroCtrlBC, gammaJump=gammaJump, fidType=fidType, constraintType=constraintType)
 
@@ -38,9 +38,9 @@ maxAmp = retval[3];
 params.traceInfidelityThreshold = 0.0 # NOTE: Only measure the infidelity in the last interval
 params.objThreshold = -1.0e10 # total objective may go negative with the Augmented-Lagrange method
 rollout_infid_threshold = 1e-5
-cgtol = 1.0e-5
+cgtol = 1.0e-8 # 1.0e-5 # COnvergence criteria in cgmin()
 
-params.tik0 = 0.0 # 1.0e-2 # 1.0 # Adjust Tikhonov coefficient
+params.tik0 = 0.1 # 1.0e-2 # 1.0 # Adjust Tikhonov coefficient
 
 params.quiet = false # true # run ipopt in quiet mode
 
