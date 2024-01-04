@@ -497,12 +497,12 @@ function intermediate_par(
     if params.saveConvHist 
         push!(params.objHist, abs(obj_value)) # can be negative for Aug-Lag
         push!(params.dualInfidelityHist, inf_du)
-        push!(params.primaryHist, params.lastTraceInfidelity)
+        push!(params.primaryHist, params.lastTraceInfidelity) # infidelity
         push!(params.secondaryHist,  params.lastLeakIntegral)
         if params.constraintType == 0 && params.nTimeIntervals > 1 # Aug-Lagrange
-            inf_jump = sqrt(maximum(params.nrm2_Cjump))
+            inf_jump = maximum(params.nrm2_Cjump) # norm-squared scales the same as the infidelity
         else
-            inf_jump = inf_pr
+            inf_jump = inf_pr^2
         end
         push!(params.constraintViolationHist, inf_jump)
     end

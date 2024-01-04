@@ -7,12 +7,13 @@ module OptimConstants
     golden_ratio = 0.5 * (1.0 + sqrt(5.0));
     N_para::Int64 = 1e4;                       # number of maximum iterations for linmin
     brent_ib = 1.0e-1;                         # the size of initial step in line search, if nothing specified
-    brent_eps = 1e-14;
-    Cr = 1. - 1/golden_ratio;
+    brent_eps = 1e-14
+    Cr = 1. - 1/golden_ratio
+    rel_conv_threshold = 1e-4                 # alt. stopping criteria
     # N_optim::Int64 = 100;                   # number of maximum iterations for conjugate-gradient. REPLACED by argument maxIter in cgmin()
 end
 
-using ..OptimConstants: N_mnbrak, golden_ratio, N_para, brent_ib, brent_eps, Cr
+using ..OptimConstants: N_mnbrak, golden_ratio, N_para, brent_ib, brent_eps, Cr, rel_conv_threshold
 
 # Input arguments
 # %inputObjective: function to evaluate the objective functional
@@ -145,12 +146,12 @@ function cgmin(inputObjective::Function, inputGradient::Function, pcof0::Vector{
     g = -grad_f; xi = copy(g); h = copy(g);
     gg0 = dot(g, g);
 
-    push!(params.objHist, abs(Jmin))
-    push!(params.dualInfidelityHist, sqrt(gg0))
-    push!(params.primaryHist, infid)
+    push!(params.objHist, abs(Jmin)) # Total objective (can go negative)
+    push!(params.dualInfidelityHist, sqrt(gg0)) # Norm(grad)
+    push!(params.primaryHist, infid) # Infidelity
     push!(params.secondaryHist, 0.0) # no leakage
     if params.constraintType == 0 && params.nTimeIntervals > 1 
-        inf_jump = sqrt(maximum(params.nrm2_Cjump)) # norm of state discontinuity
+        inf_jump = maximum(params.nrm2_Cjump) # norm-squared of state discontinuity (scales as the infidelity)
     else
         inf_jump = 0.0
     end
@@ -185,12 +186,12 @@ function cgmin(inputObjective::Function, inputGradient::Function, pcof0::Vector{
 
         # @printf("Norm(grad)^2: %.3E\n", dgg1);
 
-        push!(params.objHist, abs(Jmin))
-        push!(params.dualInfidelityHist, sqrt(dgg1))
-        push!(params.primaryHist, infid)
+        push!(params.objHist, abs(Jmin)) # Total objective (can go negative)
+        push!(params.dualInfidelityHist, sqrt(gg) ) # sqrt(dgg1)) # Norm(grad)
+        push!(params.primaryHist, infid) # Infidelity
         push!(params.secondaryHist, 0.0) # no leakage
         if params.constraintType == 0 && params.nTimeIntervals > 1 
-            inf_jump = sqrt(maximum(params.nrm2_Cjump)) # norm of state discontinuity
+            inf_jump = maximum(params.nrm2_Cjump) # norm-squared of state discontinuity (scales as the infidelity)
         else
             inf_jump = 0.0
         end
@@ -208,10 +209,15 @@ function cgmin(inputObjective::Function, inputGradient::Function, pcof0::Vector{
         
         if dgg1 < cgtol # AP: could add other convergence criteria here, e.g., infid<threshold
             j0 = j;
-            println("CG found local minima with norm^2(grad) = ", dgg1, " < ", cgtol)
+            println("CGmin: found local minima with norm^2(grad) = ", dgg1, " < ", cgtol)
+            break;
+        elseif dgg1 < rel_conv_threshold * gg0
+            j0 = j;
+            println("CGmin: norm2(grad) = ", dgg1, " < ", rel_conv_threshold, " * initial norm2(grad) = ", gg0)
             break;
         end
             
+        # apply nonlinear GC update rules
         gamma = dgg / gg;
         gamma_FR = dgg1 / gg;
         if (j >= 2)

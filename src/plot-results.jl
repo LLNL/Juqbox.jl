@@ -46,7 +46,7 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
             #ftot, finalDist, tp = Juqbox.lagrange_obj(pcof, params, false)
             #println("Target type: ", params.pFidType, " total obj = ", ftot, " final distance = ", finalDist, " Tikhonov = ", tp, " max(Cjump) = ", sqrt(maximum(params.nrm2_Cjump)))
         # end
-        println("Target type: ", params.pFidType, " Constraint type: ", params.constraintType, " max(||Cjump||) = ", sqrt(maximum(params.nrm2_Cjump)))      
+        println("Target type: ", params.pFidType, " Constraint type: ", params.constraintType, " max(||Cjump||^2) = ", maximum(params.nrm2_Cjump))      
     end
     
     # save convergence history

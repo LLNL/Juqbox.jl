@@ -43,7 +43,7 @@ ncores = 4 # prod(Ne)
 
 #Initialize first ctrl vector with random numbers, with amplitude rand_amp
 # Note: neeed by setup_std_model()
-initctrl_MHz = 10.0 # amplitude for initial random guess of B-spline coeff's
+initctrl_MHz = 1.0 # amplitude for initial random guess of B-spline coeff's
 rand_seed = 5432 # 2345
 
 # Tikhonov coeff
