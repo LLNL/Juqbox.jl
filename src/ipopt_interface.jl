@@ -510,9 +510,10 @@ function intermediate_par(
         println("Stopping because objective value = ", obj_value,
                 " < threshold = ", params.objThreshold)        
         return false
-    elseif params.lastTraceInfidelity < params.traceInfidelityThreshold
+    elseif params.lastTraceInfidelity < params.traceInfidelityThreshold && inf_jump < params.discontThreshold
         println("Stopping because trace infidelity = ", params.lastTraceInfidelity,
-                " < threshold = ", params.traceInfidelityThreshold)        
+                " < threshold = ", params.traceInfidelityThreshold, " and norm^2(Jump) = ", inf_jump,
+                " < threshold = ", params.discontThreshold)        
         return false
     else
         return true  # Keep going
@@ -588,15 +589,20 @@ function ipopt_setup(params:: Juqbox.objparams, nCoeff:: Int64, maxAmp:: Vector{
         g_L = zeros(0);
         g_U = zeros(0);
 
-        # callback functions need access to the params object
-        # eval_f1(pcof) = eval_f_par1(pcof, params, nodes, weights)
-        # eval_grad_f1(pcof, grad_f) = eval_grad_f_par1(pcof, grad_f, params, nodes, weights)
-        # to support fidType = 1, use lagrange_objgrad()
-        eval_f1(pcof) = eval_f_par2(pcof, params)
-        eval_grad_f1(pcof, grad_f) = eval_grad_f_par2(pcof, grad_f, params)
-        
-        # setup the Ipopt data structure
-        prob = CreateIpoptProblem( nCoeff, minCoeff, maxCoeff, nConst, g_L, g_U, nEleJac, nEleHess, eval_f1, eval_g_empty, eval_grad_f1, eval_jac_g_empty, eval_h);
+        if params.nTimeIntervals == 1
+            # callback functions need access to the params object
+            eval_f1(pcof) = eval_f_par1(pcof, params, nodes, weights)
+            eval_grad_f1(pcof, grad_f) = eval_grad_f_par1(pcof, grad_f, params, nodes, weights)
+            # setup the Ipopt data structure
+            prob = CreateIpoptProblem( nCoeff, minCoeff, maxCoeff, nConst, g_L, g_U, nEleJac, nEleHess, eval_f1, eval_g_empty, eval_grad_f1, eval_jac_g_empty, eval_h);
+        else
+            # to support fidType = 1, use lagrange_objgrad()
+            eval_f2(pcof) = eval_f_par2(pcof, params)
+            eval_grad_f2(pcof, grad_f) = eval_grad_f_par2(pcof, grad_f, params)
+            
+            # setup the Ipopt data structure
+            prob = CreateIpoptProblem( nCoeff, minCoeff, maxCoeff, nConst, g_L, g_U, nEleJac, nEleHess, eval_f2, eval_g_empty, eval_grad_f2, eval_jac_g_empty, eval_h);
+        end
     elseif params.constraintType == 1 
         # unitary equality constraints on intermediate initial conditions and zero norm(jump)^2 constraints
         params.nConstUnitary = (params.nTimeIntervals - 1) * params.Ntot^2
@@ -615,8 +621,8 @@ function ipopt_setup(params:: Juqbox.objparams, nCoeff:: Int64, maxAmp:: Vector{
         g_U = zeros(nConst);
 
         # callback functions need access to the params object
-        eval_f2(pcof) = eval_f_par3(pcof, params) # eval_f_par2(pcof, params)
-        eval_grad_f2(pcof, grad_f) = eval_grad_f_par3(pcof, grad_f, params) #eval_grad_f_par2(pcof, grad_f, params)
+        eval_f3(pcof) = eval_f_par3(pcof, params) # eval_f_par2(pcof, params)
+        eval_grad_f3(pcof, grad_f) = eval_grad_f_par3(pcof, grad_f, params) #eval_grad_f_par2(pcof, grad_f, params)
         
         # callbacks for evaluating the constraints and their Jacobian
         eval_g4(pcof, g) = eval_g_par4(pcof, g, params) 
@@ -627,7 +633,7 @@ function ipopt_setup(params:: Juqbox.objparams, nCoeff:: Int64, maxAmp:: Vector{
         println("params.nEleJacUnitary = ", params.nEleJacUnitary, " nEleJac = ", nEleJac)
 
         # setup the Ipopt data structure
-        prob = CreateIpoptProblem( nCoeff, minCoeff, maxCoeff, nConst, g_L, g_U, nEleJac, nEleHess, eval_f2, eval_g4, eval_grad_f2, eval_jac_g4, eval_h)
+        prob = CreateIpoptProblem( nCoeff, minCoeff, maxCoeff, nConst, g_L, g_U, nEleJac, nEleHess, eval_f3, eval_g4, eval_grad_f3, eval_jac_g4, eval_h)
     elseif params.constraintType == 2 
         # zero norm^2(jump) across time intervals
         nConst = (params.nTimeIntervals - 1) # one constraint per intermediate initial condition
@@ -644,13 +650,9 @@ function ipopt_setup(params:: Juqbox.objparams, nCoeff:: Int64, maxAmp:: Vector{
         # testing the finalDist + gamma*norm^2(jump) objective
         # combined with equality constraints for norm^2(jump)=0
         
-        # call lagrange_obj/grad, penalizes the c2norm and includes lagrange multipliers
-        #eval_f3(pcof) = eval_f_par2(pcof, params)
-        #eval_grad_f3(pcof, grad_f) = eval_grad_f_par2(pcof, grad_f, params)
-        
         # call final_obj/grad
-        eval_f3(pcof) = eval_f_par3(pcof, params)
-        eval_grad_f3(pcof, grad_f) = eval_grad_f_par3(pcof, grad_f, params)
+        eval_f_cons2(pcof) = eval_f_par3(pcof, params)
+        eval_grad_f_cons2(pcof, grad_f) = eval_grad_f_par3(pcof, grad_f, params)
         
         # callbacks for evaluating the constraints and their Jacobian
         # call c2norm_constraint
@@ -659,7 +661,7 @@ function ipopt_setup(params:: Juqbox.objparams, nCoeff:: Int64, maxAmp:: Vector{
         eval_jac_g3(pcof, rows, cols, jac_g) = eval_jac_g_par3(pcof, rows, cols, jac_g, params)
 
         # setup the Ipopt data structure
-        prob = CreateIpoptProblem( nCoeff, minCoeff, maxCoeff, nConst, g_L, g_U, nEleJac, nEleHess, eval_f3, eval_g3, eval_grad_f3, eval_jac_g3, eval_h)
+        prob = CreateIpoptProblem( nCoeff, minCoeff, maxCoeff, nConst, g_L, g_U, nEleJac, nEleHess, eval_f_cons2, eval_g3, eval_grad_f_cons2, eval_jac_g3, eval_h)
     elseif params.constraintType == 4 
         # zero jump in state across time intervals
        nConst = (params.nTimeIntervals - 1)*params.nWinit # 2*N^2 constraint per intermediate initial condition

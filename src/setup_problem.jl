@@ -212,9 +212,20 @@ function eigen_and_reorder(H0::Union{Matrix{ComplexF64},Matrix{Float64}}, is_ess
     Ntot = size(H0_eigen.vectors,1)
     @assert(size(H0_eigen.vectors,2) == Ntot) #only square matrices
 
+    if verbose
+        println("H0/2*pi (original):")
+        for i in 1:Ntot
+            for j in 1:Ntot
+                @printf("%+6.2e, ", H0[i,j]*0.5/pi)
+            end
+            @printf("\n")
+        end
+    end
+    
     # test
     if verbose
-        println("H0 eigenvalues (before sorting):", H0_eigen.values)
+        println()
+        println("H0/2*pi eigenvalues (before sorting):", H0_eigen.values.*0.5./pi)
     end
 
     # look for the largest element in each column
@@ -401,7 +412,7 @@ function eigen_and_reorder(H0::Union{Matrix{ComplexF64},Matrix{Float64}}, is_ess
     s_perm = sortperm(maxrow)
 
     if verbose
-        # println("s_perm = ", s_perm)
+        println("s_perm = ", s_perm)
         # println("max_col = ", max_col)
         println("max|s_perm - max_col| = ", maximum(abs.(s_perm - max_col)))
     end
@@ -422,10 +433,16 @@ function eigen_and_reorder(H0::Union{Matrix{ComplexF64},Matrix{Float64}}, is_ess
     #     end
     #     @printf("\n")
     # end
-    # println("Utrans = H0_eigen.vectors (re-ordered):")
-    # for i in 1:Ntot
-    #     println(Utrans[i,:])
-    # end
+    if verbose
+        println("Utrans = H0_eigen.vectors (re-ordered):")
+        for i in 1:Ntot
+            for j in 1:Ntot
+                @printf("%+6.2e, ", Utrans[i,j])
+            end
+            @printf("\n")
+        end
+    end
+
     # Check orthonormality
     Id_tot = Array{Float64, 2}(I, Ntot, Ntot)
     uniTest = norm(Utrans' * Utrans - Id_tot)
@@ -434,7 +451,11 @@ function eigen_and_reorder(H0::Union{Matrix{ComplexF64},Matrix{Float64}}, is_ess
         throw(error("Something went wrong with the diagonalization"))
     end
 
-    return H0_eigen.values[s_perm[:]], Utrans
+    if verbose
+        println("Exiting eigen_and_reorder()\n")
+    end
+
+    return H0_eigen.values[s_perm[:]], Utrans, s_perm
 end
 
 function exists(x::Float64, invec::Vector{Float64}, prox_thres::Float64 = 5e-3)
@@ -470,9 +491,12 @@ function identify_essential_levels(Ness::Vector{Int64}, Nt::Vector{Int64}, msb_o
     if msb_order
         for ind in R
             itot += 1
+            ess = true
             for j = 1:Nosc
                 it2in[itot,j] = ind[j] - 1 # MSB ordering is the default for CartesianIndices
+                ess = ess && ind[j] <= Ness[j]
             end
+            is_ess[itot] = ess
         end
     else
         for ind in R
@@ -512,7 +536,7 @@ function get_resonances(is_ess::Vector{Bool}, it2in::Matrix{Int64};Ness::Vector{
     # end
 
     # Note: if Hsys is diagonal, then Hsys_evals = diag(Hsys) and Utrans = IdentityMatrix
-    Hsys_evals, Utrans = eigen_and_reorder(Hsys, is_ess, verbose)
+    Hsys_evals, Utrans, s_perm = eigen_and_reorder(Hsys, is_ess, verbose)
 
     # H0diag = Utrans' * Hsys * Utrans
     # println("get_resonances: H0diag = Utrans' * Hsys * Utrans:")
@@ -527,7 +551,7 @@ function get_resonances(is_ess::Vector{Bool}, it2in::Matrix{Int64};Ness::Vector{
     ka_delta = Hsys_evals./(2*pi) 
 
     if verbose
-        println("Hsys eigenvals/(2*pi):")
+        println("Hsys eigenvals/(2*pi) (re-ordered):")
         println(ka_delta)
     end
 
@@ -543,9 +567,30 @@ function get_resonances(is_ess::Vector{Bool}, it2in::Matrix{Int64};Ness::Vector{
         #Hctrl_ad = Hsym_ops[q] - Hanti_ops[q] # raising op
         #Hctrl_ad_trans = Utrans' * Hctrl_ad * Utrans
 
+        # re-order ctrl Hamiltonians to be consistent with ka_delta = Hsys_evals./(2*pi) ???
+        # Hs_q = Hsym_ops[q]
+        # Hsym_reo = Hs_q[:,s_perm[:]]
+        # Ha_q = Hanti_ops[q]
+        # Hanti_reo = Ha_q[:,s_perm[:]]
+        
         # look for resonances in both the symmetric and anti-symmetric control Hamiltonians
         Hsym_trans = Utrans' * Hsym_ops[q] * Utrans
         Hanti_trans = Utrans' * Hanti_ops[q] * Utrans
+        # Hsym_trans = Utrans' * Hsym_reo * Utrans
+        # Hanti_trans = Utrans' * Hanti_reo * Utrans
+
+        if verbose
+            println()
+            println("get_resonances: q = ", q, " Matrix 1 = Hsym_trans = Utrans' * Hsym_op[q] * Utrans:")
+            for i in 1:Ntot
+                for j in 1:Ntot
+                    @printf("%+6.2e, ", Hsym_trans[i,j])
+                end
+                @printf("\n")
+            end
+            println()
+        end
+
         #initialize
         resonances_a =zeros(0)
         speed_a = zeros(0)
@@ -572,7 +617,7 @@ function get_resonances(is_ess::Vector{Bool}, it2in::Matrix{Int64};Ness::Vector{
                                 append!(resonances_a, delta_f)
                                 append!(speed_a, abs(Hc_trans[i,j]))
                                 #println(" resonance from (i1 i2 i3 i4) = (", it2i1[j], it2i2[j], it2i3[j], it2i4[j], ") to (i1 i2 i3 i4) = (", it2i1[i], it2i2[i], it2i3[i], it2i4[i], "), Freq = ", delta_f, " = l_", i, " - l_", j, ", ad_coeff=", abs(Hc_trans[i,j]))
-                                println(" resonance from (j-idx) = (", it2in[j,:], ") to (i-idx) = (", it2in[i,:], "), lab-freq = ", rot_freq[q] + delta_f, " = l_", i, " - l_", j, ", ad_coeff=", abs(Hc_trans[i,j]))
+                                println(" resonance from (j=", j ,") = (", it2in[j,:], ") to (i=", i ,") = (", it2in[i,:], "), lab-freq = ", rot_freq[q] + delta_f, " = l_", i, " - l_", j, ", ad_coeff=", abs(Hc_trans[i,j]))
                             # else
                             #     println("Info, skipping frequency: ", delta_f, " Too close to previous frequencies")
                             end
@@ -684,6 +729,7 @@ function sort_and_cull_carrier_freqs(Nosc::Int64, Nfreq::Vector{Int64}, om::Vect
 
     println("\nSorted and culled CW freq's:")
     for q = 1:Nosc
+      println("Ctrl Hamiltonian # ", q, ", rot frame carrier frequencies: ", om[q]./(2*pi), " [GHz]")
       println("Ctrl Hamiltonian # ", q, ", lab frame carrier frequencies: ", rot_freq[q] .+ om[q]./(2*pi), " [GHz]")
       println("Ctrl Hamiltonian # ", q, ",                   growth rate: ", growth_rate[q], " [1/ns]")
     end
@@ -1050,10 +1096,10 @@ Setup a Hamiltonian model, parameters for numerical time stepping, a target unit
 
     is_ess, it2in = identify_essential_levels(Ne, Ne+Ng, msb_order)
 
-    # println("Results from identify_essential_levels:")
-    # for j = 1:length(is_ess)
-    #     println("j: ", j, " it2in[j,:]: ", it2in[j,:], " is_ess[j]: ", is_ess[j])
-    # end
+    println("Results from identify_essential_levels:")
+    for j = 1:length(is_ess)
+        println("j: ", j, " it2in[j,:]: ", it2in[j,:], " is_ess[j]: ", is_ess[j])
+    end
 
     Nosc = length(Hsym_ops)
     @assert(Nosc == pdim) # Nosc must equal pdim

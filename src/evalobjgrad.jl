@@ -235,6 +235,7 @@ mutable struct objparams
 
     objThreshold :: Float64
     traceInfidelityThreshold :: Float64
+    discontThreshold :: Float64
     lastTraceInfidelity :: Float64
     lastLeakIntegral :: Float64    
 
@@ -414,6 +415,7 @@ mutable struct objparams
 
         objThreshold = 0.0
         traceInfidelityThreshold = 0.0
+        discontThreshold = 0.0
         usingPriorCoeffs = false
         priorCoeffs = [] # zeros(0)
 
@@ -551,7 +553,7 @@ mutable struct objparams
              objFuncType, leak_ubound,
              0.0,0.0,zeros(0),zeros(0),zeros(0),saveConvHist,
              zeros(0), zeros(0), zeros(0), zeros(0), zeros(0),
-             linear_solver, objThreshold, traceInfidelityThreshold, 0.0, 0.0, 
+             linear_solver, objThreshold, traceInfidelityThreshold, discontThreshold, 0.0, 0.0, 
              usingPriorCoeffs, priorCoeffs, quiet, Rfreq, false, [],
              real(my_dVds), imag(my_dVds), my_sv_type, wa, nCoeff, D1, nAlpha, nWinit,
              freq01, self_kerr, couple_coeff, couple_type, # Add some checks for these ones!

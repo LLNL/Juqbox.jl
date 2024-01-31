@@ -1,21 +1,3 @@
-#==========================================================
-This routine initializes an optimization problem to recover 
-a CNOT gate on a single qudit with 4 energy levels (and 2 
-guard states). The drift Hamiltonian in the rotating frame 
-is
-              H_0 = - 0.5*ξ_a(a^†a^†aa),
-where a is the annihilation operator for the qudit. 
-Here the control Hamiltonian includes the usual symmetric 
-and anti-symmetric terms 
-     H_{sym} = p(t)(a + a^†),    H_{asym} = q(t)(a - a^†)
-which come from the rotating frame approximation and hence 
-we refer to these as "coupled" controls.
-The problem parameters are:
-                ω_a =  2π × 4.10595   Grad/s,
-                ξ_a =  2π × 2(0.1099) Grad/s.
-We use Bsplines with carrier waves with frequencies
-0, ξ_a, 2ξ_a Grad/s.
-==========================================================# 
 using LinearAlgebra
 using Plots
 using FFTW
@@ -33,63 +15,64 @@ Ng = [2] # Number of extra guard levels
 Ntot = prod(Ne + Ng) # Total number of energy levels
 
 # frequencies (in GHz, will be multiplied by 2*pi to get angular frequencies in the Hamiltonian matrix)
-fa = [3.445779438]
-xa = [-0.208343564]
-rot_freq = copy(fa)
+f01 = [3.448646] # [3.445779438]
+xi = [-0.208396]; # [-0.208343564]
+xi12 = zeros(0)
+couple_type = 1 # only to define all args
+rot_freq = copy(f01)
 
-# form the Hamiltonian matrices
-H0, Hsym_ops, Hanti_ops = hamiltonians_one_sys(Ness=Ne, Nguard=Ng, freq01=fa, anharm=xa, rot_freq=rot_freq)
+T = 300.0 # 250.0 # Duration of gate
 
-maxctrl = 0.001*2*pi * 3.0 #  15.0 MHz (approx) max amplitude for each (p & q) control function
+dtau = 10.0 # 3.33
+D1 = ceil(Int64,T/dtau) + 2
+D1 = max(D1,5)
 
-# calculate resonance frequencies
-om, Nfreq, Utrans = get_resonances(Ness=Ne, Nguard=Ng, Hsys=H0, Hsym_ops=Hsym_ops)
+# Points per shortest period
+Pmin = 40 # 60 # 40 # 80
 
-Nctrl = length(om)
+# bounds on the ctrl vector elements (rot frame)
+# This number is divided by Nfreq
+maxctrl_MHz = 20.0 # 30.0 # ?
 
-println("Nctrl = ", Nctrl, " Nfreq = ", Nfreq)
+# Internal ordering of the basis for the state vector
+# msb_order = true # | i3, i2, i1> = |i3> \kron |i2> \kron |i1> 
+msb_order = false # | i1, i2, i3> = |i1> \kron |i2> \kron |i3> (compatible with quandary)
 
-maxAmp = maxctrl*ones(Nctrl) # Note: Here we only have one control Hamiltonian
+initctrl_MHz = 1.0 # amplitude for initial random guess of B-spline coeff's
+rand_seed = 5432 # 2345
 
-for q = 1:Nctrl
-     println("Carrier frequencies in ctrl Hamiltonian # ", q, " [GHz]: ", om[q]./(2*pi))
-     # println("Amplitude bounds for p & q-functions in system # ", q, " [GHz]: ", maxAmp[q,:]./(2*pi))
- end
+# Tikhonov coeff
+tikCoeff = 1e-2 # 1.0 # 0.1
 
-T = 250.0 # Duration of gate
-# Estimate time step
-nsteps = calculate_timestep(T, H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, maxCoupled=maxAmp, Pmin=40)
-println("Duration T = ", T, " # time steps: ", nsteps)
+cw_amp_thres = 1e-7 # Include cross-resonance
+cw_prox_thres = 1e-2 # 1e-2 # 1e-3
 
-# CNOT target
+use_carrier_waves = true # false
+
+zeroCtrlBC = true # Impose zero boundary conditions for each B-spline segemnt
+
+# SWAP02 target
 gate_swap02 =  zeros(ComplexF64, Ne[1], Ne[1])
 gate_swap02[1,3] = 1.0
 gate_swap02[2,2] = 1.0
 gate_swap02[3,1] = 1.0
 
-# Initial basis with guard levels
-U0 = initial_cond(Ne, Ng)
-utarget = U0 * gate_swap02 # Add zero rows for the guard levels
+fidType = 2 # fidType = 1 for Frobenius norm^2, or fidType = 2 for Infidelity, or fidType = 3 for infid^2
 
-# create a linear solver object
-linear_solver = Juqbox.lsolver_object(solver=Juqbox.JACOBI_SOLVER, max_iter=100, tol=1e-12, nrhs=prod(Ne))
+retval = setup_std_model(Ne, Ng, f01, xi, xi12, couple_type, rot_freq, T, D1, gate_swap02, maxctrl_MHz=maxctrl_MHz, msb_order=msb_order, initctrl_MHz=initctrl_MHz, rand_seed=rand_seed, Pmin=Pmin, cw_prox_thres=cw_prox_thres, cw_amp_thres=cw_amp_thres, use_carrier_waves=use_carrier_waves, fidType=fidType)
+#true)
 
-# number of B-splines per ctrl/freq/real-imag
-D1 = 78
-NfreqTot = sum(Nfreq)
-nCoeff = 2*D1*NfreqTot
+params = retval[1]
+pcof0 = retval[2]
+maxAmp = retval[3];
 
-maxrand = 0.01*maxctrl/Nfreq[1]  # amplitude of the random control vector
-pcof0 = init_control(Nctrl=Nctrl, Nfreq=Nfreq, maxrand=maxrand, nCoeff=nCoeff, seed=12456)
+params.traceInfidelityThreshold = 1e-5 # better than 0.99999 fidelity
+maxIter = 200 # only 12 are needed
 
-params = Juqbox.objparams(Ne, Ng, T, nsteps, Uinit=U0, Utarget=utarget, Cfreq=om, Rfreq=rot_freq, Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, linear_solver=linear_solver, nCoeff=length(pcof0))
+println("Setup complete")
 
-params.tik0 = 1e-2
+println("Calling run_optimizer")
+pcof = run_optimizer(params, pcof0, maxAmp, maxIter=maxIter)
+pl = plot_results(params, pcof)
 
-println("*** Settings ***")
-println("Number of coefficients per spline = ", D1, " Total number of control parameters = ", length(pcof0))
-println("Tikhonov coefficients: tik0 = ", params.tik0)
-println()
-println("Problem setup (Hamiltonian, carrier freq's, time-stepper, etc) is stored in 'params' object")
-println("Initial coefficient vector is stored in 'pcof0' vector")
-println("Max control amplitudes is stored in 'maxAmp' vector")
+println("IPOpt iteration completed")

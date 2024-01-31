@@ -139,7 +139,7 @@ function write_Quandary_config_file(configfilename::String, Nt::Vector{Int64}, N
 # runIdx can be 1=simulation, 2=gradient, or 3=optimization
 """
     qres = run_Quandary(params, pcof0, maxAmp; 
-                        runIdx = 3, maxIter = 100, ncores = 1, quandary_exec = "./main", 
+                        runIdx = 3, maxIter = 100, ncores = 1, runQuandary = false, quandary_exec = "./main", 
                         print_frequency_iter = 1, gamma_dpdm = 0.0, gamma_energy = 0.0, 
                         final_objective = 1, splines_real_imag::Bool = true, phase_scaling_factor::Float64=1.0)
 
@@ -154,6 +154,7 @@ Execute the Quandary solver in a sub-process to perform either a forward simulat
 - `runIdx::Int64 = 3`: Use `1` for simulation, `2` for the gradient, and `3` for optimization (default)
 - `maxIter::Int64 = 100`: Maximum number of optimization iterations
 - `ncores::Int64 = 1`:  Number of MPI-tasks to use. Must be evenly divisible by the total number of essential states
+- `runQuandary = false`: Set to `true` to execute the quandary code
 - `quandary_exec::String="./main"`: Quandary executable
 - `print_frequency_iter::Int64 = 1`: Output frequency for the optimizer
 - `gamma_dpdm::Float64 = 0.0`: Coefficient for the penalty term that penalizes oscillations of the population
@@ -168,13 +169,13 @@ The return argument `qres` is a tuple with a content that depends on the input a
 - `runIdx=2`: qres[1] = objective, qres[2] = gradient, qres[3] = infidelity, qres[4] = penalty, qres[5] = fidelity. 
 - `runIdx=3`: qres[1] = optimized control vector, qres[2] = [obj-last, grad-last, infid-last, energy-last], qres[3] = obj-history, qres[4] = grad-history, qres[5] = infid-history, qres[6] = energy-history.
 """    
-function run_Quandary(params::objparams, pcof0::Vector{Float64}, optim_bounds::Vector{Float64}; runIdx::Int64 = 3, maxIter::Int64 = 100, ncores::Int64 = 1, quandary_exec::String="./main", print_frequency_iter::Int64 = 1, gamma_dpdm::Float64 = 0.0, gamma_energy::Float64 = 0.0, final_objective::Int64 = 1, splines_real_imag::Bool = true, phase_scaling_factor::Float64=1.0)
+function run_Quandary(params::objparams, pcof0::Vector{Float64}, optim_bounds::Vector{Float64}; runIdx::Int64 = 3, maxIter::Int64 = 100, ncores::Int64 = 1, runQuandary::Bool = false, quandary_exec::String="./main", print_frequency_iter::Int64 = 1, gamma_dpdm::Float64 = 0.0, gamma_energy::Float64 = 0.0, final_objective::Int64 = 1, splines_real_imag::Bool = true, phase_scaling_factor::Float64=1.0)
     # gamma_dpdm > 0.0 to penalize the 2nd time derivative of the population
     # final_objective = 1 corresponds to the trace infidelity
     
     # Future development: pcof0 could be a matrix(nCoeff,nRhs)
     if runIdx == 1
-      runtype="simulation"
+        runtype="simulation"
     elseif runIdx == 2
       runtype = "gradient"
     else
@@ -256,23 +257,27 @@ function run_Quandary(params::objparams, pcof0::Vector{Float64}, optim_bounds::V
     config_filename = "config.cfg"
     write_Quandary_config_file(config_filename, Nt, Ne, T, nsteps, freq01, rotfreq, selfkerr, couple_coeff, couple_type, D1, carrierfreq, gatefilename, initialpcof_filename, optim_bounds, inftol, maxIter, tikQ, leakage_weights, print_frequency_iter, runtype = runtype, gamma_dpdm = gamma_dpdm, final_objective = final_objective, gamma_energy = gamma_energy, splines_real_imag = splines_real_imag, phase_scaling_factor = phase_scaling_factor)
   
-    # Set up the run command
-    if ncores > 1
-      runcommand = `mpirun -np $ncores ./main $config_filename --quiet`
-    else 
-      runcommand = `./main $config_filename --quiet`
+    if runQuandary
+      # Set up the run command
+      if ncores > 1
+        runcommand = `mpirun -np $ncores ./main $config_filename --quiet`
+      else 
+        runcommand = `./main $config_filename --quiet`
+      end
+      # If not optimizing: Pipe std output to file rather than screen
+      if (runtype == "simulation" || runtype == "gradient")
+        exec = pipeline(runcommand, stdout="out.log", stderr="err.log")  
+      else 
+        exec = pipeline(runcommand, stderr="err.log")
+      end
+    
+      # Run quandary
+      #println("  -> Running Quandary (", exec, "), ...")
+      @time "Quandary run time: " run(exec)
+      #println("  -> Quandary done.")
+    
+      return get_Quandary_results(params, "./data_out", params.Nt, params.Ne, runtype=runtype)
+    else
+      return nothing
     end
-    # If not optimizing: Pipe std output to file rather than screen
-    if (runtype == "simulation" || runtype == "gradient")
-      exec = pipeline(runcommand, stdout="out.log", stderr="err.log")  
-    else 
-      exec = pipeline(runcommand, stderr="err.log")
-    end
-  
-    # Run quandary
-    #println("  -> Running Quandary (", exec, "), ...")
-    @time "Quandary run time: " run(exec)
-    #println("  -> Quandary done.")
-  
-    return get_Quandary_results(params, "./data_out", params.Nt, params.Ne, runtype=runtype)
   end

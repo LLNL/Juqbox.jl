@@ -6,7 +6,8 @@ Ne = [2, 2, 2, 2, 2] # Number of essential energy levels
 Ng = [0, 0, 0, 0, 0] # Number of extra guard levels
 
 # Qubits 0,1,4,7, 10 from IBM Guadelope
-f01 = [5.113535725239690, 5.160748676896810, 5.3534263008668200, 5.202793466283090, 5.426792288122980] # 0-1 transition freq's
+#f01 = [5.113535725239690, 5.160748676896810, 5.3534263008668200, 5.202793466283090, 5.426792288122980] # 0-1 transition freq's
+f01 = [5.18, 5.12, 5.06, 5.0, 4.94] # 0-1 transition freq's
 
 nSys = length(Ne)
 #xi = -0.34*ones(Int64, nSys) # same anharmonicity for all oscillators = f12 - f01
@@ -27,7 +28,8 @@ xi12 = 5e-3 * [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0]
 
 # Setup frequency of rotations in computational frame
 favg = sum(f01)/nSys
-rot_freq = favg * ones(nSys)
+rot_freq = favg * ones(nSys) # Rotating frame
+#rot_freq = zeros(nSys) # Lab frame
 
 # Set the initial duration
 T = 1500.0 # 1000.0
@@ -42,7 +44,7 @@ tikCoeff = 1e-2 # 1.0 # 0.1
 
 # bounds on the ctrl vector elements (rot frame)
 # This number is divided by Nfreq
-maxctrl_MHz = 100.0 # 30.0 # ?
+maxctrl_MHz = 30.0 #100.0 # 30.0 # ?
 
 # Internal ordering of the basis for the state vector
 msb_order = false # | i1, i2, i3> = |i1> \kron |i2> \kron |i3> (compatible with quandary)
@@ -51,7 +53,7 @@ msb_order = false # | i1, i2, i3> = |i1> \kron |i2> \kron |i3> (compatible with 
 quandary_exec= "./main"   # set to "" for Juqbox, or "./main" for Quandary
 ncores = 16 # prod(Ne)
 
-init_amp_frac = 0.5
+initctrl_MHz = 0.5*maxctrl_MHz
 rand_seed = 5432
 
 cw_amp_thres = 4e-2 # For an identity gate use 0.5

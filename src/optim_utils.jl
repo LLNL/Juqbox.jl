@@ -9,11 +9,10 @@ module OptimConstants
     brent_ib = 1.0e-1;                         # the size of initial step in line search, if nothing specified
     brent_eps = 1e-14
     Cr = 1. - 1/golden_ratio
-    rel_conv_threshold = 1e-4                 # alt. stopping criteria
     # N_optim::Int64 = 100;                   # number of maximum iterations for conjugate-gradient. REPLACED by argument maxIter in cgmin()
 end
 
-using ..OptimConstants: N_mnbrak, golden_ratio, N_para, brent_ib, brent_eps, Cr, rel_conv_threshold
+using ..OptimConstants: N_mnbrak, golden_ratio, N_para, brent_ib, brent_eps, Cr
 
 # Input arguments
 # %inputObjective: function to evaluate the objective functional
@@ -125,7 +124,7 @@ end
 # %J_optim: Optimization history of objective functional (REMOVED)
 # %grad_optim: Optimization history of objective gradient magnitude (REMOVED)
 # j0: number of iterations executed to find the minimum
-function cgmin(inputObjective::Function, inputGradient::Function, pcof0::Vector{Float64}, params::objparams; cgtol::Float64 = 1.0e-8, maxIter::Int64 = 100)
+function cgmin(inputObjective::Function, inputGradient::Function, pcof0::Vector{Float64}, params::objparams; cgtol::Float64 = 1.0e-8, maxIter::Int64 = 100, rel_grad_threshold::Float64 = 0.0)
 # NOTE: In the Augmented-Lagrangian method the minimization is over the functional J, which may become negative at intermediate iterations due to the lagrange multiplier terms.
 # Setting the convergence criteria as J < Jtol is therefore not meaningful 
     pmin = copy(pcof0);
@@ -211,9 +210,9 @@ function cgmin(inputObjective::Function, inputGradient::Function, pcof0::Vector{
             j0 = j;
             println("CGmin: found local minima with norm^2(grad) = ", dgg1, " < ", cgtol)
             break;
-        elseif dgg1 < rel_conv_threshold * gg0
+        elseif dgg1 < rel_grad_threshold * gg0
             j0 = j;
-            println("CGmin: norm2(grad) = ", dgg1, " < ", rel_conv_threshold, " * initial norm2(grad) = ", gg0)
+            println("CGmin: norm2(grad) = ", dgg1, " < ", rel_grad_threshold, " * initial norm2(grad) = ", gg0)
             break;
         end
             

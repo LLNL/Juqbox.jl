@@ -4,10 +4,10 @@ using Juqbox
 using Printf
 using Plots
 
-include("two_sys_noguard.jl")
+#include("two_sys_noguard.jl")
 theta = pi/4
 
-#include("three_sys_noguard.jl")
+include("three_sys_noguard.jl")
 # theta = 0.0
 
 # assign the target gate, sqrt(Swap12)
@@ -17,13 +17,14 @@ Vtg = get_swap_1d_gate(length(Ne))
 # target_gate = exp(-im*theta)*sqrt(Vtg) # sqrt(Vtg)
 target_gate = sqrt(Vtg)
 
-nTimeIntervals = 3 # 3 # 2 # 1
+nTimeIntervals = 4 # 3 # 3 # 2 # 1
 
 fidType = 4 # fidType = 1 for Frobenius norm^2, or fidType = 2 for Infidelity
-constraintType = 4 # 0: No constraints, 1: unitary constraints on initial conditions, 2: zero norm^2(jump) to make the state continuous across time intervals. Set to 1 for fidType = 2
+constraintType = 0 # 0: No constraints, 1: unitary constraints on initial conditions, 2: zero norm^2(jump) to make the state continuous across time intervals. Set to 1 for fidType = 2
     
+gammaJump = 0.125 # For comparing with Quandary
 
-retval = setup_std_model(Ne, Ng, f01, xi, xi12, couple_type, rot_freq, T, D1, target_gate, maxctrl_MHz=maxctrl_MHz, msb_order=msb_order, initctrl_MHz=initctrl_MHz, rand_seed=rand_seed, Pmin=Pmin, cw_prox_thres=cw_prox_thres, cw_amp_thres=cw_amp_thres, use_carrier_waves=use_carrier_waves, nTimeIntervals=nTimeIntervals, zeroCtrlBC=zeroCtrlBC, fidType=fidType, constraintType=constraintType)
+retval = setup_std_model(Ne, Ng, f01, xi, xi12, couple_type, rot_freq, T, D1, target_gate, maxctrl_MHz=maxctrl_MHz, msb_order=msb_order, initctrl_MHz=initctrl_MHz, rand_seed=rand_seed, Pmin=Pmin, cw_prox_thres=cw_prox_thres, cw_amp_thres=cw_amp_thres, use_carrier_waves=use_carrier_waves, nTimeIntervals=nTimeIntervals, zeroCtrlBC=zeroCtrlBC, fidType=fidType, constraintType=constraintType, gammaJump=gammaJump)
 
 params = retval[1]
 pcof0 = retval[2]
@@ -36,8 +37,8 @@ Ntot = params.Ntot
 # Test non-zero Lagrange multipliers
 if params.nTimeIntervals > 1
     for q = 1:params.nTimeIntervals-1
-        params.Lmult_r[q] = rand(Ntot, Ntot) # zeros(Ntot, Ntot) # 
-        params.Lmult_i[q] = rand(Ntot, Ntot)
+        params.Lmult_r[q] = zeros(Ntot, Ntot) # rand(Ntot, Ntot) #  
+        params.Lmult_i[q] = zeros(Ntot, Ntot) # rand(Ntot, Ntot)
     end
 else
     # Only for testing the Lagrange multiplier term

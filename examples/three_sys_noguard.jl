@@ -3,7 +3,7 @@
 Ne = [2,2,2] # Number of essential energy levels
 Ng = [0,0,0] # Number of extra guard levels
 
-f01 = [5.18, 5.12, 5.06] # 0-1 transition freq's
+f01 = [4.94, 5.0, 5.06] # 0-1 transition freq's
 
 xi = [-0.34, -0.34, -0.34] # anharmonicity = f12 - f01
 
@@ -13,10 +13,11 @@ xi12 = 5e-3 * [1.0, 0.0, 1.0] # order: x12, x13, x23
 # Setup frequency of rotations in computational frame
 nSys = length(Ne)
 favg = sum(f01)/nSys
-rot_freq = favg * ones(nSys)
+rot_freq = favg * ones(nSys) # Rotating frame
+#rot_freq = zeros(nSys) # Lab frame
 
 # Set the initial duration
-T = 250.0 # 600.0 200.0 # was 500.0. 
+T = 300.0 # 600.0 200.0 # was 500.0. 
 # Number of coefficients per spline
 # D1 = 26
 dtau = 3.33
@@ -31,7 +32,7 @@ tikCoeff = 1e-2 # 1.0 # 0.1
 
 # bounds on the ctrl vector elements (rot frame)
 # This number is divided by Nfreq
-maxctrl_MHz = 100.0 # 30.0 # 100.0 # ?
+maxctrl_MHz = 30.0 #100.0 # 30.0 # 100.0 # ?
 
 # Internal ordering of the basis for the state vector
 # msb_order = true # | i3, i2, i1> = |i3> \kron |i2> \kron |i1> 
