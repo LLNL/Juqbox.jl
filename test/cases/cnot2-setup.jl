@@ -31,6 +31,7 @@ using Printf
 #using Ipopt
 using Random
 using SparseArrays
+using Juqbox
 
 Base.show(io::IO, f::Float64) = @printf(io, "%20.13e", f)
 
@@ -311,11 +312,17 @@ vtarget = rot1*rot2*utarget
 U0 = Juqbox.initial_cond(Ne, Ng)
 
 # assemble problem description for the optimization
+Integrator_id = 1
 params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
-                          Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, use_sparse=use_sparse)
+                          Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, use_sparse=use_sparse, Integrator = Integrator_id)
 
 # overwrite default wmat with the old style
 params.wmat_real =  orig_wmatsetup(Ne, Ng)
+
+if Integrator_id == 2
+    linear_solver = Juqbox.lsolver_object(solver=Juqbox.JACOBI_SOLVER_M,max_iter=100,tol=1e-12,nrhs=prod(N))
+    params.linear_solver = linear_solver
+end
 
 # Quiet mode for testing
 params.quiet = true
@@ -380,7 +387,11 @@ tol = eps(1.0); # machine precision
 Juqbox.estimate_Neumann!(tol, params, maxpar)
 
 # Allocate all working arrays
-wa = Juqbox.Working_Arrays(params, nCoeff)
+if params.Integrator_id == 1
+    wa = Juqbox.Working_Arrays(params, nCoeff)
+elseif params.Integrator_id == 2
+    wa = Juqbox.Working_Arrays_M(params, nCoeff)
+end
 prob = Juqbox.setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff, maxIter=maxIter, lbfgsMax=lbfgsMax)
 
 # uncomment to run the gradient checker for the initial pcof
@@ -398,3 +409,16 @@ prob = Juqbox.setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff, maxIte
 
 #println("Initial coefficient vector stored in 'pcof0'")
 
+# grad_storage = zeros(size(pcof0))
+
+
+# for i = 1:length(pcof0)
+#     println("Finite difference for parameter: ", i)
+#     perturb = zeros(size(pcof0))
+#     perturb[i] = 0.0000001
+#     objfv, _, _ = traceobjgrad(pcof0, params, wa, false, false)
+#     objfv2, _, _ = traceobjgrad(pcof0 + perturb, params, wa, false, false)
+#     grad_storage[i] = (objfv2 - objfv)/0.0000001
+# end
+
+# save_object("cnot2-ref-IMR.jld2", grad_storage)

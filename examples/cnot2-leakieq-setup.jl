@@ -182,15 +182,21 @@ linear_solver = Juqbox.lsolver_object(solver=Juqbox.JACOBI_SOLVER,max_iter=100,t
 
 # assemble problem description for the optimization
 # objFuncType=3 : impose leakage as an inequality constraint
+Integrator_id = 1
+
 if eval_lab
     params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
                               Hconst=H0, Hunc_ops=Hunc_ops, use_sparse=use_sparse,objFuncType=3,leak_ubound=1.e-3)
 else
     params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
-                              Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, linear_solver=linear_solver, use_sparse=use_sparse,objFuncType=3, leak_ubound=1.e-3)
+                              Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, linear_solver=linear_solver, use_sparse=use_sparse,objFuncType=3, leak_ubound=1.e-3, Integrator = Integrator_id)
 end
 
 params.linear_solver.print_info()
+if Integrator_id == 2
+    linear_solver = Juqbox.lsolver_object(solver=Juqbox.JACOBI_SOLVER_M,max_iter=100,tol=1e-12,nrhs=prod(N))
+    params.linear_solver = linear_solver
+end
 
 # initial parameter guess
 if eval_lab
@@ -245,7 +251,11 @@ else
 end
 
 # Allocate all working arrays
-wa = Juqbox.Working_Arrays(params, nCoeff)
+if params.Integrator_id == 1
+    wa = Juqbox.Working_Arrays(params, nCoeff)
+elseif params.Integrator_id == 2
+    wa = Juqbox.Working_Arrays_M(params, nCoeff)
+end
 prob = Juqbox.setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff, maxIter=maxIter, lbfgsMax=lbfgsMax, startFromScratch=startFromScratch)
 
 #uncomment to run the gradient checker for the initial pcof
@@ -272,3 +282,8 @@ if eval_lab
     objf, uhist, trfid = traceobjgrad(pcof0, params, wa, true, false); # evaluate objective function, but not the gradient
     println("Trace fidelity: ", trfid);
 end
+
+a, b, c, d, e, f, h = traceobjgrad(pcof0, params, wa, false, true)
+println("Total Grad: ", b)
+println("Infidel Grad: ", f)
+println("Leaky Grad: ", h)

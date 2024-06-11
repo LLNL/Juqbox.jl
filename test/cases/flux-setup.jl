@@ -30,10 +30,11 @@ using Printf
 using Ipopt
 using Random
 using SparseArrays
+using JLD2
 
 Base.show(io::IO, f::Float64) = @printf(io, "%20.13e", f)
 
-#using Juqbox
+using Juqbox
 
 verbose = false
 N = 4
@@ -148,12 +149,17 @@ if verbose
     println( "# time steps: ", nsteps)
 end
 
+Integrator_id = 1
 # setup the simulation parameters
 params = Juqbox.objparams([N], [Nguard], T, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
-                          Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, use_sparse=use_sparse)
+                          Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, use_sparse=use_sparse, Integrator = Integrator_id)
 # params = Juqbox.objparams([N], [Nguard], T, nsteps, U0, vtarget, om, H0, Hunc_ops)
 params.saveConvHist = true
-
+if Integrator_id == 2
+    linear_solver = Juqbox.lsolver_object(solver=Juqbox.JACOBI_SOLVER_M,max_iter=100,tol=1e-12,nrhs=prod(N))
+    params.linear_solver = linear_solver
+    
+end
 # Quiet mode for testing
 params.quiet = !verbose
 
@@ -180,7 +186,11 @@ if verbose
     println("Tikhonov coefficient: tik0 = ", params.tik0)
 end
 
-wa = Juqbox.Working_Arrays(params, nCoeff)
+if params.Integrator_id == 1
+    wa = Juqbox.Working_Arrays(params, nCoeff)
+elseif params.Integrator_id == 2
+    wa = Juqbox.Working_Arrays_M(params, nCoeff)
+end
 prob = Juqbox.setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff, maxIter=maxIter, lbfgsMax=lbfgsMax)
 
 # uncomment to run the gradient checker for the initial pcof
@@ -197,3 +207,17 @@ end
 if verbose
     println("Initial coefficient vector stored in 'pcof0'")
 end
+
+# grad_storage = zeros(size(pcof0))
+
+
+# for i = 1:length(pcof0)
+#     println("Finite difference for parameter: ", i)
+#     perturb = zeros(size(pcof0))
+#     perturb[i] = 0.0000001
+#     objfv, _, _ = traceobjgrad(pcof0, params, wa, false, false)
+#     objfv2, _, _ = traceobjgrad(pcof0 + perturb, params, wa, false, false)
+#     grad_storage[i] = (objfv2 - objfv)/0.0000001
+# end
+
+# save_object("flux-ref-IMR.jld2", grad_storage)

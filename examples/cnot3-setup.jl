@@ -194,11 +194,17 @@ rot3 = Diagonal(exp.(im*omega3*Tmax))
 
 # target in the rotating frame
 vtarget = rot1*rot2*rot3*utarget
+Integrator_id = 2
 
 # NOTE: maxpar is now a vector with 3 elements: amax, bmax, cmax
 params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
-                          Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, use_sparse=use_sparse)
+                          Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, use_sparse=use_sparse, Integrator = Integrator_id)
 
+if Integrator_id == 2
+    linear_solver = Juqbox.lsolver_object(solver=Juqbox.JACOBI_SOLVER_M,max_iter=100,tol=1e-12,nrhs=prod(Ne))
+    params.linear_solver = linear_solver
+end
+                        
 Random.seed!(2456)
 
 # setup the initial parameter vector, either randomized or from file
@@ -242,7 +248,15 @@ else
     println("Using a dense representation of the Hamiltonian matrices")
 end
 
-wa = Juqbox.Working_Arrays(params,nCoeff)
+# Allocate all working arrays
+# There are two working array objects, one for Stormer Verlet and one for Implicit Midpoint rule
+# "1" chooses Stormer Verlet, "2" choose Implicit Midpoint
+if params.Integrator_id == 1
+    wa = Juqbox.Working_Arrays(params, nCoeff)
+elseif params.Integrator_id == 2
+    wa = Juqbox.Working_Arrays_M(params, nCoeff)
+end
+
 prob = Juqbox.setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff, maxIter=maxIter, lbfgsMax=lbfgsMax, startFromScratch=startFromScratch)
 
 #uncomment to run the gradient checker for the initial pcof
@@ -258,3 +272,6 @@ end
 #objv, objgrad, u_hist, infidelity = Juqbox.traceobjgrad(pcof0, params, true, true);
 
 println("Initial coefficient vector stored in 'pcof0'")
+
+@time traceobjgrad(pcof0, params, wa, false, true)
+#@time traceobjgrad_m(pcof0, params, wa, false, true)

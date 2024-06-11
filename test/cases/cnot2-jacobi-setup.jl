@@ -313,13 +313,17 @@ U0 = Juqbox.initial_cond(Ne, Ng)
 #Build jacobi solver
 linear_solver = Juqbox.lsolver_object(solver=Juqbox.JACOBI_SOLVER, max_iter=100, tol=1e-15, nrhs=prod(Ne))
 
+Integrator_id = 1
 # assemble problem description for the optimization
 params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
-                          Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, use_sparse=use_sparse,linear_solver=linear_solver)
+                          Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, use_sparse=use_sparse,linear_solver=linear_solver, Integrator = Integrator_id)
 
 # overwrite default wmat with the old style
 params.wmat_real =  orig_wmatsetup(Ne, Ng)
-
+if params.Integrator_id == 2
+    linear_solver = Juqbox.lsolver_object(solver=Juqbox.JACOBI_SOLVER_M,max_iter=100,tol=1e-12,nrhs=prod(N))
+    params.linear_solver = linear_solver
+end
 # Quiet mode for testing
 params.quiet = true
 
@@ -383,7 +387,11 @@ tol = eps(1.0); # machine precision
 Juqbox.estimate_Neumann!(tol, params, maxpar)
 
 # Allocate all working arrays
-wa = Juqbox.Working_Arrays(params, nCoeff)
+if params.Integrator_id == 1
+    wa = Juqbox.Working_Arrays(params, nCoeff)
+elseif params.Integrator_id == 2
+    wa = Juqbox.Working_Arrays_M(params, nCoeff)
+end
 prob = Juqbox.setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff, maxIter=maxIter, lbfgsMax=lbfgsMax)
 
 # uncomment to run the gradient checker for the initial pcof

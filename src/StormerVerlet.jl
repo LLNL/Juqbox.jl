@@ -1,6 +1,7 @@
 using SparseArrays
 using LinearAlgebra
 
+
 struct svparams
 	K::Function
 	S::Function
@@ -88,7 +89,6 @@ end
 	t = t + h
 	return t, u, v, v05
 end
-
 
 ###########################################################
 # FMG
@@ -312,10 +312,11 @@ end
   					rhs::Array{Float64,N},linear_solver::lsolver_object) where N
 
     # rhs .= S0*μ .- K05*ν .+ uforce0
+	
 	LinearAlgebra.mul!(rhs,S0,μ)
 	mul!(rhs,K05,ν,-1.0,1.0)
 	LinearAlgebra.axpy!(1.0, uforce0, rhs)
-
+	
 	# solve linear system
 	linear_solver.solve(h,S0,rhs,κ₁,κ₂)
 
@@ -351,8 +352,7 @@ end
 	LinearAlgebra.axpy!(0.5*h, κ₁, μ)
 
 	t  = t + h
-
-
+	
 end
 
 

@@ -119,6 +119,8 @@ println("Duration = ", T, " # time steps per min-period, P = ", Pmin, " # time s
 Ident = Matrix{Float64}(I, Ntot, Ntot)   
 U0 = Ident[1:Ntot,1:N]
 
+
+
 # setup the simulation parameters
 params = Juqbox.objparams([N], [Nguard], T, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
                           Hconst=H0, Hunc_ops=Hunc_ops)
@@ -173,6 +175,7 @@ println("Tikhonov coefficients: tik0 = ", params.tik0)
 
 # Allocate all working arrays
 wa = Juqbox.Working_Arrays(params, nCoeff)
+
 prob = Juqbox.setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff, maxIter=maxIter, lbfgsMax=lbfgsMax, startFromScratch=startFromScratch)
 
 #uncomment to run the gradient checker for the initial pcof

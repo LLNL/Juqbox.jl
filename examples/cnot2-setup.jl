@@ -30,6 +30,8 @@ using Printf
 using FFTW
 using Plots
 using SparseArrays
+using BenchmarkTools
+
 
 Base.show(io::IO, f::Float64) = @printf(io, "%20.13e", f)
 
@@ -127,8 +129,8 @@ println("Number of time steps = ", nsteps)
 
 # package the lowering and raising matrices together into an one-dimensional array of two-dimensional arrays
 # Here we choose dense or sparse representation
+#use_sparse = true
 use_sparse = true
-# use_sparse = false
 
 Nfreq = 2 # number of carrier frequencies
 
@@ -175,13 +177,22 @@ else
     vtarget = rot1*rot2*utarget # target in the rotating frame
 end
 
+#Specify whether using Stormer Verlet or Implicit Midpoint rule
+Integrator_id = 2
+
 # assemble problem description for the optimization
 if eval_lab
     params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
-                              Hconst=H0, Hunc_ops=Hunc_ops, use_sparse=use_sparse)
+                              Hconst=H0, Hunc_ops=Hunc_ops, use_sparse=use_sparse, Integrator = Integrator_id)
 else
     params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
-                              Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, use_sparse=use_sparse)
+                              Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, use_sparse=use_sparse, Integrator = Integrator_id)
+end
+
+#If using Implicit Midpoint, use Jacobi for Midpoint Solver
+if Integrator_id == 2
+    linear_solver = Juqbox.lsolver_object(solver=Juqbox.JACOBI_SOLVER_M,max_iter=100,tol=1e-12,nrhs=prod(Ne))
+    params.linear_solver = linear_solver
 end
 
 # initial parameter guess
@@ -190,7 +201,10 @@ if eval_lab
 else
     startFromScratch = true
 end
+
+startFromScratch = false
 startFile = "drives/cnot2-pcof-opt-t50-avg.jld2"
+startFile = "drives/cnot2.dat"
 
 # dimensions for the parameter vector
 D1 = 10 # number of B-spline coeff per oscillator, freq and sin/cos
@@ -204,10 +218,12 @@ if startFromScratch
 else
     # the data on the startfile must be consistent with the setup!
     # use if you want to have initial coefficients read from file
-    pcof0 = read_pcof(startFile)
-    nCoeff = length(pcof0)
-    D1 = div(nCoeff, 2*Nctrl*Nfreq) # factor '2' is for sin/cos
-    nCoeff = 2*Nctrl*Nfreq*D1 # just to be safe if the file doesn't contain the right number of elements
+    # pcof0 = read_pcof(startFile)
+    # nCoeff = length(pcof0)
+    # D1 = div(nCoeff, 2*Nctrl*Nfreq) # factor '2' is for sin/cos
+    # nCoeff = 2*Nctrl*Nfreq*D1 # just to be safe if the file doesn't contain the right number of elements
+
+    pcof0 = vec(readdlm(startFile))
     println("*** Starting from B-spline coefficients in file: ", startFile)
 end
 
@@ -238,10 +254,17 @@ end
 
 new_tol = 1e-12
 estimate_Neumann!(new_tol, params, maxpar);
-println("Using tolerance", new_tol, " and ", params.linear_solver.iter, " terms in the Neumann iteration")
+#println("Using tolerance", new_tol, " and ", params.linear_solver.iter, " terms in the Neumann iteration")
 
 # Allocate all working arrays
-wa = Juqbox.Working_Arrays(params, nCoeff)
+# There are two working array objects, one for Stormer Verlet and one for Implicit Midpoint rule
+# "1" chooses Stormer Verlet, "2" choose Implicit Midpoint
+if params.Integrator_id == 1
+    wa = Juqbox.Working_Arrays(params, nCoeff)
+elseif params.Integrator_id == 2
+    wa = Juqbox.Working_Arrays_M(params, nCoeff)
+end
+
 prob = Juqbox.setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff, maxIter=maxIter, lbfgsMax=lbfgsMax, startFromScratch=startFromScratch)
 
 #uncomment to run the gradient checker for the initial pcof
@@ -268,3 +291,10 @@ if eval_lab
     objf, uhist, trfid = traceobjgrad(pcof0, params, wa, true, false); # evaluate objective function, but not the gradient
     println("Trace fidelity: ", trfid);
 end
+
+#@time traceobjgrad(pcof0, params, wa, false, true)
+a, b, c, d, e, f, h = traceobjgrad(pcof0, params, wa, false, true)
+println("Objective Function: ", a)
+println("Total Grad: ", b)
+println("Infidel Grad: ", f)
+println("Leaky Grad: ", h)
