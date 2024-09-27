@@ -12,13 +12,14 @@ using FileIO
 using FFTW
 using DelimitedFiles
 
+
 export splineparams, bspline2, gradbspline2
 export bcparams, bcarrier2, gradbcarrier2!
 
-export objparams, traceobjgrad, identify_guard_levels, identify_forbidden_levels, initial_cond
+export objparams, traceobjgrad, traceobjgrad_m, identify_guard_levels, identify_forbidden_levels, initial_cond
 export plotunitary, plotspecified, evalctrl, plot_results, plot_energy, plot_final_unitary
-export setup_ipopt_problem, Working_Arrays, estimate_Neumann!, setup_rotmatrices
-export run_optimizer, plot_conv_hist, wmatsetup
+export setup_ipopt_problem, Working_Arrays, WorkingArrays_M, estimate_Neumann!, setup_rotmatrices
+export run_optimizer, plot_conv_hist, wmatsetup, orig_wmatsetup
 export zero_start_end!, assign_thresholds, assign_thresholds_freq, assign_thresholds_ctrl_freq 
 export calculate_timestep, marginalize3, change_target!, set_adjoint_Sv_type!
 export save_pcof, read_pcof, juq2qis
@@ -35,6 +36,8 @@ include("bsplines.jl") # add all B-spline functionality to the Juqbox module
 include("linear_solvers.jl")
 
 include("StormerVerlet.jl") # add in time-stepping functionality
+
+include("ImplicitMidpoint.jl") # add in time-stepping functionality for Implicit Midpoint
 
 # union type for different ctrl parameterizations
 BsplineParams = Union{splineparams, bcparams}

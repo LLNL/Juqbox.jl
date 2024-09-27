@@ -21,7 +21,7 @@
 
 
 
-function eval_f_g_grad!(pcof::Vector{Float64},params:: Juqbox.objparams, wa::Working_Arrays,
+function eval_f_g_grad!(pcof::Vector{Float64},params:: Juqbox.objparams, wa,
                        nodes::AbstractArray=[0.0], weights::AbstractArray=[1.0], compute_adjoint::Bool=true)
 
     params.last_pcof .= pcof
@@ -74,7 +74,7 @@ end
 
 # function eval_f_par(pcof::Vector{Float64},x_new:: Bool, params:: Juqbox.objparams, wa::Working_Arrays,
 #                     nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
-function eval_f_par(pcof::Vector{Float64}, params:: Juqbox.objparams, wa::Working_Arrays,
+function eval_f_par(pcof::Vector{Float64}, params:: Juqbox.objparams, wa,
     nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
 
 
@@ -101,7 +101,7 @@ function eval_f_par(pcof::Vector{Float64}, params:: Juqbox.objparams, wa::Workin
 
 # function eval_g_par(pcof::Vector{Float64},x_new:: Bool,g::Vector{Float64},params:: Juqbox.objparams, wa::Working_Arrays,
 #                     nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
-function eval_g_par(pcof::Vector{Float64},g::Vector{Float64},params:: Juqbox.objparams, wa::Working_Arrays,
+function eval_g_par(pcof::Vector{Float64},g::Vector{Float64},params:: Juqbox.objparams, wa,
     nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
 
     #Return last stored
@@ -121,7 +121,7 @@ end
 
 # function eval_grad_f_par(pcof::Vector{Float64},x_new:: Bool, grad_f::Vector{Float64}, params:: Juqbox.objparams, wa::Working_Arrays,
 #                         nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
-function eval_grad_f_par(pcof::Vector{Float64}, grad_f::Vector{Float64}, params:: Juqbox.objparams, wa::Working_Arrays,
+function eval_grad_f_par(pcof::Vector{Float64}, grad_f::Vector{Float64}, params:: Juqbox.objparams, wa,
     nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
     
     #Return last stored
@@ -151,7 +151,7 @@ end
 # function eval_jac_g_par(pcof::Vector{Float64},x_new:: Bool, rows::Vector{Int32}, cols::Vector{Int32}, jac_g::Union{Nothing,Vector{Float64}},
 #                         params:: Juqbox.objparams, wa::Working_Arrays, nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
 function eval_jac_g_par(pcof::Vector{Float64}, rows::Vector{Int32}, cols::Vector{Int32}, jac_g::Union{Nothing,Vector{Float64}},
-    params:: Juqbox.objparams, wa::Working_Arrays, nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
+    params:: Juqbox.objparams, wa, nodes::AbstractArray=[0.0],weights::AbstractArray=[1.0])
 
     if jac_g === nothing 
         if length(rows)>0
@@ -264,7 +264,7 @@ where the fundamental frequency is random.
 - `nodes:: Array{Float64, 1}`: Risk-neutral opt: User specified quadrature nodes on the interval [-ϵ,ϵ] for some ϵ (keyword arg)
 - `weights:: Array{Float64, 1}`: Risk-neutral opt: User specified quadrature weights on the interval [-ϵ,ϵ] for some ϵ (keyword arg)
 """
-function setup_ipopt_problem(params:: Juqbox.objparams, wa::Working_Arrays, nCoeff:: Int64, minCoeff:: Array{Float64, 1}, maxCoeff:: Array{Float64, 1};
+function setup_ipopt_problem(params:: Juqbox.objparams, wa, nCoeff:: Int64, minCoeff:: Array{Float64, 1}, maxCoeff:: Array{Float64, 1};
                              maxIter:: Int64=50, lbfgsMax:: Int64=10, 
                              startFromScratch:: Bool=true, ipTol:: Float64=1e-5, 
                              acceptTol:: Float64=1e-5, acceptIter:: Int64=15,
@@ -332,7 +332,7 @@ function setup_ipopt_problem(params:: Juqbox.objparams, wa::Working_Arrays, nCoe
         addOption( prob, "acceptable_tol", acceptTol);
         addOption( prob, "acceptable_iter", acceptIter);
         addOption( prob, "jacobian_approximation", jacob_approx);
-        # addOption( prob, "derivative_test", "first-order");
+        #addOption( prob, "derivative_test", "first-order");
         # addOption( prob, "derivative_test_tol", 0.0001);
         
         if !startFromScratch # enable warm start of Ipopt
@@ -358,7 +358,7 @@ function setup_ipopt_problem(params:: Juqbox.objparams, wa::Working_Arrays, nCoe
         AddIpoptNumOption( prob, "acceptable_tol", acceptTol);
         AddIpoptIntOption( prob, "acceptable_iter", acceptIter);
         AddIpoptStrOption( prob, "jacobian_approximation", jacob_approx);
-        # AddIpoptStrOption( prob, "derivative_test", "first-order");
+        AddIpoptStrOption( prob, "derivative_test", "first-order");
         # AddIpoptNumOption( prob, "derivative_test_tol", 1.0e-4);
         # AddIpoptNumOption( prob, "derivative_test_perturbation", 1.0e-8);
         

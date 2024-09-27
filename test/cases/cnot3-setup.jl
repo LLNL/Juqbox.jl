@@ -44,138 +44,11 @@ using Printf
 #pyplot()
 using SparseArrays
 
-Base.show(io::IO, f::Float64) = @printf(io, "%20.13e", f)
+#Base.show(io::IO, f::Float64) = @printf(io, "%20.13e", f)
 
 #import Juqbox
 
 verbose = false
-
-function orig_wmatsetup(Ne::Array{Int64,1}, Ng::Array{Int64,1})
-    Nt = Ne + Ng
-    Ndim = length(Ne)
-    @assert(Ndim == 1 || Ndim == 2 || Ndim ==3)
-    
-    Ntot = prod(Nt)
-    w = zeros(Ntot)
-    coeff = 1.0
-
-    # reset temp variables
-    temp = zeros(length(Ne))
-
-    if sum(Ng) > 0
-        nForb = 0 # number of states with the highest index in at least one dimension
-
-        if Ndim == 1
-            fact = 0.1
-            for q in 0:Ng[1]-1
-                w[Ntot-q] = fact^q
-            end
-            nForb = 1
-            coeff = 1.0
-        elseif Ndim == 2
-            fact = 1e-3 # for more emphasis on the "forbidden" states. Old value: 0.1
-            q = 0 # element in the array 'w'
-
-            for i2 = 1:Nt[2]
-                for i1 = 1:Nt[1]
-                    q += 1
-                    # initialize temp variables
-                    temp[1] = 0.0
-                    temp[2] = 0.0
-                    if i1 <= Ne[1] && i2 <= Ne[2]
-                        w[q] = 0.0
-                    else
-                        # determine and assign the largest penalty
-                        if i1 > Ne[1]   #only included if at a guard level
-                            temp[1] = fact^(Nt[1]-i1)
-                        end
-                        if i2 > Ne[2]   #only included if at a guard level
-                            temp[2] = fact^(Nt[2]-i2)
-                        end
-
-                        if i1 == Nt[1] || i2 == Nt[2]
-                            nForb += 1 
-                        end
-
-                        forbFact=1.0
-
-                        # additional weighting (ad hoc)
-                        # if i1 == Nt1 && i2<=Ne2 
-                        #   forbFact=100
-                        # end
-                        # if i2 == Nt2 && i1<=Ne1 
-                        #   forbFact=100
-                        # end
-
-                        w[q] = forbFact*maximum(temp)
-          
-                    end # if guard level
-                end # for i1
-            end # for i2
-
-            # normalize by the number of entries with w=1
-            coeff = 10.0/nForb # was 1/nForb
-        elseif Ndim == 3
-            fact = 1e-3 #  0.1 # for more emphasis on the "forbidden" states. Old value: 0.1
-            nForb = 0 # number of states with the highest index in at least one dimension
-            q = 0
-            for i3 = 1:Nt[3]
-                for i2 = 1:Nt[2]
-                    for i1 = 1:Nt[1]
-                        q += 1
-                        # initialize temp variables
-                        temp1 = 0.0
-                        temp2 = 0.0
-                        temp3 = 0.0
-                        if i1 <= Ne[1] && i2 <= Ne[2] && i3 <= Ne[3]
-                            w[q] = 0.0
-                        else
-                            # determine and assign the largest penalty
-                            if i1 > Ne[1]   #only included if at a guard level
-#                                temp1 = (Nt[1] - Ne[1]) * fact^(Nt[1]-i1)
-                                temp1 = fact^(Nt[1]-i1)
-                            end
-                            if i2 > Ne[2]   #only included if at a guard level
-#                                temp2 = (Nt[2] - Ne[2]) *fact^(Nt[2]-i2)
-                                temp2 = fact^(Nt[2]-i2)
-                            end
-                            if i3 > Ne[3]   #only included if at a guard level
-#                                temp3 = (Nt[3] - Ne[3]) *fact^(Nt[3]-i3)
-                                temp3 = fact^(Nt[3]-i3)
-                            end
-
-                            forbFact=1.0
-                            # additional weighting (ad hoc)
-                            # if i1 == Nt[1] && i2<=Ne[2] && i3<=Ne3
-                            #   forbFact=100
-                            # end
-                            # if i2 == Nt[2] && i1<=Ne[1] && i3<=Ne3
-                            #   forbFact=100
-                            # end
-                            if i3 == Nt[3] && i1<=Ne[1] && i2<=Ne[2]
-                               forbFact=100
-                            end
-
-                            w[q] = forbFact*max(temp1, temp2, temp3)
-
-                            if i1 == Nt[1] || i2 == Nt[2] || i3 == Nt[3]
-                                nForb += 1
-                            end
-
-                        end # if
-                    end # for
-                end # for
-            end # for
-
-            # normalize by the number of entries with w=1
-            coeff = 10.0/nForb # was 1/nForb
-        end # if ndim == 3
-
-        # println("wmatsetup: Number of forbidden states = ", nForb, " scaling coeff = ", coeff)
-    end # if sum(Ng) > 0
-    wmat = coeff * Diagonal(w) # turn vector into diagonal matrix
-    return wmat
-end
 
 # fnt = Plots.font("Helvetica", 16)
 # lfnt = Plots.font("Helvetica", 10)
@@ -372,11 +245,16 @@ vtarget = rot1*rot2*rot3*utarget
 U0 = Juqbox.initial_cond(Ne, Ng)
 
 # NOTE: maxpar is now a vector with 3 elements: amax, bmax, cmax
+Integrator_id = 1
 params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
-                          Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, use_sparse=use_sparse)
+                          Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, use_sparse=use_sparse, Integrator = Integrator_id)
 
 # overwrite default wmat with the old style
 params.wmat_real =  orig_wmatsetup(Ne, Ng)
+if params.Integrator_id == 2
+    linear_solver = Juqbox.lsolver_object(solver=Juqbox.JACOBI_SOLVER_M,max_iter=100,tol=1e-12,nrhs=prod(N))
+    params.linear_solver = linear_solver
+end
 
 # Quiet mode for testing
 params.quiet = true
@@ -432,7 +310,11 @@ end
 tol = eps(1.0); # machine precision
 Juqbox.estimate_Neumann!(tol, params, maxpar)
 
-wa = Juqbox.Working_Arrays(params, nCoeff)
+if params.Integrator_id == 1
+    wa = Juqbox.Working_Arrays(params, nCoeff)
+elseif params.Integrator_id == 2
+    wa = Juqbox.Working_Arrays_M(params, nCoeff)
+end
 prob = Juqbox.setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff, maxIter=maxIter, lbfgsMax=lbfgsMax)
 
 # uncomment to run the gradient checker for the initial pcof
@@ -447,3 +329,16 @@ prob = Juqbox.setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff, maxIte
 
 #println("Initial coefficient vector stored in 'pcof0'")
 
+# grad_storage = zeros(size(pcof0))
+
+
+# for i = 1:length(pcof0)
+#     println("Finite difference for parameter: ", i)
+#     perturb = zeros(size(pcof0))
+#     perturb[i] = 0.0000001
+#     objfv, _, _ = traceobjgrad(pcof0, params, wa, false, false)
+#     objfv2, _, _ = traceobjgrad(pcof0 + perturb, params, wa, false, false)
+#     grad_storage[i] = (objfv2 - objfv)/0.0000001
+# end
+
+# save_object("cnot3-ref-IMR.jld2", grad_storage)

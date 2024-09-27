@@ -4,7 +4,7 @@ using Juqbox
 using Printf
 #Base.show(io::IO, f::Float64) = @printf(io, "%20.13e", f)
 
-function timesteptest( cfl = 0.1, testcase = 2, order = 2, verbose = false)
+function timesteptest_implicit( cfl = 0.1, testcase = 2, order = 2, verbose = false)
 
     N = 2 # vector dimension	
     IN = Matrix{Float64}(I, N, N)
@@ -96,10 +96,9 @@ function timesteptest( cfl = 0.1, testcase = 2, order = 2, verbose = false)
 
     # Stormer-Verlet
     start = time()
+    
     for ii in 1:nsteps
-	for jj in 1:stages  
-        t, u, v, v05 =  Juqbox.step(timestepper,t,u,v,dt*gamma[jj],uforce,vforce)
-	end
+        t, u, v = Juqbox.step_midpoint(timestepper, t, u, v, dt, uforce, vforce)
 	usave = [usave u]
 	vsave = [vsave -v]
 	tsave = [tsave t]
@@ -134,23 +133,22 @@ function timesteptest( cfl = 0.1, testcase = 2, order = 2, verbose = false)
     return t,u,v,dt,cg_err,ce_err
 end
 
-function timestep_convergence( errFileName:: String, writeFile:: Bool=false)
+function timestep_convergence_implicit( errFileName:: String, writeFile:: Bool=false)
     CFL_vec = 10.0.^(-1.0:-0.5:-2.0)
-
+    
     ntests = 4
     err_mat  = zeros(length(CFL_vec),2,ntests)
     order    = 2
-
+    
     verbose = false
-
+    
     for j = 1:ntests
 	for i = 1:length(CFL_vec)
-	    t,u,v,dt,cg_err,ce_err = timesteptest(CFL_vec[i], j-1, order, verbose)
+	    t,u,v,dt,cg_err,ce_err = timesteptest_implicit(CFL_vec[i], j-1, order, verbose)
 	    err_mat[i,1,j] = cg_err
 	    err_mat[i,2,j] = ce_err
 	end
     end
-    
     if writeFile
         @save errFileName err_mat
         println("Saved final errors on file: ", errFileName)

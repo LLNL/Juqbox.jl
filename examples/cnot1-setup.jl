@@ -23,10 +23,12 @@ using DelimitedFiles
 using Printf
 using Ipopt
 using Random
+using BenchmarkTools
 
 Base.show(io::IO, f::Float64) = @printf(io, "%20.13e", f)
 
-using Juqbox # quantum control module
+using Juqbox
+#using Juqbox # quantum control module
 
 Nosc = 1 # Number of coupled sub-systems = oscillators
 N = 4 # Number of essential energy levels
@@ -57,6 +59,7 @@ H0 = Array(H0)
 maxctrl = 0.001*2*pi * 8.5 #  9, 10.5, 12, 15 MHz
 
 nsteps = calculate_timestep(T, H0, Hsym_ops, Hanti_ops, [maxctrl])
+
 println("# time steps: ", nsteps)
 
 Nfreq = 3 # number of carrier frequencies
@@ -105,9 +108,15 @@ rot1 = Diagonal(exp.(im*omega1*T))
 # target in the rotating frame
 vtarget = rot1*utarget
 
+Integrator_id = 2
 params = Juqbox.objparams([N], [Nguard], T, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
-                          Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops)
+                          Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, Integrator = Integrator_id)
 
+if params.Integrator_id == 2
+    linear_solver = Juqbox.lsolver_object(solver=Juqbox.JACOBI_SOLVER_M,max_iter=100,tol=1e-12,nrhs=prod(N))
+    params.linear_solver = linear_solver
+end
+                        
 # initial parameter guess
 
 # D1 smaller than 5 does not work
@@ -122,6 +131,9 @@ startFile="cnot-pcof-opt.dat"
 # initial parameter guess
 if startFromScratch
     pcof0 = maxpar*0.01 * rand(nCoeff)
+    pcof1 = zeros(size(pcof0))
+    # pcof1 .= pcof0
+    # pcof1[1] = pcof0[1] + 0.000001
     println("*** Starting from random pcof with amplitude ", maxpar*0.01)
 else
     # use if you want to read the initial coefficients from file
@@ -130,7 +142,6 @@ else
     nCoeff = length(pcof0)
     D1 = div(nCoeff, 2*Nctrl*Nfreq)  # number of B-spline coeff per control function
 end
-
 # min and max coefficient values
 minCoeff, maxCoeff = Juqbox.assign_thresholds_freq(maxamp, Nctrl, Nfreq, D1)
 
@@ -143,6 +154,9 @@ ipTol = 1e-5   # optional argument
 acceptTol = ipTol # 1e-4 # acceptable tolerance 
 acceptIter = 15
 
+
+
+
 println("*** Settings ***")
 println("System Hamiltonian coefficients [GHz]: (fa, xa) =  ", fa, xa)
 println("Total number of states, Ntot = ", Ntot, " Total number of guard states, Nguard = ", Nguard)
@@ -153,7 +167,14 @@ for q=1:Nfreq
 end
 println("Tikhonov coefficients: tik0 = ", params.tik0)
 
-wa = Juqbox.Working_Arrays(params,nCoeff)
+if params.Integrator_id == 1
+    wa = Juqbox.Working_Arrays(params, nCoeff)
+elseif params.Integrator_id == 2
+    wa = Juqbox.Working_Arrays_M(params, nCoeff)
+end
+
 prob = Juqbox.setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff, maxIter=maxIter, lbfgsMax=lbfgsMax, startFromScratch=startFromScratch)
 
 println("Initial coefficient vector stored in 'pcof0'")
+
+@time traceobjgrad(pcof0, params, wa, false, true)

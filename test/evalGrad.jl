@@ -1,10 +1,10 @@
 using FileIO
 
-function evalObjGrad( pcof0:: Array{Float64, 1}, params:: Juqbox.objparams, wa:: Juqbox.Working_Arrays, refFileName:: String, writeFile:: Bool=false)
+function evalObjGrad( pcof0:: Array{Float64, 1}, params:: Juqbox.objparams, wa, refFileName:: String, writeFile:: Bool=false)
     rtol = 1e-10
     atol = 1e-14
     verbose = false
-
+    
     # return flag
     success=false
 
@@ -13,7 +13,6 @@ function evalObjGrad( pcof0:: Array{Float64, 1}, params:: Juqbox.objparams, wa::
     grad = zeros(nCoeff)
     objv = Juqbox.eval_f_par(pcof0,params, wa, [0.0], [1.0]);    # Use these functions to compute obj
     Juqbox.eval_grad_f_par(pcof0,grad,params, wa, [0.0], [1.0])  # and grad since they now include the tikhonov terms
-
     
     if params.objFuncType != 1
         leakage   = params.last_leak
@@ -48,8 +47,12 @@ function evalObjGrad( pcof0:: Array{Float64, 1}, params:: Juqbox.objparams, wa::
 
         refNorm = norm(gradRef)
         aNorm = norm(grad-gradRef)
-
+        if verbose
+            println("rel objfunc error =", objDiff, " absolute grad error =", aNorm, " relative grad error =", aNorm/refNorm)
+        end    
         pass1 = false
+
+    
         if objDiff < atol
             pass1 = true
         elseif abs(objvRef) >= atol && objDiff/abs(objvRef) < rtol

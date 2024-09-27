@@ -127,17 +127,24 @@ Ident = Matrix{Float64}(I, Ntot, Ntot)
 U0 = Ident[1:Ntot,1:N]
 
 # setup the simulation parameters
+Integrator_id = 1
+
 params = Juqbox.objparams([N], [Nguard], T, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
-                          Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops)
+                          Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, Integrator = Integrator_id)
 params.saveConvHist = true
 params.use_bcarrier = true 
+
+if params.Integrator_id == 2
+    linear_solver = Juqbox.lsolver_object(solver=Juqbox.JACOBI_SOLVER_M,max_iter=100,tol=1e-12,nrhs=prod(N))
+    params.linear_solver = linear_solver
+end
 
 # Quiet mode for testing
 params.quiet = true
 
 # setup the initial parameter vector, either randomized or from file
 startFromScratch = true # true
-startFile = "rabi-pcof-opt-alpha-0.5.dat"
+startFile = "cases/rabi.dat"
 
 if startFromScratch
     # D1 smaller than 3 does not work
@@ -191,7 +198,11 @@ tol = eps(1.0); # machine precision
 Juqbox.estimate_Neumann!(tol, params, [maxpar])
 
 # Allocate all working arrays
-wa = Juqbox.Working_Arrays(params, nCoeff)
+if params.Integrator_id == 1
+    wa = Juqbox.Working_Arrays(params, nCoeff)
+elseif params.Integrator_id == 2
+    wa = Juqbox.Working_Arrays_M(params, nCoeff)
+end
 prob = Juqbox.setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff, maxIter=maxIter, lbfgsMax=lbfgsMax)
 
 # uncomment to run the gradient checker for the initial pcof
@@ -201,3 +212,17 @@ prob = Juqbox.setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff, maxIte
 #     AddIpoptStrOption( prob, "derivative_test", "first-order")
 # end
 #println("Initial coefficient vector stored in 'pcof0'")
+
+# grad_storage = zeros(size(pcof0))
+
+
+# for i = 1:length(pcof0)
+#     println("Finite difference for parameter: ", i)
+#     perturb = zeros(size(pcof0))
+#     perturb[i] = 0.0000000001
+#     objfv, _, _ = traceobjgrad(pcof0, params, wa, false, false)
+#     objfv2, _, _ = traceobjgrad(pcof0 + perturb, params, wa, false, false)
+#     grad_storage[i] = (objfv2 - objfv)/0.0000000001
+# end
+
+# save_object("rabi-ref-IMR.jld2", grad_storage)

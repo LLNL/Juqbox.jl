@@ -5,6 +5,7 @@ using LinearAlgebra
 const NEUMANN_SOLVER = 1
 const JACOBI_SOLVER  = 2
 const GAUSSIAN_ELIM_SOLVER = 3
+const JACOBI_SOLVER_M = 4
 
 
 """
@@ -49,7 +50,12 @@ mutable struct lsolver_object
             solve = (a,b,c,d,e) -> gaussian_elim_solve!(a,b,c,d)
             solver_name = "Built-in"
             print_info = () -> println("*** Using linear solver: ", solver_name," with max_iter = ", max_iter)
-        else
+		
+		elseif solver == JACOBI_SOLVER_M
+			solve = (a, b, c, d, e, f, g, h, i, j, k) -> jacobi_midpoint(a, b, c, d, e, f, g, h, i, j, k, max_iter, tol)
+			solver_name = "Jacobi from Implicit Midpoint"
+			print_info = () -> println("***Using linear solver: ", solver_name," with max_iter = ", max_iter, ",tol = ", tol)
+		else
             error("Please specify a supported linear solver")
         end
 	
@@ -153,4 +159,109 @@ elimination.
 @inline function gaussian_elim_solve!(h::Float64, S::Array{Float64,N}, B::Array{Float64,N},
                          X::Array{Float64,N}) where N
     X .= (LinearAlgebra.I - (0.5h.*S))\B
+end
+
+
+@inline function jacobi_midpoint(h::Float64, rhs_u::Array{Float64,N}, rhs_v::Array{Float64,N}, S::SparseMatrixCSC{Float64,Int64}, K::SparseMatrixCSC{Float64,Int64}
+	,u_init::Array{Float64,N}, v_init::Array{Float64,N}, x0_u, x0_v, norm_matrix_u, norm_matrix_v, max_iter::Int64, tol::Float64) where N
+    
+
+	#Assign values to the pre-allocated matrices
+	x0_u .= u_init
+	x0_v .= v_init
+	norm_matrix_u .= 0
+	norm_matrix_v .= 0
+	
+	
+    for i in 1:max_iter
+
+		#Run Jacobi's iteration using the right hand sides of the real and imaginary part
+		
+		#Jacobi's iteration for the real part
+		mul!(u_init, S, x0_u, h/2, 0)
+		axpy!(1, rhs_u, u_init)
+		mul!(u_init, K, x0_v, -h/2, 1)
+
+		#Jacobi's iteration for the imaginary part
+		mul!(v_init, K, x0_u, h/2, 0)
+		axpy!(1, rhs_v, v_init)
+		mul!(v_init, S, x0_v, h/2, 1)
+		
+		#Store values to be used in next iteration
+        x0_u .= u_init
+        x0_v .= v_init
+
+		#Create residual Matrices
+
+		#Residual matrix for real part
+		mul!(norm_matrix_u, K, x0_v, h/2, 0)
+		mul!(norm_matrix_u, S, x0_u, -h/2, 1)
+		axpy!(1, x0_u, norm_matrix_u)
+		axpy!(-1, rhs_u, norm_matrix_u)
+
+		#Residual matrix for imaginary part
+		mul!(norm_matrix_v, S, x0_v, -h/2, 0)
+		mul!(norm_matrix_v, K, x0_u, -h/2, 1)
+		axpy!(1, x0_v, norm_matrix_v)
+		axpy!(-1, rhs_v, norm_matrix_v)
+		
+		#Break loop if norm of residal matrices have reached tolerance
+        if (norm(norm_matrix_u) < tol) && (norm(norm_matrix_v) < tol)
+			#println("Tolerance Reached!")
+            # println("Norm_u: ", norm_u)
+            # println("Norm_v: ", norm_v)
+            break
+		else
+			#println("Tolerance not reached")
+		end
+	
+        #println((I - h/2*S)*x0_u + h/2*K*x0_v)
+    end
+
+end
+
+#Dense version of above function
+@inline function jacobi_midpoint(h::Float64, rhs_u::Array{Float64,N}, rhs_v::Array{Float64,N}, S::Array{Float64, N},K::Array{Float64, N}, 
+	u_init::Array{Float64,N}, v_init::Array{Float64,N}, x0_u, x0_v, norm_matrix_u, norm_matrix_v,
+	max_iter::Int64, tol::Float64) where N
+
+	x0_u .= u_init
+	x0_v .= v_init
+	norm_matrix_u .= 0
+	norm_matrix_v .= 0
+	
+    for i in 1:max_iter
+		
+		mul!(u_init, S, x0_u, h/2, 0)
+		axpy!(1, rhs_u, u_init)
+		mul!(u_init, K, x0_v, -h/2, 1)
+
+		mul!(v_init, K, x0_u, h/2, 0)
+		axpy!(1, rhs_v, v_init)
+		mul!(v_init, S, x0_v, h/2, 1)
+		
+
+        x0_u .= u_init
+        x0_v .= v_init
+		mul!(norm_matrix_u, K, x0_v, h/2, 0)
+		mul!(norm_matrix_u, S, x0_u, -h/2, 1)
+		axpy!(1, x0_u, norm_matrix_u)
+		axpy!(-1, rhs_u, norm_matrix_u)
+        
+		mul!(norm_matrix_v, S, x0_v, -h/2, 0)
+		mul!(norm_matrix_v, K, x0_u, -h/2, 1)
+		axpy!(1, x0_v, norm_matrix_v)
+		axpy!(-1, rhs_v, norm_matrix_v)
+		
+        if (norm(norm_matrix_u) < tol) && (norm(norm_matrix_v) < tol)
+			#println("Tolerance Reached!")
+            # println("Norm_u: ", norm_u)
+            # println("Norm_v: ", norm_v)
+            break
+		else
+			#println("Tolerance not reached")
+		end
+	
+        #println((I - h/2*S)*x0_u + h/2*K*x0_v)
+    end
 end

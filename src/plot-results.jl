@@ -23,8 +23,13 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
     
     nCoeff = length(pcof)
     # Is there a better approach that avoids re-allocating the working_arrays object?
-    wa = Juqbox.Working_Arrays(params, nCoeff)
-
+    Integrator = params.Integrator_id
+    println(Integrator)
+    if Integrator == 1
+        wa = Juqbox.Working_Arrays(params, nCoeff)
+    elseif Integrator == 2
+        wa = Juqbox.Working_Arrays_M(params, nCoeff)
+    end
     custom = 0
 
     # data file names
@@ -37,6 +42,8 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
 
     # evaluate fidelity and unitaryhistory
     objv, unitaryhistory, fidelity = Juqbox.traceobjgrad(pcof, params, wa, true, false);
+    lastu = last(unitaryhistory)
+    println(lastu)
 
     # save convergence history
     convname = ""
@@ -51,7 +58,6 @@ function plot_results(params::objparams, pcof::Array{Float64,1}; casename::Strin
 
     guardlev = Juqbox.identify_guard_levels(params, custom)
     forbiddenlev = Juqbox.identify_forbidden_levels(params, custom)
-
     # make plots of the evolution of probabilities
     pl1 = Juqbox.plotunitary(unitaryhistory, params, guardlev)
     pl3 = Juqbox.plotspecified(unitaryhistory, params, guardlev, forbiddenlev)

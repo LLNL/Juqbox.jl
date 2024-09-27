@@ -137,8 +137,8 @@ println("Number of time steps = ", nsteps)
 
 # package the lowering and raising matrices together into an one-dimensional array of two-dimensional arrays
 # Here we choose dense or sparse representation
-use_sparse = true
-# use_sparse = false
+#use_sparse = true
+use_sparse = false
 
 # dense matrices run faster, but take more memory
 Hsym_ops=[Array(amat+adag), Array(bmat+bdag)]
@@ -184,8 +184,14 @@ rot2 = Diagonal(exp.(im*omega2*Tmax))
 vtarget = rot1*rot2*utarget # target in the rotating frame
 
 # assemble problem description for the optimization
+Integrator_id = 2
 params = Juqbox.objparams(Ne, Ng, Tmax, nsteps, Uinit=U0, Utarget=vtarget, Cfreq=om, Rfreq=rot_freq,
-                          Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, use_sparse=use_sparse)
+                          Hconst=H0, Hsym_ops=Hsym_ops, Hanti_ops=Hanti_ops, use_sparse=use_sparse, Integrator = Integrator_id)
+
+if Integrator_id == 2
+    linear_solver = Juqbox.lsolver_object(solver=Juqbox.JACOBI_SOLVER_M,max_iter=100,tol=1e-12,nrhs=prod(N))
+    params.linear_solver = linear_solver
+end
 
 # initial parameter guess
 startFromScratch = true # false
@@ -237,7 +243,11 @@ end
 params.save_pcof_hist = true
 
 # Allocate all working arrays
-wa = Juqbox.Working_Arrays(params, nCoeff)
+if params.Integrator_id == 1
+    wa = Juqbox.Working_Arrays(params, nCoeff)
+elseif params.Integrator_id == 2
+    wa = Juqbox.Working_Arrays_M(params, nCoeff)
+end
 prob = Juqbox.setup_ipopt_problem(params, wa, nCoeff, minCoeff, maxCoeff, maxIter=maxIter, lbfgsMax=lbfgsMax, startFromScratch=startFromScratch)
 
 #uncomment to run the gradient checker for the initial pcof
@@ -259,3 +269,4 @@ end
 =#
 println("Initial coefficient vector stored in 'pcof0'")
 
+@time traceobjgrad(pcof0, params, wa, false, true)
