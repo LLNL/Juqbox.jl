@@ -32,7 +32,7 @@ using Random
 using SparseArrays
 using JLD2
 
-Base.show(io::IO, f::Float64) = @printf(io, "%20.13e", f)
+#Base.show(io::IO, f::Float64) = @printf(io, "%20.13e", f)
 
 using Juqbox
 

@@ -2,7 +2,7 @@ using LinearAlgebra
 using JLD2
 using Juqbox
 using Printf
-Base.show(io::IO, f::Float64) = @printf(io, "%20.13e", f)
+#Base.show(io::IO, f::Float64) = @printf(io, "%20.13e", f)
 
 function timesteptest( cfl = 0.1, testcase = 2, order = 2, verbose = false)
 
