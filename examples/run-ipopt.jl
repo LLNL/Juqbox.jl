@@ -44,7 +44,7 @@ Ntot = params.Ntot
 params.tik0 = 1.0e-3 # 1.0 # Adjust Tikhonov coefficient
 maxIter= 400 # 200 # 500 # 1000 # 230 # 200 #100 # 200
 lbfgsMax = 200
-derivative_test = false # true # false # true
+derivative_test = true # false # true
 
 println("Setup completed\n")
 

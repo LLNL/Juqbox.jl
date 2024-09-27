@@ -499,8 +499,12 @@ function intermediate_par(
         push!(params.dualInfidelityHist, inf_du)
         push!(params.primaryHist, params.lastTraceInfidelity) # infidelity
         push!(params.secondaryHist,  params.lastLeakIntegral)
-        if params.constraintType == 0 && params.nTimeIntervals > 1 # Aug-Lagrange
-            inf_jump = maximum(params.nrm2_Cjump) # norm-squared scales the same as the infidelity
+        if params.constraintType == 0 
+            if params.nTimeIntervals > 1 # Aug-Lagrange
+                inf_jump = maximum(params.nrm2_Cjump) # norm-squared scales the same as the infidelity
+            else
+                inf_jump = 0.0
+            end
         else
             inf_jump = inf_pr^2
         end
@@ -510,10 +514,10 @@ function intermediate_par(
         println("Stopping because objective value = ", obj_value,
                 " < threshold = ", params.objThreshold)        
         return false
-    elseif params.lastTraceInfidelity < params.traceInfidelityThreshold && inf_jump < params.discontThreshold
+    elseif params.lastTraceInfidelity < params.traceInfidelityThreshold && inf_jump <= params.discontThreshold
         println("Stopping because trace infidelity = ", params.lastTraceInfidelity,
                 " < threshold = ", params.traceInfidelityThreshold, " and norm^2(Jump) = ", inf_jump,
-                " < threshold = ", params.discontThreshold)        
+                " <= threshold = ", params.discontThreshold)        
         return false
     else
         return true  # Keep going

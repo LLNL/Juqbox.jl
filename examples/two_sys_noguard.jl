@@ -19,7 +19,7 @@ favg = sum(f01)/nSys
 rot_freq = favg * ones(nSys)
 
 # Set the initial duration
-T = 250.0
+T = 150.0
 # Number of coefficients per spline
 # D1 = 26
 dtau = 10.0 # 3.33
@@ -54,4 +54,4 @@ cw_prox_thres = 1e-2 # 1e-2 # 1e-3
 
 use_carrier_waves = true # false
 
-zeroCtrlBC = true # Impose zero boundary conditions for each B-spline segemnt
+zeroCtrlBC = false # true # Impose zero boundary conditions for each B-spline segemnt

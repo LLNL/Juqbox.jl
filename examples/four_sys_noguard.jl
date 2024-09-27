@@ -21,7 +21,7 @@ rot_freq = favg * ones(nSys)
 #rot_freq = zeros(nSys) # Lab frame
 
 # Set the initial duration
-T = 900.0 # 1500.0 # 1000.0
+T = 600.0 # 1500.0 # 1000.0
 
 # Number of coefficients per spline
 # D1 = 75 # 50 # 50

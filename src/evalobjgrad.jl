@@ -289,6 +289,8 @@ mutable struct objparams
     gammaUnitary:: Float64 # Coefficient of the penalty term that suppresses non-unitary initial conditions
     constraintType:: Int64 # set to true to impose unitary constraints on intermediate initial conditions
 
+    #project_ic:: Bool
+
     nConstUnitary:: Int64 # number of unitary constraints
     nEleJacUnitary:: Int64 # number of Jacobian elements for the unitary constraints
 
@@ -415,7 +417,9 @@ mutable struct objparams
 
         objThreshold = 0.0
         traceInfidelityThreshold = 0.0
-        discontThreshold = 0.0
+        discontThreshold = 1e-4
+        project_ic = true
+
         usingPriorCoeffs = false
         priorCoeffs = [] # zeros(0)
 
@@ -732,7 +736,7 @@ function traceobjgrad(pcof0::Array{Float64,1},  p::objparams, verbose::Bool = fa
             primaryobjgrad = 2*real(conj( scomplex1 - exp(1im*p.globalPhase) )*salpha1)
         elseif p.pFidType == 2
             primaryobjgrad = - 2*real(conj(scomplex1)*salpha1)
-        elseif p.pFidType == 4
+        elseif p.pFidType == 4 # TODO: Update to generalized infidelity
             rotTarg = exp(1im*p.globalPhase)*(p.Utarget_r + im*p.Utarget_i)
             # grad wrt the control function 
             primaryobjgrad = - tracefidreal(wr, -wi, real(rotTarg), imag(rotTarg))
@@ -1174,7 +1178,8 @@ end # function update_multipliers
 
 ###########################################################
 function lagrange_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = false)
-    
+    project_ic = false # true
+
     # shortcut to working_arrays object in p::objparams  
     w = p.wa
 
@@ -1217,17 +1222,27 @@ function lagrange_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = fal
     # Kevin's: copy over initial conditions from pcof0 and run Gram-Schmidt to make them unitary
     Wr_arr = Array{Matrix{Float64}}(undef, p.nTimeIntervals-1)
     Wi_arr = Array{Matrix{Float64}}(undef, p.nTimeIntervals-1)
-    for interval = 1:p.nTimeIntervals-1
-        # initial conditions from pcof0 (determined by optimization)
-        offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
-        nMat = p.Ntot^2
-        Winit_r_tmp = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
-        offc += nMat
-        
-        Winit_i_tmp = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+    nMat = p.Ntot^2
+    if project_ic
+        for interval = 1:p.nTimeIntervals-1
+            # initial conditions from pcof0 (determined by optimization)
+            offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
+            Winit_r_tmp = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+            offc += nMat
+            Winit_i_tmp = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
 
-        # Run Gram-Schmidt, save result in Wr_arr, Wi_arr
-        Wr_arr[interval], Wi_arr[interval] = unitarize(Winit_r_tmp, Winit_i_tmp, false)
+            # Run Gram-Schmidt, save result in Wr_arr, Wi_arr
+            Wr_arr[interval], Wi_arr[interval] = unitarize(Winit_r_tmp, Winit_i_tmp, false)
+        end
+    else
+        # just copy over the initial conditions from pcof0
+        for interval = 1:p.nTimeIntervals-1
+            # initial conditions from pcof0 (determined by optimization)
+            offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
+            Wr_arr[interval] = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+            offc += nMat
+            Wi_arr[interval] = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+        end
     end
 
     Cjumpr_vec = Vector{Matrix{Float64}}(undef, p.nTimeIntervals-1)
@@ -1259,7 +1274,7 @@ function lagrange_obj(pcof0::Array{Float64,1}, p::objparams, verbose::Bool = fal
         # Evolve the state under Schroedinger's equation
         Uend_r, Uend_i = evolve_schroedinger(p, splinepar, p.T0int[interval], Winit_r, Winit_i, p.Tsteps[interval], eval1gradient)
         
-        check_unitarity(Uend_r, Uend_i) # Kevin's
+        #check_unitarity(Uend_r, Uend_i) # Kevin's
         if interval < p.nTimeIntervals
             #offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
             # println("offset 1 = ", offc)
@@ -1325,6 +1340,7 @@ end # function lagrange_obj
 
 ##################################################################
 function lagrange_grad(pcof0::Array{Float64,1},  p::objparams, objf_grad::Vector{Float64}, verbose::Bool = false)
+    project_ic = false # true
     # shortcut to working_arrays object in p::objparams
     w = p.wa
 
@@ -1388,16 +1404,27 @@ function lagrange_grad(pcof0::Array{Float64,1},  p::objparams, objf_grad::Vector
     Wi_arr = Array{Matrix{Float64}}(undef, p.nTimeIntervals-1)
     Vr_arr = Array{Matrix{Float64}}(undef, p.nTimeIntervals-1)
     Vi_arr = Array{Matrix{Float64}}(undef, p.nTimeIntervals-1)
-    for interval = 1:p.nTimeIntervals-1
-        # initial conditions from pcof0 (determined by optimization)
-        offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
-        nMat = p.Ntot^2
-        Winit_r_tmp = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
-        offc += nMat
-        
-        Winit_i_tmp = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
-        # Run Gram-Schmidt, save result in Wr_arr, Wi_arr
-        Wr_arr[interval], Wi_arr[interval], Vr_arr[interval], Vi_arr[interval] = unitarize(Winit_r_tmp, Winit_i_tmp, true)
+    nMat = p.Ntot^2
+    if project_ic
+        for interval = 1:p.nTimeIntervals-1
+            # initial conditions from pcof0 (determined by optimization)
+            offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
+            Winit_r_tmp = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+            offc += nMat
+            
+            Winit_i_tmp = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+            # Run Gram-Schmidt, save result in Wr_arr, Wi_arr
+            Wr_arr[interval], Wi_arr[interval], Vr_arr[interval], Vi_arr[interval] = unitarize(Winit_r_tmp, Winit_i_tmp, true)
+        end
+    else
+        # just copy over the initial conditions from pcof0
+        for interval = 1:p.nTimeIntervals-1
+            # initial conditions from pcof0 (determined by optimization)
+            offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
+            Wr_arr[interval] = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+            offc += nMat
+            Wi_arr[interval] = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+        end
     end
     # end Kevin's
     
@@ -1835,26 +1862,28 @@ function lagrange_grad(pcof0::Array{Float64,1},  p::objparams, objf_grad::Vector
 
     end # for interval...
 
-    # Kevin's: another adjoint pass for gram-schmidt unitarization
-    for interval = 1:p.nTimeIntervals-1
-        # initial conditions from pcof0 (determined by optimization)
-        offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
-        nMat = p.Ntot^2
-        pWr = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
-        pWgrad_r = reshape(objf_grad[offc+1:offc+nMat], p.Ntot, p.Ntot)
-        offc += nMat
-        pWi = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
-        pWgrad_i = reshape(objf_grad[offc+1:offc+nMat], p.Ntot, p.Ntot)
-        Vr = Vr_arr[interval]
-        Vi = Vi_arr[interval]
-        Wr = Wr_arr[interval]
-        Wi = Wi_arr[interval]
+    if project_ic
+        # Kevin's: another adjoint pass for gram-schmidt unitarization
+        for interval = 1:p.nTimeIntervals-1
+            # initial conditions from pcof0 (determined by optimization)
+            offc = p.nAlpha + (interval-1)*p.nWinit # for interval = 1 the offset should be nAlpha
+            nMat = p.Ntot^2
+            pWr = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+            pWgrad_r = reshape(objf_grad[offc+1:offc+nMat], p.Ntot, p.Ntot)
+            offc += nMat
+            pWi = reshape(pcof0[offc+1:offc+nMat], p.Ntot, p.Ntot)
+            pWgrad_i = reshape(objf_grad[offc+1:offc+nMat], p.Ntot, p.Ntot)
+            Vr = Vr_arr[interval]
+            Vi = Vi_arr[interval]
+            Wr = Wr_arr[interval]
+            Wi = Wi_arr[interval]
 
-        pWgrad_r, pWgrad_i = unitarize_adjoint(pWr, pWi, Vr, Vi, Wr, Wi, pWgrad_r, pWgrad_i)
-        offc = p.nAlpha + (interval-1)*p.nWinit
-        objf_grad[offc+1:offc+nMat] = vec(pWgrad_r)
-        offc += nMat
-        objf_grad[offc+1:offc+nMat] = vec(pWgrad_i)
+            pWgrad_r, pWgrad_i = unitarize_adjoint(pWr, pWi, Vr, Vi, Wr, Wi, pWgrad_r, pWgrad_i)
+            offc = p.nAlpha + (interval-1)*p.nWinit
+            objf_grad[offc+1:offc+nMat] = vec(pWgrad_r)
+            offc += nMat
+            objf_grad[offc+1:offc+nMat] = vec(pWgrad_i)
+        end
     end
     # end Kevin's stuff
 

@@ -2,13 +2,16 @@
 
 Ne = [2,2,2] # Number of essential energy levels
 Ng = [0,0,0] # Number of extra guard levels
+#Ng = [1,1,1]
 
 f01 = [4.94, 5.0, 5.06] # 0-1 transition freq's
 
 xi = [-0.34, -0.34, -0.34] # anharmonicity = f12 - f01
 
 couple_type = 2 # Dipole-dipole coupling coefficients
+# linear connectivity
 xi12 = 5e-3 * [1.0, 0.0, 1.0] # order: x12, x13, x23
+#xi12 = 5e-3 * [1.0, 1.0, 1.0] # order: x12, x13, x23
 
 # Setup frequency of rotations in computational frame
 nSys = length(Ne)
@@ -17,7 +20,7 @@ rot_freq = favg * ones(nSys) # Rotating frame
 #rot_freq = zeros(nSys) # Lab frame
 
 # Set the initial duration
-T = 300.0 # 600.0 200.0 # was 500.0. 
+T = 400.0 # 600.0 200.0 # was 500.0. 
 # Number of coefficients per spline
 # D1 = 26
 dtau = 3.33
@@ -32,7 +35,7 @@ tikCoeff = 1e-2 # 1.0 # 0.1
 
 # bounds on the ctrl vector elements (rot frame)
 # This number is divided by Nfreq
-maxctrl_MHz = 30.0 #100.0 # 30.0 # 100.0 # ?
+maxctrl_MHz = 40.0 #100.0 # 30.0 # 100.0 # ?
 
 # Internal ordering of the basis for the state vector
 # msb_order = true # | i3, i2, i1> = |i3> \kron |i2> \kron |i1> 
@@ -46,7 +49,7 @@ ncores = 4 # prod(Ne)
 initctrl_MHz = 10.0 # 0.1 # 0.5 # 0.3
 rand_seed = 5432
 
-cw_amp_thres = 6e-2
+cw_amp_thres = 2e-2
 cw_prox_thres = 1e-3
 
 wmatScale = 1.0
